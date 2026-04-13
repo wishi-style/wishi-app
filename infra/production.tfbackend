@@ -1,0 +1,5 @@
+bucket         = "wishi-tf-state"
+key            = "production/terraform.tfstate"
+region         = "us-east-1"
+dynamodb_table = "wishi-tf-lock"
+encrypt        = true
