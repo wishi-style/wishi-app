@@ -1,20 +1,21 @@
 "use client";
 
 import { SignUp } from "@clerk/nextjs";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
+
+function getGuestToken() {
+  if (typeof document === "undefined") return undefined;
+  const match = document.cookie.match(/wishi_guest_token=([^;]+)/);
+  return match ? match[1] : undefined;
+}
+
+function subscribe() {
+  // Cookie doesn't change during the sign-up flow, no-op subscriber
+  return () => {};
+}
 
 export default function SignUpPage() {
-  const [guestToken, setGuestToken] = useState<string | undefined>();
-
-  useEffect(() => {
-    // Read the guest token cookie client-side so it can be passed to Clerk
-    // via unsafeMetadata. The webhook handler reads it to claim anonymous
-    // MatchQuizResult rows created during the pre-signup Match Quiz flow.
-    const match = document.cookie.match(/wishi_guest_token=([^;]+)/);
-    if (match) {
-      setGuestToken(match[1]);
-    }
-  }, []);
+  const guestToken = useSyncExternalStore(subscribe, getGuestToken, () => undefined);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">

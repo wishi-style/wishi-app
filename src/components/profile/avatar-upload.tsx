@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Image from "next/image";
 import { confirmAvatarUpload } from "@/app/(client)/settings/actions";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -69,10 +70,12 @@ export function AvatarUpload({ currentUrl }: { currentUrl: string | null }) {
         className="relative h-20 w-20 overflow-hidden rounded-full bg-muted"
       >
         {preview ? (
-          <img
+          <Image
             src={preview}
             alt="Avatar"
-            className="h-full w-full object-cover"
+            fill
+            className="object-cover"
+            unoptimized
           />
         ) : (
           <span className="flex h-full w-full items-center justify-center text-2xl text-muted-foreground">
