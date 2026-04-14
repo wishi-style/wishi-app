@@ -44,6 +44,11 @@ wishi-app/
 - **Prisma client:** Lazy-initialized via Proxy pattern in `src/lib/prisma.ts` — does not throw at import time (required for Docker builds without DATABASE_URL)
 - **API routes that hit the DB:** Must export `const dynamic = "force-dynamic"` to prevent Next.js from pre-rendering at build time
 - **Secrets:** All secrets in AWS Secrets Manager under `wishi/<env>/` — never in env vars or GitHub Secrets
+- **Auth guards:** Use `requireRole()` from `src/lib/auth` in route group layouts. Use `requireAuth()` for role-agnostic auth checks. Both call `unauthorized()`/`forbidden()` from `next/navigation`.
+- **Clerk types:** Import `UserRole` and other Prisma enums from `@/generated/prisma/client` (not `@/generated/prisma`)
+- **Proxy (not middleware):** Next.js 16 uses `src/proxy.ts` with `export default clerkMiddleware()`. The file convention is `proxy`, not `middleware`.
+- **Route groups:** `(client)` routes at `/sessions`, `/settings` etc. `(stylist)` routes at `/stylist/*`. `(admin)` routes at `/admin/*`. No overlapping paths between groups.
+- **S3 uploads:** Use presigned PUT URLs via `src/lib/s3.ts`. Client uploads directly to S3, then confirms via Server Action.
 - **DB connections:** Always use `?sslmode=require` — RDS rejects unencrypted connections
 - **Docker builds:** Build context is the repo root, Dockerfile at `docker/Dockerfile`, target platform `linux/amd64`
 - **Terraform:** Bootstrap applied locally with admin creds. Main infra uses S3 backend (`terraform init -backend-config=staging.tfbackend`)
@@ -51,7 +56,7 @@ wishi-app/
 ## Build phase progress
 
 - [x] Phase 0: AWS Foundation (ECS, RDS, ALB, S3, CI/CD)
-- [ ] Phase 1: Authentication & User Management
+- [x] Phase 1: Authentication & User Management
 - [ ] Phase 2: Quizzes, Booking & Payments
 - [ ] Phase 3: Real-Time Chat
 - [ ] Phase 4: Moodboards & Styleboards

@@ -96,9 +96,11 @@ module "service" {
   public_subnet_ids    = module.network.public_subnet_ids
   private_subnet_ids   = module.network.private_subnet_ids
   ecs_task_sg_id       = module.network.ecs_task_sg_id
-  db_url_secret_arn    = module.database.db_url_secret_arn
+  db_url_secret_arn        = module.database.db_url_secret_arn
   db_direct_url_secret_arn = module.database.db_direct_url_secret_arn
-  ecr_web_url          = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.project}-web"
+  clerk_secret_key_arn     = module.secrets.secret_arns["clerk/secret_key"]
+  clerk_webhook_secret_arn = module.secrets.secret_arns["clerk/webhook_secret"]
+  ecr_web_url              = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.project}-web"
   cpu                  = var.ecs_cpu
   memory               = var.ecs_memory
   desired_count        = var.ecs_desired_count

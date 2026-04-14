@@ -9,22 +9,181 @@ generator client {
   previewFeatures = ["postgresqlExtensions"]
 }
 
-model User {
-  id              String    @id @default(cuid())
-  clerkId         String?   @unique @map("clerk_id")
-  email           String    @unique
-  role            UserRole  @default(CLIENT)
-  firstName       String?   @map("first_name")
-  lastName        String?   @map("last_name")
-  avatarUrl       String?   @map("avatar_url")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
-
-  @@map("users")
-}
+// ─── Enums ────────────────────────────────────────────────
 
 enum UserRole {
   CLIENT
   STYLIST
   ADMIN
+}
+
+enum AuthProvider {
+  GOOGLE
+  APPLE
+  EMAIL
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  NON_BINARY
+  PREFER_NOT_TO_SAY
+}
+
+enum LoyaltyTier {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  PUSH
+}
+
+// ─── Domain 1: Auth & Users ───────────────────────────────
+
+model User {
+  id               String      @id @default(cuid())
+  clerkId          String?     @unique @map("clerk_id")
+  authProvider     AuthProvider @default(EMAIL) @map("auth_provider")
+  email            String      @unique
+  phone            String?
+  firstName        String      @map("first_name")
+  lastName         String      @map("last_name")
+  role             UserRole    @default(CLIENT)
+  gender           Gender?
+  birthday         DateTime?   @db.Date
+  avatarUrl        String?     @map("avatar_url")
+  favoriteBrands   String[]    @map("favorite_brands")
+  loyaltyTier      LoyaltyTier @default(BRONZE) @map("loyalty_tier")
+  referralCode     String      @unique @map("referral_code")
+  referredByUserId String?     @map("referred_by_user_id")
+
+  // Stripe
+  stripeCustomerId String? @unique @map("stripe_customer_id")
+
+  // Timestamps
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  lastLoginAt     DateTime? @map("last_login_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  // Relations
+  referredByUser    User?                    @relation("UserReferrals", fields: [referredByUserId], references: [id])
+  referredUsers     User[]                   @relation("UserReferrals")
+  locations         UserLocation[]
+  socialLinks       UserSocialLink[]
+  photos            UserPhoto[]
+  notes             UserNote[]
+  matchQuizResults  MatchQuizResult[]
+  notificationPrefs NotificationPreference[]
+
+  @@index([email])
+  @@index([role])
+  @@index([stripeCustomerId])
+  @@index([clerkId])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model UserLocation {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  label     String?
+  city      String?
+  state     String?
+  country   String?
+  zipCode   String?  @map("zip_code")
+  isPrimary Boolean  @default(false) @map("is_primary")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_locations")
+}
+
+model UserSocialLink {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  platform  String
+  url       String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, platform])
+  @@map("user_social_links")
+}
+
+model UserPhoto {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  url       String
+  isProfile Boolean  @default(false) @map("is_profile")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_photos")
+}
+
+model UserNote {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  content   String   @db.Text
+  authorId  String?  @map("author_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_notes")
+}
+
+// ─── Domain 2: Match Quiz (stub for guest-token claim) ────
+
+model MatchQuizResult {
+  id             String    @id @default(cuid())
+  userId         String?   @map("user_id")
+  guestToken     String?   @unique @map("guest_token")
+  genderToStyle  Gender?   @map("gender_to_style")
+  styleDirection String[]  @map("style_direction")
+  occasion       String?
+  budgetBracket  String?   @map("budget_bracket")
+  rawAnswers     Json?     @map("raw_answers")
+  completedAt    DateTime  @default(now()) @map("completed_at")
+  claimedAt      DateTime? @map("claimed_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([guestToken])
+  @@map("match_quiz_results")
+}
+
+// ─── Domain 10: Notifications ─────────────────────────────
+
+model NotificationPreference {
+  id        String              @id @default(cuid())
+  userId    String              @map("user_id")
+  channel   NotificationChannel
+  category  String
+  isEnabled Boolean             @default(true) @map("is_enabled")
+  createdAt DateTime            @default(now()) @map("created_at")
+  updatedAt DateTime            @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channel, category])
+  @@map("notification_preferences")
 }
