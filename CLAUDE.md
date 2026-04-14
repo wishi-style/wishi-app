@@ -11,7 +11,7 @@ Wishi is a styling marketplace. This repo is the Next.js 16 monolith (client, st
 - **Framework:** Next.js 16 (App Router, TypeScript strict, Turbopack)
 - **Styling:** Tailwind CSS 4 + shadcn/ui (Nova preset, Radix base)
 - **Database:** RDS Postgres 16 via RDS Proxy, Prisma 7 ORM with PG adapter
-- **Auth:** Clerk (Google + Apple + Email) — not yet implemented
+- **Auth:** Clerk (Google + Apple + Email) with RBAC via publicMetadata
 - **Infra:** AWS ECS Fargate, ALB, S3, Secrets Manager, CloudWatch
 - **IaC:** Terraform (S3 backend, per-env tfvars)
 - **CI/CD:** GitHub Actions (OIDC auth to AWS)
@@ -29,12 +29,18 @@ wishi-app/
 │   ├── staging.tfvars     Staging config
 │   └── production.tfvars  Production config
 ├── prisma/
-│   └── schema.prisma      User model + pg_trgm (more models added per phase)
+│   └── schema.prisma      7 models, 7 enums (User, NotificationPreference, MatchQuizResult, etc.)
 ├── src/
-│   ├── app/               Next.js App Router (api/, route groups coming)
-│   ├── components/ui/     shadcn/ui components
+│   ├── app/
+│   │   ├── (client)/      Client routes: /sessions, /settings
+│   │   ├── (stylist)/     Stylist routes: /stylist/*
+│   │   ├── (admin)/       Admin routes: /admin/*
+│   │   ├── api/           health, webhooks/clerk, uploads/presigned
+│   │   ├── sign-in/       Clerk sign-in
+│   │   └── sign-up/       Clerk sign-up
+│   ├── components/        nav/, profile/, ui/
 │   ├── generated/prisma/  Generated client (gitignored)
-│   └── lib/               prisma.ts, utils.ts
+│   └── lib/               prisma.ts, auth/, s3.ts, utils.ts
 ├── next.config.ts         output: standalone
 └── prisma.config.ts       Prisma 7 config
 ```
