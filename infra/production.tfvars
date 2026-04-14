@@ -1,7 +1,7 @@
 project           = "wishi"
 env               = "production"
 region            = "us-east-1"
-domain            = "wishi.com"
+domain            = "wishi.me"
 vpc_cidr          = "10.0.0.0/16"
 nat_gateway_count = 2
 

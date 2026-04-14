@@ -172,7 +172,7 @@ resource "aws_secretsmanager_secret" "db_url" {
 
 resource "aws_secretsmanager_secret_version" "db_url" {
   secret_id     = aws_secretsmanager_secret.db_url.id
-  secret_string = "postgresql://${aws_db_instance.main.username}:${random_password.db.result}@${aws_db_proxy.main.endpoint}:5432/wishi"
+  secret_string = "postgresql://${aws_db_instance.main.username}:${random_password.db.result}@${aws_db_proxy.main.endpoint}:5432/wishi?sslmode=require"
 }
 
 resource "aws_secretsmanager_secret" "db_direct_url" {
@@ -183,7 +183,7 @@ resource "aws_secretsmanager_secret" "db_direct_url" {
 
 resource "aws_secretsmanager_secret_version" "db_direct_url" {
   secret_id     = aws_secretsmanager_secret.db_direct_url.id
-  secret_string = "postgresql://${aws_db_instance.main.username}:${random_password.db.result}@${aws_db_instance.main.endpoint}/wishi"
+  secret_string = "postgresql://${aws_db_instance.main.username}:${random_password.db.result}@${aws_db_instance.main.endpoint}/wishi?sslmode=require"
 }
 
 # -----------------------------------------------------------------------------
