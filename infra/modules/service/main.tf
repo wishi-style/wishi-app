@@ -8,6 +8,8 @@ variable "db_url_secret_arn" { type = string }
 variable "db_direct_url_secret_arn" { type = string }
 variable "clerk_secret_key_arn" { type = string }
 variable "clerk_webhook_secret_arn" { type = string }
+variable "stripe_secret_key_arn" { type = string }
+variable "stripe_webhook_secret_arn" { type = string }
 variable "ecr_web_url" { type = string }
 variable "cpu" {
   type    = number
@@ -271,6 +273,8 @@ resource "aws_ecs_task_definition" "web" {
       { name = "CLERK_SECRET_KEY", valueFrom = var.clerk_secret_key_arn },
       { name = "CLERK_WEBHOOK_SECRET", valueFrom = var.clerk_webhook_secret_arn },
       { name = "CLERK_WEBHOOK_SIGNING_SECRET", valueFrom = var.clerk_webhook_secret_arn },
+      { name = "STRIPE_SECRET_KEY", valueFrom = var.stripe_secret_key_arn },
+      { name = "STRIPE_WEBHOOK_SECRET", valueFrom = var.stripe_webhook_secret_arn },
     ]
 
     logConfiguration = {
