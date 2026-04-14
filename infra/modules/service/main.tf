@@ -267,6 +267,7 @@ resource "aws_ecs_task_definition" "web" {
 
     secrets = [
       { name = "DATABASE_URL", valueFrom = var.db_url_secret_arn },
+      { name = "DIRECT_DATABASE_URL", valueFrom = var.db_direct_url_secret_arn },
       { name = "CLERK_SECRET_KEY", valueFrom = var.clerk_secret_key_arn },
       { name = "CLERK_WEBHOOK_SECRET", valueFrom = var.clerk_webhook_secret_arn },
     ]
