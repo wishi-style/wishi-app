@@ -6,6 +6,8 @@ variable "private_subnet_ids" { type = list(string) }
 variable "ecs_task_sg_id" { type = string }
 variable "db_url_secret_arn" { type = string }
 variable "db_direct_url_secret_arn" { type = string }
+variable "clerk_secret_key_arn" { type = string }
+variable "clerk_webhook_secret_arn" { type = string }
 variable "ecr_web_url" { type = string }
 variable "cpu" {
   type    = number
@@ -259,10 +261,14 @@ resource "aws_ecs_task_definition" "web" {
     environment = [
       { name = "NODE_ENV", value = "production" },
       { name = "PORT", value = "3000" },
+      { name = "S3_UPLOADS_BUCKET", value = "${var.project}-uploads-${var.env}" },
+      { name = "AWS_REGION", value = data.aws_region.current.name },
     ]
 
     secrets = [
       { name = "DATABASE_URL", valueFrom = var.db_url_secret_arn },
+      { name = "CLERK_SECRET_KEY", valueFrom = var.clerk_secret_key_arn },
+      { name = "CLERK_WEBHOOK_SECRET", valueFrom = var.clerk_webhook_secret_arn },
     ]
 
     logConfiguration = {
