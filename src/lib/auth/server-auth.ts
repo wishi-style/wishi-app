@@ -8,12 +8,14 @@ import {
   isE2EAuthModeEnabled,
 } from "./e2e-auth";
 
-const COOKIE_OPTIONS = {
-  httpOnly: true,
-  path: "/",
-  sameSite: "lax" as const,
-  secure: process.env.NODE_ENV === "production",
-};
+function getCookieOptions() {
+  return {
+    httpOnly: true,
+    path: "/",
+    sameSite: "lax" as const,
+    secure: !isE2EAuthModeEnabled() && process.env.NODE_ENV === "production",
+  };
+}
 
 export async function getServerAuth() {
   if (isE2EAuthModeEnabled()) {
@@ -58,8 +60,8 @@ export async function setE2EAuthCookies({
   }
 
   const cookieStore = await cookies();
-  cookieStore.set(E2E_CLERK_ID_COOKIE, clerkId, COOKIE_OPTIONS);
-  cookieStore.set(E2E_ROLE_COOKIE, role, COOKIE_OPTIONS);
+  cookieStore.set(E2E_CLERK_ID_COOKIE, clerkId, getCookieOptions());
+  cookieStore.set(E2E_ROLE_COOKIE, role, getCookieOptions());
 }
 
 export async function clearE2EAuthCookies() {

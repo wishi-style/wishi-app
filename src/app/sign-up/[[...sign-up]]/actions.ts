@@ -24,6 +24,9 @@ export async function signUpForE2E(formData: FormData) {
   if (!email || !firstName || !lastName) {
     throw new Error("First name, last name, and email are required");
   }
+  if (!email.endsWith("@e2e.wishi.test")) {
+    throw new Error("E2E sign-up is restricted to @e2e.wishi.test emails");
+  }
 
   const existing = await prisma.user.findUnique({
     where: { email },

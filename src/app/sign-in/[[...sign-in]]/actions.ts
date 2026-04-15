@@ -14,6 +14,9 @@ export async function signInForE2E(formData: FormData) {
   if (!email) {
     throw new Error("Email is required");
   }
+  if (!email.endsWith("@e2e.wishi.test")) {
+    throw new Error("E2E sign-in is restricted to @e2e.wishi.test emails");
+  }
 
   const user = await prisma.user.findUnique({
     where: { email },
