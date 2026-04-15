@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { Gender } from "@/generated/prisma/client";
+import { createChatConversation } from "@/lib/chat/create-conversation";
 
 /**
  * Auto-matcher: assigns the best-fit stylist to a session.
@@ -132,6 +133,13 @@ export async function matchStylistForSession(sessionId: string) {
       },
     }),
   ]);
+
+  // Create chat conversation after transaction commits (external API call)
+  try {
+    await createChatConversation(sessionId);
+  } catch (err) {
+    console.error(`[match] Failed to create chat conversation for session ${sessionId}:`, err);
+  }
 
   return bestMatch;
 }

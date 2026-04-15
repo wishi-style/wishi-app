@@ -13,6 +13,7 @@ Wishi is a styling marketplace. This repo is the Next.js 16 monolith (client, st
 - **Database:** RDS Postgres 16 via RDS Proxy, Prisma 7 ORM with PG adapter
 - **Auth:** Clerk (Google + Apple + Email) with RBAC via publicMetadata
 - **Payments:** Stripe (one-time + subscription checkout, webhooks, billing portal)
+- **Chat:** Twilio Conversations (real-time messaging, media, Web Push notifications)
 - **Infra:** AWS ECS Fargate, ALB, S3, Secrets Manager, CloudWatch
 - **IaC:** Terraform (S3 backend, per-env tfvars)
 - **CI/CD:** GitHub Actions (OIDC auth to AWS)
@@ -30,22 +31,22 @@ wishi-app/
 │   ├── staging.tfvars     Staging config
 │   └── production.tfvars  Production config
 ├── prisma/
-│   ├── schema.prisma      28 models, 25 enums
+│   ├── schema.prisma      30 models, 26 enums
 │   ├── seed.ts            Entry point for seeding (Plans, Quizzes)
 │   └── seeds/             Domain seeders (plans.ts, quizzes.ts)
 ├── src/
 │   ├── app/
-│   │   ├── (client)/      Client routes: /sessions, /bookings, /settings
-│   │   ├── (stylist)/     Stylist routes: /stylist/*
+│   │   ├── (client)/      Client routes: /sessions, /sessions/[id]/chat, /bookings, /settings
+│   │   ├── (stylist)/     Stylist routes: /stylist/dashboard, /stylist/sessions, /stylist/sessions/[id]/chat
 │   │   ├── (admin)/       Admin routes: /admin/*
-│   │   ├── api/           health, webhooks/{clerk,stripe}, uploads, stylists, subscriptions, billing
+│   │   ├── api/           health, webhooks/{clerk,stripe,twilio}, uploads, stylists, subscriptions, billing, chat/{token,media}, push/{subscribe,vapid-key}
 │   │   ├── match-quiz/    Public match quiz (guest + authenticated)
 │   │   ├── stylists/      Public stylist directory + profiles
 │   │   ├── sign-in/       Clerk sign-in
 │   │   └── sign-up/       Clerk sign-up
-│   ├── components/        nav/, profile/, quiz/, stylist/, session/, booking/, ui/
+│   ├── components/        nav/, profile/, quiz/, stylist/, session/, booking/, chat/, ui/
 │   ├── generated/prisma/  Generated client (gitignored)
-│   └── lib/               prisma.ts, stripe.ts, auth/, payments/, quiz/, matching/, sessions/, services/, s3.ts, plans.ts
+│   └── lib/               prisma.ts, stripe.ts, twilio.ts, auth/, payments/, quiz/, matching/, sessions/, services/, chat/, web-push.ts, s3.ts, plans.ts
 ├── next.config.ts         output: standalone
 └── prisma.config.ts       Prisma 7 config
 ```
@@ -65,7 +66,10 @@ wishi-app/
 - **Terraform:** Bootstrap applied locally with admin creds. Main infra uses S3 backend (`terraform init -backend-config=staging.tfbackend`)
 - **Stripe client:** Lazy-initialized via Proxy pattern in `src/lib/stripe.ts` (same pattern as prisma.ts)
 - **Quiz engine:** Data-driven quiz renderer. Quiz questions live in DB (`Quiz`/`QuizQuestion` tables), seeded via `prisma/seeds/quizzes.ts`. `fieldKey` on each question maps to the destination model via `src/lib/quiz/field-router.ts`.
-- **Deferred relations:** Some Prisma relations are deferred to future phases. Session.promoCodeId, Payment.giftCardId/promoCodeId are plain String? fields (no FK). Board/Message/Cart/Affiliate relations on Session, and Board relations on StylistProfile, will be added in Phases 3-5.
+- **Twilio client:** Lazy-initialized via Proxy pattern in `src/lib/twilio.ts` (same pattern as prisma.ts/stripe.ts). `getTwilioConfig()` returns the raw config values for AccessToken construction.
+- **Chat architecture:** Twilio Conversations handles real-time transport. Messages are mirrored to the `Message` table via `/api/webhooks/twilio`. Twilio identity = `user.clerkId`. Message metadata (kind, mediaUrl, boardId) lives in Twilio message `attributes` JSON, not the body.
+- **System messages:** Templates in `src/lib/chat/system-templates.ts`. Sent via Twilio API with `author: "system"` and `kind: SYSTEM_AUTOMATED` in attributes. Phase 4 wires the actual triggers.
+- **Deferred relations:** Some Prisma relations are deferred to future phases. Session.promoCodeId, Payment.giftCardId/promoCodeId are plain String? fields (no FK). Board/Cart/Affiliate relations on Session, and Board relations on StylistProfile, will be added in Phases 4-5.
 - **Prisma JSON fields:** Use `as Prisma.InputJsonValue` when passing `Record<string, unknown>` to JSON columns — Prisma's strict types reject plain Records.
 - **Seeding:** `npx prisma db seed` or `npx tsx prisma/seed.ts` with DATABASE_URL set. Seeds are idempotent (upserts).
 
@@ -74,7 +78,7 @@ wishi-app/
 - [x] Phase 0: AWS Foundation (ECS, RDS, ALB, S3, CI/CD)
 - [x] Phase 1: Authentication & User Management
 - [x] Phase 2: Quizzes, Booking & Payments
-- [ ] Phase 3: Real-Time Chat
+- [x] Phase 3: Real-Time Chat
 - [ ] Phase 4: Moodboards & Styleboards
 - [ ] Phase 5: Inventory Integration
 - [ ] Phase 6: Stylist Dashboard & Payouts
