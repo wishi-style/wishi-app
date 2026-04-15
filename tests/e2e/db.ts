@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 
 let pool: pg.Pool | null = null;
 
-function getPool(): pg.Pool {
+export function getPool(): pg.Pool {
   if (!pool) {
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) {
@@ -147,6 +147,97 @@ export async function createStyleProfileFixture(userId: string): Promise<void> {
      VALUES ($1, $2, $3, $4, 5, 'casual', NOW(), $5, NOW(), NOW())`,
     [id, userId, ["minimalist"], [], quizAnswers],
   );
+}
+
+// ---------------------------------------------------------------------------
+// Stylist profile helpers
+// ---------------------------------------------------------------------------
+
+export async function ensureStylistProfile({
+  userId,
+  isAvailable = true,
+  matchEligible = true,
+  styleSpecialties = ["minimalist"],
+  genderPreference = ["FEMALE"],
+  budgetBrackets = ["moderate"],
+}: {
+  userId: string;
+  isAvailable?: boolean;
+  matchEligible?: boolean;
+  styleSpecialties?: string[];
+  genderPreference?: string[];
+  budgetBrackets?: string[];
+}) {
+  const id = generateId();
+  const { rows } = await getPool().query(
+    `INSERT INTO stylist_profiles (id, user_id, is_available, match_eligible, style_specialties, gender_preference, budget_brackets, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6::"Gender"[], $7, NOW(), NOW())
+     ON CONFLICT (user_id) DO UPDATE SET is_available = $3, match_eligible = $4, style_specialties = $5, gender_preference = $6::"Gender"[], budget_brackets = $7, updated_at = NOW()
+     RETURNING *`,
+    [id, userId, isAvailable, matchEligible, styleSpecialties, genderPreference, budgetBrackets],
+  );
+  return rows[0];
+}
+
+export async function cleanupStylistProfile(userId: string): Promise<void> {
+  const p = getPool();
+  await p.query(`DELETE FROM stylist_waitlist_entries WHERE stylist_profile_id IN (SELECT id FROM stylist_profiles WHERE user_id = $1)`, [userId]);
+  await p.query(`DELETE FROM session_match_history WHERE stylist_id = $1`, [userId]);
+  await p.query(`DELETE FROM sessions WHERE stylist_id = $1`, [userId]);
+  await p.query(`DELETE FROM stylist_profiles WHERE user_id = $1`, [userId]);
+}
+
+export async function createMatchQuizResult({
+  userId,
+  genderToStyle = "FEMALE",
+  styleDirection = ["minimalist"],
+  budgetBracket = "moderate",
+}: {
+  userId: string;
+  genderToStyle?: string;
+  styleDirection?: string[];
+  budgetBracket?: string;
+}) {
+  const id = generateId();
+  const { rows } = await getPool().query(
+    `INSERT INTO match_quiz_results (id, user_id, gender_to_style, style_direction, budget_bracket, completed_at, raw_answers)
+     VALUES ($1, $2, $3, $4, $5, NOW(), '{}')
+     RETURNING *`,
+    [id, userId, genderToStyle, styleDirection, budgetBracket],
+  );
+  return rows[0];
+}
+
+// ---------------------------------------------------------------------------
+// Waitlist helpers
+// ---------------------------------------------------------------------------
+
+export async function getWaitlistEntry(userId: string, stylistProfileId: string) {
+  const { rows } = await getPool().query(
+    `SELECT * FROM stylist_waitlist_entries WHERE user_id = $1 AND stylist_profile_id = $2`,
+    [userId, stylistProfileId],
+  );
+  return rows[0] ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Session helpers
+// ---------------------------------------------------------------------------
+
+export async function getSessionById(sessionId: string) {
+  const { rows } = await getPool().query(
+    `SELECT * FROM sessions WHERE id = $1`,
+    [sessionId],
+  );
+  return rows[0] ?? null;
+}
+
+export async function getMatchHistoryForSession(sessionId: string) {
+  const { rows } = await getPool().query(
+    `SELECT * FROM session_match_history WHERE session_id = $1`,
+    [sessionId],
+  );
+  return rows;
 }
 
 // ---------------------------------------------------------------------------
