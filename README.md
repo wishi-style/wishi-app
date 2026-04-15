@@ -10,6 +10,7 @@ Styling marketplace rebuilt as a single Next.js 16 monolith on AWS ECS Fargate.
 | Styling | Tailwind CSS 4 + shadcn/ui |
 | Database | RDS Postgres 16 + RDS Proxy + Prisma 7 |
 | Auth | Clerk (Google + Apple + Email) with RBAC |
+| Payments | Stripe (one-time + subscription checkout, webhooks, billing portal) |
 | Compute | AWS ECS Fargate behind ALB |
 | CDN | CloudFront (pending) |
 | CI/CD | GitHub Actions with OIDC auth to AWS |
@@ -19,10 +20,11 @@ Styling marketplace rebuilt as a single Next.js 16 monolith on AWS ECS Fargate.
 
 ```bash
 cp .env.example .env
-# Fill in DATABASE_URL, Clerk keys, and S3 bucket
+# Fill in DATABASE_URL, Clerk keys, Stripe keys, and S3 bucket
 npm install
 npx prisma generate
 npx prisma migrate dev
+npx prisma db seed   # Seeds plans + quiz questions
 npm run dev
 ```
 
@@ -70,16 +72,21 @@ Pushes to `main` auto-deploy to staging via GitHub Actions. Production deploys a
 ├── .github/workflows/    CI/CD pipelines
 ├── docker/               Multi-stage Dockerfile
 ├── infra/                Terraform (bootstrap + modules)
-├── prisma/               Schema + migrations
+├── prisma/
+│   ├── schema.prisma     28 models, 25 enums
+│   ├── seed.ts           Entry point for seeding
+│   └── seeds/            Domain seeders (plans, quizzes)
 └── src/
     ├── app/
-    │   ├── (client)/     Client routes: /sessions, /settings
+    │   ├── (client)/     Client routes: /sessions, /bookings, /settings
     │   ├── (stylist)/    Stylist routes: /stylist/*
     │   ├── (admin)/      Admin routes: /admin/*
-    │   ├── api/          health, webhooks/clerk, uploads/presigned
+    │   ├── api/          health, webhooks/{clerk,stripe}, uploads, stylists, subscriptions, billing
+    │   ├── match-quiz/   Public match quiz (guest + authenticated)
+    │   ├── stylists/     Public stylist directory + profiles
     │   ├── sign-in/      Clerk sign-in
     │   └── sign-up/      Clerk sign-up
-    ├── components/       nav/, profile/, ui/
-    ├── lib/              prisma.ts, auth/, s3.ts, utils.ts
+    ├── components/       nav/, profile/, quiz/, stylist/, session/, booking/, ui/
+    ├── lib/              prisma.ts, stripe.ts, auth/, payments/, quiz/, matching/, sessions/, services/, s3.ts, plans.ts
     └── generated/        Prisma client (gitignored)
 ```
