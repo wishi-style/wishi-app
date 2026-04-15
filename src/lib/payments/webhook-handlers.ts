@@ -3,6 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { getPlanByType } from "@/lib/plans";
 import { matchStylistForSession } from "@/lib/services/match.service";
 import type { PlanType, SubscriptionStatus } from "@/generated/prisma/client";
+import {
+  buildCheckoutRecoveryPlan,
+  buildSessionRecoveryPlan,
+} from "./webhook-recovery";
 
 export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const { userId, planType, stylistUserId } = session.metadata ?? {};
@@ -22,46 +26,66 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
       ? session.payment_intent
       : session.payment_intent?.id ?? null;
 
-  // Idempotency: skip if already processed
-  if (paymentIntentId) {
-    const existing = await prisma.session.findFirst({
-      where: { stripePaymentIntentId: paymentIntentId },
+  let localSession = paymentIntentId
+    ? await prisma.session.findUnique({
+        where: { stripePaymentIntentId: paymentIntentId },
+        select: { id: true, status: true, stylistId: true },
+      })
+    : null;
+
+  const existingPayment = paymentIntentId
+    ? await prisma.payment.findUnique({
+        where: { stripePaymentIntentId: paymentIntentId },
+        select: { id: true },
+      })
+    : null;
+
+  const recoveryPlan = buildCheckoutRecoveryPlan({
+    existingSession: localSession,
+    hasPayment: !!existingPayment,
+    explicitStylistUserId: stylistUserId,
+  });
+
+  if (recoveryPlan.shouldCreateSession) {
+    localSession = await prisma.$transaction(async (tx) => {
+      const createdSession = await tx.session.create({
+        data: {
+          clientId: userId,
+          stylistId: stylistUserId || null,
+          planType: planType as PlanType,
+          status: "BOOKED",
+          amountPaidInCents: session.amount_total ?? plan.priceInCents,
+          styleboardsAllowed: plan.styleboards,
+          moodboardsAllowed: plan.moodboards,
+          stripePaymentIntentId: paymentIntentId,
+        },
+        select: { id: true, status: true, stylistId: true },
+      });
+
+      if (recoveryPlan.shouldCreatePayment) {
+        await createOrUpdatePaymentRecord({
+          amountInCents: session.amount_total ?? plan.priceInCents,
+          paymentIntentId,
+          sessionId: createdSession.id,
+          tx,
+          userId,
+        });
+      }
+
+      return createdSession;
     });
-    if (existing) {
-      console.warn("[stripe] Duplicate checkout.session.completed for", paymentIntentId);
-      return;
-    }
+  } else if (recoveryPlan.shouldCreatePayment && localSession) {
+    await createOrUpdatePaymentRecord({
+      amountInCents: session.amount_total ?? plan.priceInCents,
+      paymentIntentId,
+      sessionId: localSession.id,
+      tx: prisma,
+      userId,
+    });
   }
 
-  // Create session record
-  const newSession = await prisma.session.create({
-    data: {
-      clientId: userId,
-      stylistId: stylistUserId || null,
-      planType: planType as PlanType,
-      status: "BOOKED",
-      amountPaidInCents: session.amount_total ?? plan.priceInCents,
-      styleboardsAllowed: plan.styleboards,
-      moodboardsAllowed: plan.moodboards,
-      stripePaymentIntentId: paymentIntentId,
-    },
-  });
-
-  // Create payment record
-  await prisma.payment.create({
-    data: {
-      userId,
-      sessionId: newSession.id,
-      type: "SESSION",
-      status: "SUCCEEDED",
-      amountInCents: session.amount_total ?? plan.priceInCents,
-      stripePaymentIntentId: paymentIntentId,
-    },
-  });
-
-  // Only run auto-matcher when no specific stylist was pre-selected
-  if (!stylistUserId) {
-    await matchStylistForSession(newSession.id);
+  if (localSession && recoveryPlan.shouldAutoMatch) {
+    await matchStylistForSession(localSession.id);
   }
 }
 
@@ -75,54 +99,71 @@ export async function handleSubscriptionCreated(subscription: Stripe.Subscriptio
   const plan = await getPlanByType(planType as PlanType);
   if (!plan) return;
 
-  // Idempotency: skip if already processed
-  const existing = await prisma.subscription.findUnique({
+  let localSub = await prisma.subscription.findUnique({
     where: { stripeSubscriptionId: subscription.id },
+    select: { id: true },
   });
-  if (existing) {
-    console.warn("[stripe] Duplicate subscription.created for", subscription.id);
-    return;
+
+  let bootstrapSession = localSub
+    ? await prisma.session.findFirst({
+        where: { subscriptionId: localSub.id },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, status: true, stylistId: true },
+      })
+    : null;
+
+  if (!localSub || !bootstrapSession) {
+    const result = await prisma.$transaction(async (tx) => {
+      const ensuredSub = localSub ?? await tx.subscription.create({
+        data: {
+          userId,
+          stylistId: stylistUserId || null,
+          planType: planType as PlanType,
+          status: "TRIALING",
+          stripeSubscriptionId: subscription.id,
+          stripePriceId: subscription.items.data[0]?.price?.id ?? null,
+          trialEndsAt: subscription.trial_end
+            ? new Date(subscription.trial_end * 1000)
+            : null,
+          currentPeriodStart: subscription.items.data[0]?.current_period_start
+            ? new Date(subscription.items.data[0].current_period_start * 1000)
+            : new Date(subscription.start_date * 1000),
+          currentPeriodEnd: subscription.items.data[0]?.current_period_end
+            ? new Date(subscription.items.data[0].current_period_end * 1000)
+            : null,
+        },
+        select: { id: true },
+      });
+
+      const ensuredSession = bootstrapSession ?? await tx.session.create({
+        data: {
+          clientId: userId,
+          stylistId: stylistUserId || null,
+          planType: planType as PlanType,
+          status: "BOOKED",
+          amountPaidInCents: plan.priceInCents,
+          styleboardsAllowed: plan.styleboards,
+          moodboardsAllowed: plan.moodboards,
+          isMembership: true,
+          subscriptionId: ensuredSub.id,
+        },
+        select: { id: true, status: true, stylistId: true },
+      });
+
+      return { ensuredSub, ensuredSession };
+    });
+
+    localSub = result.ensuredSub;
+    bootstrapSession = result.ensuredSession;
   }
 
-  // Create local subscription record
-  const localSub = await prisma.subscription.create({
-    data: {
-      userId,
-      stylistId: stylistUserId || null,
-      planType: planType as PlanType,
-      status: "TRIALING",
-      stripeSubscriptionId: subscription.id,
-      stripePriceId: subscription.items.data[0]?.price?.id ?? null,
-      trialEndsAt: subscription.trial_end
-        ? new Date(subscription.trial_end * 1000)
-        : null,
-      currentPeriodStart: subscription.items.data[0]?.current_period_start
-        ? new Date(subscription.items.data[0].current_period_start * 1000)
-        : new Date(subscription.start_date * 1000),
-      currentPeriodEnd: subscription.items.data[0]?.current_period_end
-        ? new Date(subscription.items.data[0].current_period_end * 1000)
-        : null,
-    },
+  const recoveryPlan = buildSessionRecoveryPlan({
+    existingSession: bootstrapSession,
+    explicitStylistUserId: stylistUserId,
   });
 
-  // Create first session for this subscription
-  const newSession = await prisma.session.create({
-    data: {
-      clientId: userId,
-      stylistId: stylistUserId || null,
-      planType: planType as PlanType,
-      status: "BOOKED",
-      amountPaidInCents: plan.priceInCents,
-      styleboardsAllowed: plan.styleboards,
-      moodboardsAllowed: plan.moodboards,
-      isMembership: true,
-      subscriptionId: localSub.id,
-    },
-  });
-
-  // Only run auto-matcher when no specific stylist was pre-selected
-  if (!stylistUserId) {
-    await matchStylistForSession(newSession.id);
+  if (bootstrapSession && recoveryPlan.shouldAutoMatch) {
+    await matchStylistForSession(bootstrapSession.id);
   }
 }
 
@@ -199,46 +240,48 @@ export async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
   });
   if (!localSub) return;
 
-  // Idempotency: skip if a session for this billing period already exists
   const periodStart = invoice.period_start ? new Date(invoice.period_start * 1000) : null;
   const periodEnd = invoice.period_end ? new Date(invoice.period_end * 1000) : null;
-  if (periodStart) {
-    const existing = await prisma.session.findFirst({
-      where: {
-        subscriptionId: localSub.id,
-        createdAt: {
-          gte: periodStart,
-          ...(periodEnd ? { lte: periodEnd } : {}),
+  let renewalSession = periodStart
+    ? await prisma.session.findFirst({
+        where: {
+          subscriptionId: localSub.id,
+          createdAt: {
+            gte: periodStart,
+            ...(periodEnd ? { lte: periodEnd } : {}),
+          },
         },
-      },
-    });
-    if (existing) {
-      console.warn("[stripe] Duplicate invoice.payment_succeeded for sub", subId, "period", periodStart);
-      return;
-    }
-  }
+        select: { id: true, status: true, stylistId: true },
+      })
+    : null;
 
   const plan = await getPlanByType(localSub.planType);
   if (!plan) return;
 
-  // Create new session for this billing cycle
-  const newSession = await prisma.session.create({
-    data: {
-      clientId: localSub.userId,
-      stylistId: localSub.stylistId,
-      planType: localSub.planType,
-      status: "BOOKED",
-      amountPaidInCents: plan.priceInCents,
-      styleboardsAllowed: plan.styleboards,
-      moodboardsAllowed: plan.moodboards,
-      isMembership: true,
-      subscriptionId: localSub.id,
-    },
+  if (!renewalSession) {
+    renewalSession = await prisma.session.create({
+      data: {
+        clientId: localSub.userId,
+        stylistId: localSub.stylistId,
+        planType: localSub.planType,
+        status: "BOOKED",
+        amountPaidInCents: plan.priceInCents,
+        styleboardsAllowed: plan.styleboards,
+        moodboardsAllowed: plan.moodboards,
+        isMembership: true,
+        subscriptionId: localSub.id,
+      },
+      select: { id: true, status: true, stylistId: true },
+    });
+  }
+
+  const recoveryPlan = buildSessionRecoveryPlan({
+    existingSession: renewalSession,
+    explicitStylistUserId: localSub.stylistId,
   });
 
-  // Only run auto-matcher when no specific stylist is assigned
-  if (!localSub.stylistId) {
-    await matchStylistForSession(newSession.id);
+  if (renewalSession && recoveryPlan.shouldAutoMatch) {
+    await matchStylistForSession(renewalSession.id);
   }
 }
 
@@ -270,6 +313,53 @@ export async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
       status: "FROZEN",
       frozenAt: new Date(),
       frozenReason: "subscription_payment_failed",
+    },
+  });
+}
+
+async function createOrUpdatePaymentRecord({
+  amountInCents,
+  paymentIntentId,
+  sessionId,
+  tx,
+  userId,
+}: {
+  amountInCents: number;
+  paymentIntentId: string | null;
+  sessionId: string;
+  tx: { payment: typeof prisma.payment };
+  userId: string;
+}) {
+  if (paymentIntentId) {
+    await tx.payment.upsert({
+      where: { stripePaymentIntentId: paymentIntentId },
+      update: {
+        amountInCents,
+        sessionId,
+        status: "SUCCEEDED",
+        type: "SESSION",
+        userId,
+      },
+      create: {
+        userId,
+        sessionId,
+        type: "SESSION",
+        status: "SUCCEEDED",
+        amountInCents,
+        stripePaymentIntentId: paymentIntentId,
+      },
+    });
+    return;
+  }
+
+  await tx.payment.create({
+    data: {
+      userId,
+      sessionId,
+      type: "SESSION",
+      status: "SUCCEEDED",
+      amountInCents,
+      stripePaymentIntentId: null,
     },
   });
 }

@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { createOneTimeCheckout, createSubscriptionCheckout } from "@/lib/payments/checkout";
 import { hasActiveSessionWithStylist } from "@/lib/sessions/queries";
 import type { PlanType } from "@/generated/prisma/client";
+import { resolveAppUrl } from "@/lib/app-url";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 export async function createCheckout(formData: FormData) {
@@ -47,7 +49,10 @@ export async function createCheckout(formData: FormData) {
     }
   }
 
-  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+  const appUrl = resolveAppUrl({
+    envAppUrl: process.env.APP_URL,
+    headers: await headers(),
+  });
 
   const options = {
     userId: user.id,

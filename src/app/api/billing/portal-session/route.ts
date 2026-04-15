@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
+import { resolveAppUrl } from "@/lib/app-url";
+import { headers } from "next/headers";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +19,10 @@ export async function POST() {
     return NextResponse.json({ error: "No billing account found" }, { status: 404 });
   }
 
-  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+  const appUrl = resolveAppUrl({
+    envAppUrl: process.env.APP_URL,
+    headers: await headers(),
+  });
 
   const portalSession = await stripe.billingPortal.sessions.create({
     customer: user.stripeCustomerId,
