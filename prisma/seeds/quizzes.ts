@@ -35,7 +35,7 @@ export async function seedQuizzes(prisma: PrismaClient) {
       fieldKey: "match_quiz_result.style_direction",
       options: [
         { value: "classic", label: "Classic", imageUrl: null },
-        { value: "minimal", label: "Minimalist", imageUrl: null },
+        { value: "minimalist", label: "Minimalist", imageUrl: null },
         { value: "bohemian", label: "Bohemian", imageUrl: null },
         { value: "edgy", label: "Edgy", imageUrl: null },
         { value: "streetwear", label: "Streetwear", imageUrl: null },

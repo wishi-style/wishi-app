@@ -17,12 +17,23 @@ interface QuizShellProps {
 
 export function QuizShell({ questions, onComplete, isSubmitting }: QuizShellProps) {
   const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, unknown>>({});
+  // Pre-populate default answers for RANGE questions so they are valid without interaction
+  const [answers, setAnswers] = useState<Record<string, unknown>>(() => {
+    const defaults: Record<string, unknown> = {};
+    for (const q of questions) {
+      if (q.questionType === "RANGE") {
+        const meta = q.metadata as { min?: number; max?: number } | null;
+        const min = meta?.min ?? 1;
+        const max = meta?.max ?? 10;
+        defaults[q.fieldKey] = Math.round((min + max) / 2);
+      }
+    }
+    return defaults;
+  });
 
   const current = questions[step];
   const isLast = step === questions.length - 1;
-  const canAdvance =
-    !current.isRequired || (answers[current.fieldKey] !== undefined && answers[current.fieldKey] !== "");
+  const canAdvance = !current.isRequired || isAnswerValid(current.questionType, answers[current.fieldKey]);
 
   const setAnswer = useCallback(
     (value: unknown) => {
@@ -129,6 +140,17 @@ export function QuizShell({ questions, onComplete, isSubmitting }: QuizShellProp
       </div>
     </div>
   );
+}
+
+/** Returns true when the answer for a required question is considered valid. */
+function isAnswerValid(questionType: string, answer: unknown): boolean {
+  if (questionType === "MULTI_SELECT" || questionType === "IMAGE_PICKER") {
+    return Array.isArray(answer) && answer.length > 0;
+  }
+  if (questionType === "RANGE") {
+    return typeof answer === "number";
+  }
+  return answer !== undefined && answer !== "";
 }
 
 function RangeQuestion({

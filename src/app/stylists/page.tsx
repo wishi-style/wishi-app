@@ -60,12 +60,14 @@ async function StylistGrid({ searchParams }: Props) {
 
   const stylistsWithScores = stylists.map((s) => ({
     ...s,
-    matchScore: cosmeticMatchScore(s, quizResult),
+    matchScore: quizResult ? cosmeticMatchScore(s, quizResult) : null,
     name: `${s.user.firstName} ${s.user.lastName}`,
   }));
 
-  // Sort by match score descending
-  stylistsWithScores.sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
+  // Only sort by match score when the user has quiz results; otherwise preserve DB ordering
+  if (quizResult) {
+    stylistsWithScores.sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
+  }
 
   if (stylistsWithScores.length === 0) {
     return (

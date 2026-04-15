@@ -5,7 +5,7 @@ import { matchStylistForSession } from "@/lib/services/match.service";
 import type { PlanType, SubscriptionStatus } from "@/generated/prisma/client";
 
 export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
-  const { userId, planType, stylistId } = session.metadata ?? {};
+  const { userId, planType, stylistUserId } = session.metadata ?? {};
   if (!userId || !planType) {
     console.error("[stripe] Missing metadata on checkout session", session.id);
     return;
@@ -17,20 +17,33 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
     return;
   }
 
+  const paymentIntentId =
+    typeof session.payment_intent === "string"
+      ? session.payment_intent
+      : session.payment_intent?.id ?? null;
+
+  // Idempotency: skip if already processed
+  if (paymentIntentId) {
+    const existing = await prisma.session.findFirst({
+      where: { stripePaymentIntentId: paymentIntentId },
+    });
+    if (existing) {
+      console.warn("[stripe] Duplicate checkout.session.completed for", paymentIntentId);
+      return;
+    }
+  }
+
   // Create session record
   const newSession = await prisma.session.create({
     data: {
       clientId: userId,
-      stylistId: stylistId || null,
+      stylistId: stylistUserId || null,
       planType: planType as PlanType,
       status: "BOOKED",
       amountPaidInCents: session.amount_total ?? plan.priceInCents,
       styleboardsAllowed: plan.styleboards,
       moodboardsAllowed: plan.moodboards,
-      stripePaymentIntentId:
-        typeof session.payment_intent === "string"
-          ? session.payment_intent
-          : session.payment_intent?.id ?? null,
+      stripePaymentIntentId: paymentIntentId,
     },
   });
 
@@ -42,19 +55,18 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
       type: "SESSION",
       status: "SUCCEEDED",
       amountInCents: session.amount_total ?? plan.priceInCents,
-      stripePaymentIntentId:
-        typeof session.payment_intent === "string"
-          ? session.payment_intent
-          : session.payment_intent?.id ?? null,
+      stripePaymentIntentId: paymentIntentId,
     },
   });
 
-  // Run auto-matcher
-  await matchStylistForSession(newSession.id);
+  // Only run auto-matcher when no specific stylist was pre-selected
+  if (!stylistUserId) {
+    await matchStylistForSession(newSession.id);
+  }
 }
 
 export async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
-  const { userId, planType, stylistId } = subscription.metadata ?? {};
+  const { userId, planType, stylistUserId } = subscription.metadata ?? {};
   if (!userId || !planType) {
     console.error("[stripe] Missing metadata on subscription", subscription.id);
     return;
@@ -63,11 +75,20 @@ export async function handleSubscriptionCreated(subscription: Stripe.Subscriptio
   const plan = await getPlanByType(planType as PlanType);
   if (!plan) return;
 
+  // Idempotency: skip if already processed
+  const existing = await prisma.subscription.findUnique({
+    where: { stripeSubscriptionId: subscription.id },
+  });
+  if (existing) {
+    console.warn("[stripe] Duplicate subscription.created for", subscription.id);
+    return;
+  }
+
   // Create local subscription record
   const localSub = await prisma.subscription.create({
     data: {
       userId,
-      stylistId: stylistId || null,
+      stylistId: stylistUserId || null,
       planType: planType as PlanType,
       status: "TRIALING",
       stripeSubscriptionId: subscription.id,
@@ -88,7 +109,7 @@ export async function handleSubscriptionCreated(subscription: Stripe.Subscriptio
   const newSession = await prisma.session.create({
     data: {
       clientId: userId,
-      stylistId: stylistId || null,
+      stylistId: stylistUserId || null,
       planType: planType as PlanType,
       status: "BOOKED",
       amountPaidInCents: plan.priceInCents,
@@ -99,7 +120,10 @@ export async function handleSubscriptionCreated(subscription: Stripe.Subscriptio
     },
   });
 
-  await matchStylistForSession(newSession.id);
+  // Only run auto-matcher when no specific stylist was pre-selected
+  if (!stylistUserId) {
+    await matchStylistForSession(newSession.id);
+  }
 }
 
 export async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
@@ -167,16 +191,32 @@ export async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
   const subId = getSubscriptionIdFromInvoice(invoice);
   if (!subId) return;
 
+  // Skip the initial invoice — the session was already created in subscription.created
+  if (invoice.billing_reason === "subscription_create") return;
+
   const localSub = await prisma.subscription.findUnique({
     where: { stripeSubscriptionId: subId },
   });
   if (!localSub) return;
 
-  // Skip first invoice (session already created on subscription.created)
-  const sessionCount = await prisma.session.count({
-    where: { subscriptionId: localSub.id },
-  });
-  if (sessionCount <= 1) return;
+  // Idempotency: skip if a session for this billing period already exists
+  const periodStart = invoice.period_start ? new Date(invoice.period_start * 1000) : null;
+  const periodEnd = invoice.period_end ? new Date(invoice.period_end * 1000) : null;
+  if (periodStart) {
+    const existing = await prisma.session.findFirst({
+      where: {
+        subscriptionId: localSub.id,
+        createdAt: {
+          gte: periodStart,
+          ...(periodEnd ? { lte: periodEnd } : {}),
+        },
+      },
+    });
+    if (existing) {
+      console.warn("[stripe] Duplicate invoice.payment_succeeded for sub", subId, "period", periodStart);
+      return;
+    }
+  }
 
   const plan = await getPlanByType(localSub.planType);
   if (!plan) return;
@@ -196,7 +236,10 @@ export async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
     },
   });
 
-  await matchStylistForSession(newSession.id);
+  // Only run auto-matcher when no specific stylist is assigned
+  if (!localSub.stylistId) {
+    await matchStylistForSession(newSession.id);
+  }
 }
 
 export async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {

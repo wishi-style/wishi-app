@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
 import { cosmeticMatchScore } from "@/lib/matching/score";
 import Link from "next/link";
+import { WaitlistButton } from "@/components/stylist/waitlist-button";
 
 export const dynamic = "force-dynamic";
 
@@ -182,21 +183,5 @@ export default async function StylistProfilePage({ params }: Props) {
         )}
       </div>
     </main>
-  );
-}
-
-function WaitlistButton({ stylistProfileId }: { stylistProfileId: string }) {
-  return (
-    <form
-      action={`/api/stylists/${stylistProfileId}/waitlist`}
-      method="POST"
-    >
-      <button
-        type="submit"
-        className="rounded-full border border-black bg-white px-8 py-3 text-sm font-medium text-black transition-colors hover:bg-stone-50"
-      >
-        Join Waitlist
-      </button>
-    </form>
   );
 }

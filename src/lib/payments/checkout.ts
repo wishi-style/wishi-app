@@ -7,6 +7,7 @@ interface CheckoutOptions {
   userId: string;
   planType: PlanType;
   stylistId?: string;
+  stylistUserId?: string;
   successUrl: string;
   cancelUrl: string;
 }
@@ -28,7 +29,8 @@ export async function createOneTimeCheckout(options: CheckoutOptions) {
     metadata: {
       userId: options.userId,
       planType: options.planType,
-      stylistId: options.stylistId ?? "",
+      stylistProfileId: options.stylistId ?? "",
+      stylistUserId: options.stylistUserId ?? "",
     },
   });
 }
@@ -54,7 +56,8 @@ export async function createSubscriptionCheckout(options: CheckoutOptions) {
       metadata: {
         userId: options.userId,
         planType: options.planType,
-        stylistId: options.stylistId ?? "",
+        stylistProfileId: options.stylistId ?? "",
+        stylistUserId: options.stylistUserId ?? "",
       },
     },
     success_url: options.successUrl,
@@ -62,7 +65,8 @@ export async function createSubscriptionCheckout(options: CheckoutOptions) {
     metadata: {
       userId: options.userId,
       planType: options.planType,
-      stylistId: options.stylistId ?? "",
+      stylistProfileId: options.stylistId ?? "",
+      stylistUserId: options.stylistUserId ?? "",
     },
   });
 }

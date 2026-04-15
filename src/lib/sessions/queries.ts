@@ -11,8 +11,8 @@ export async function getSessionsByClient(userId: string) {
 }
 
 export async function getSessionById(sessionId: string) {
-  return prisma.session.findUnique({
-    where: { id: sessionId },
+  return prisma.session.findFirst({
+    where: { id: sessionId, deletedAt: null },
     include: {
       client: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
       stylist: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },

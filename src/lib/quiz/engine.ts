@@ -19,16 +19,24 @@ export async function persistMatchQuizAnswers(
   guestToken: string | null,
   userId: string | null
 ) {
+  // QuizShell keys answers by the full fieldKey (e.g. "match_quiz_result.gender_to_style").
+  // Normalize to bare keys for easy access.
+  const bare: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(answers)) {
+    const bareKey = key.includes(".") ? key.split(".").pop()! : key;
+    bare[bareKey] = value;
+  }
+
   return prisma.matchQuizResult.create({
     data: {
       userId,
       guestToken,
-      genderToStyle: answers.gender_to_style as string | undefined
-        ? (answers.gender_to_style as "MALE" | "FEMALE" | "NON_BINARY" | "PREFER_NOT_TO_SAY")
+      genderToStyle: bare.gender_to_style as string | undefined
+        ? (bare.gender_to_style as "MALE" | "FEMALE" | "NON_BINARY" | "PREFER_NOT_TO_SAY")
         : undefined,
-      styleDirection: (answers.style_direction as string[]) ?? [],
-      occasion: (answers.occasion as string) ?? null,
-      budgetBracket: (answers.budget_bracket as string) ?? null,
+      styleDirection: (bare.style_direction as string[]) ?? [],
+      occasion: (bare.occasion as string) ?? null,
+      budgetBracket: (bare.budget_bracket as string) ?? null,
       rawAnswers: answers as Prisma.InputJsonValue,
     },
   });

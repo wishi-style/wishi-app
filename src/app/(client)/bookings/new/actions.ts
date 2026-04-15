@@ -6,7 +6,6 @@ import { createOneTimeCheckout, createSubscriptionCheckout } from "@/lib/payment
 import { hasActiveSessionWithStylist } from "@/lib/sessions/queries";
 import type { PlanType } from "@/generated/prisma/client";
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
 
 export async function createCheckout(formData: FormData) {
   const { userId: clerkId } = await auth();
@@ -19,7 +18,7 @@ export async function createCheckout(formData: FormData) {
   if (!user) throw new Error("User not found");
 
   const planType = formData.get("planType") as PlanType;
-  const stylistId = (formData.get("stylistId") as string) || undefined;
+  const stylistProfileId = (formData.get("stylistId") as string) || undefined;
   const isSubscription = formData.get("isSubscription") === "true";
 
   if (!planType || !["MINI", "MAJOR", "LUX"].includes(planType)) {
@@ -30,24 +29,33 @@ export async function createCheckout(formData: FormData) {
     throw new Error("Lux plan is one-time only");
   }
 
-  // Active session guard
-  if (stylistId) {
-    const hasActive = await hasActiveSessionWithStylist(user.id, stylistId);
+  // Validate the stylist profile exists and resolve to a user id
+  let stylistUserId: string | undefined;
+  if (stylistProfileId) {
+    const profile = await prisma.stylistProfile.findUnique({
+      where: { id: stylistProfileId },
+      select: { userId: true },
+    });
+    if (!profile) {
+      throw new Error("Stylist not found");
+    }
+    stylistUserId = profile.userId;
+
+    const hasActive = await hasActiveSessionWithStylist(user.id, stylistProfileId);
     if (hasActive) {
       redirect("/sessions");
     }
   }
 
-  const headerList = await headers();
-  const origin = headerList.get("origin") || headerList.get("x-forwarded-host") || "http://localhost:3000";
-  const baseUrl = origin.startsWith("http") ? origin : `https://${origin}`;
+  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
 
   const options = {
     userId: user.id,
     planType,
-    stylistId,
-    successUrl: `${baseUrl}/bookings/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancelUrl: `${baseUrl}/bookings/new${stylistId ? `?stylistId=${stylistId}` : ""}`,
+    stylistId: stylistProfileId,
+    stylistUserId,
+    successUrl: `${appUrl}/bookings/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancelUrl: `${appUrl}/bookings/new${stylistProfileId ? `?stylistId=${stylistProfileId}` : ""}`,
   };
 
   const session = isSubscription
