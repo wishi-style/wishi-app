@@ -102,7 +102,7 @@ test.describe("stylist auto-matcher", () => {
     expect(dbSession.client_id).toBe(client.id);
   });
 
-  test("auto-matcher picks stylist with lowest workload", async ({ page }) => {
+  test("auto-matcher picks stylist with lowest workload", async () => {
     const clientEmail = `workload-client-${Date.now()}@e2e.wishi.test`;
     const busyEmail = `workload-busy-${Date.now()}@e2e.wishi.test`;
     const freeEmail = `workload-free-${Date.now()}@e2e.wishi.test`;
@@ -282,8 +282,8 @@ test.describe("stylist auto-matcher", () => {
  * which can't be imported directly from Playwright's Node context.
  */
 async function callMatchService(sessionId: string): Promise<unknown> {
-  const { execSync } = require("node:child_process") as typeof import("node:child_process");
-  const path = require("node:path") as typeof import("node:path");
+  const { execSync } = await import("node:child_process");
+  const path = await import("node:path");
   const appRoot = path.resolve(process.cwd());
 
   try {
