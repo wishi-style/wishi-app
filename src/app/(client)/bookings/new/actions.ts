@@ -1,6 +1,6 @@
 "use server";
 
-import { auth } from "@clerk/nextjs/server";
+import { getServerAuth } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
 import { createOneTimeCheckout, createSubscriptionCheckout } from "@/lib/payments/checkout";
 import { hasActiveSessionWithStylist } from "@/lib/sessions/queries";
@@ -10,7 +10,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 export async function createCheckout(formData: FormData) {
-  const { userId: clerkId } = await auth();
+  const { userId: clerkId } = await getServerAuth();
   if (!clerkId) throw new Error("Not authenticated");
 
   const user = await prisma.user.findUnique({

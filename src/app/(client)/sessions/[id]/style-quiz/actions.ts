@@ -1,19 +1,13 @@
 "use server";
 
-import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { persistStyleQuizAnswers } from "@/lib/quiz/engine";
 import { redirect } from "next/navigation";
+import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 
 export async function submitStyleQuiz(sessionId: string, answers: Record<string, unknown>) {
-  const { userId: clerkId } = await auth();
-  if (!clerkId) throw new Error("Not authenticated");
-
-  const user = await prisma.user.findUnique({
-    where: { clerkId },
-    select: { id: true },
-  });
+  const user = await getCurrentAuthUser();
   if (!user) throw new Error("User not found");
 
   // Verify session ownership

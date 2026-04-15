@@ -1,20 +1,13 @@
-import { auth } from "@clerk/nextjs/server";
-import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getSessionsByClient } from "@/lib/sessions/queries";
 import { SessionCard } from "@/components/session/session-card";
+import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function SessionsPage() {
-  const { userId: clerkId } = await auth();
-  if (!clerkId) redirect("/sign-in");
-
-  const user = await prisma.user.findUnique({
-    where: { clerkId },
-    select: { id: true },
-  });
+  const user = await getCurrentAuthUser();
   if (!user) redirect("/sign-in");
 
   const sessions = await getSessionsByClient(user.id);

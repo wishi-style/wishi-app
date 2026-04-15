@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@clerk/nextjs/server";
+import { getServerAuth } from "@/lib/auth/server-auth";
 import { cosmeticMatchScore } from "@/lib/matching/score";
 import Link from "next/link";
 import { WaitlistButton } from "@/components/stylist/waitlist-button";
@@ -36,7 +36,7 @@ export default async function StylistProfilePage({ params }: Props) {
 
   // Get match score if user has quiz results
   let matchScore: number | null = null;
-  const { userId: clerkId } = await auth();
+  const { userId: clerkId } = await getServerAuth();
   if (clerkId) {
     const user = await prisma.user.findUnique({
       where: { clerkId },

@@ -1,6 +1,6 @@
-import { auth } from "@clerk/nextjs/server";
 import { unauthorized, forbidden } from "next/navigation";
 import type { UserRole } from "@/generated/prisma/client";
+import { getServerAuth } from "./server-auth";
 
 /**
  * Server-side guard that checks both authentication and role authorization.
@@ -10,7 +10,7 @@ import type { UserRole } from "@/generated/prisma/client";
  *   const { userId, role } = await requireRole("CLIENT", "ADMIN");
  */
 export async function requireRole(...allowedRoles: UserRole[]) {
-  const { userId, sessionClaims } = await auth();
+  const { userId, sessionClaims } = await getServerAuth();
 
   if (!userId) {
     unauthorized();

@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@clerk/nextjs/server";
+import { getServerAuth } from "@/lib/auth/server-auth";
 import { cosmeticMatchScore } from "@/lib/matching/score";
 import { StylistCard } from "@/components/stylist/stylist-card";
 import { StylistFilters } from "@/components/stylist/stylist-filters";
@@ -13,7 +13,7 @@ interface Props {
 
 async function StylistGrid({ searchParams }: Props) {
   const params = await searchParams;
-  const { userId: clerkId } = await auth();
+  const { userId: clerkId } = await getServerAuth();
 
   // Get client's latest match quiz result for scoring
   let quizResult = null;
