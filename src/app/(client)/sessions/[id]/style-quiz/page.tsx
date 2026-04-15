@@ -1,0 +1,55 @@
+import { auth } from "@clerk/nextjs/server";
+import { prisma } from "@/lib/prisma";
+import { getQuizWithQuestions } from "@/lib/quiz/engine";
+import { redirect, notFound } from "next/navigation";
+import { StyleQuizClient } from "./style-quiz-client";
+
+export const dynamic = "force-dynamic";
+
+interface Props {
+  params: Promise<{ id: string }>;
+}
+
+export default async function StyleQuizPage({ params }: Props) {
+  const { id: sessionId } = await params;
+  const { userId: clerkId } = await auth();
+  if (!clerkId) redirect("/sign-in");
+
+  const user = await prisma.user.findUnique({
+    where: { clerkId },
+    select: { id: true },
+  });
+  if (!user) redirect("/sign-in");
+
+  // Verify session ownership
+  const session = await prisma.session.findUnique({
+    where: { id: sessionId },
+    select: { clientId: true },
+  });
+  if (!session || session.clientId !== user.id) notFound();
+
+  // Check if already completed
+  const existing = await prisma.styleProfile.findUnique({
+    where: { userId: user.id },
+  });
+  if (existing) {
+    redirect(`/sessions/${sessionId}`);
+  }
+
+  const quiz = await getQuizWithQuestions("STYLE_PREFERENCE");
+  if (!quiz || quiz.questions.length === 0) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-stone-500">Style quiz is not available yet.</p>
+      </div>
+    );
+  }
+
+  return (
+    <main className="min-h-screen bg-[#FAF8F5]">
+      <div className="mx-auto max-w-2xl">
+        <StyleQuizClient sessionId={sessionId} questions={quiz.questions} />
+      </div>
+    </main>
+  );
+}

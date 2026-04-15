@@ -12,6 +12,7 @@ Wishi is a styling marketplace. This repo is the Next.js 16 monolith (client, st
 - **Styling:** Tailwind CSS 4 + shadcn/ui (Nova preset, Radix base)
 - **Database:** RDS Postgres 16 via RDS Proxy, Prisma 7 ORM with PG adapter
 - **Auth:** Clerk (Google + Apple + Email) with RBAC via publicMetadata
+- **Payments:** Stripe (one-time + subscription checkout, webhooks, billing portal)
 - **Infra:** AWS ECS Fargate, ALB, S3, Secrets Manager, CloudWatch
 - **IaC:** Terraform (S3 backend, per-env tfvars)
 - **CI/CD:** GitHub Actions (OIDC auth to AWS)
@@ -29,18 +30,22 @@ wishi-app/
 │   ├── staging.tfvars     Staging config
 │   └── production.tfvars  Production config
 ├── prisma/
-│   └── schema.prisma      7 models, 7 enums (User, NotificationPreference, MatchQuizResult, etc.)
+│   ├── schema.prisma      28 models, 25 enums
+│   ├── seed.ts            Entry point for seeding (Plans, Quizzes)
+│   └── seeds/             Domain seeders (plans.ts, quizzes.ts)
 ├── src/
 │   ├── app/
-│   │   ├── (client)/      Client routes: /sessions, /settings
+│   │   ├── (client)/      Client routes: /sessions, /bookings, /settings
 │   │   ├── (stylist)/     Stylist routes: /stylist/*
 │   │   ├── (admin)/       Admin routes: /admin/*
-│   │   ├── api/           health, webhooks/clerk, uploads/presigned
+│   │   ├── api/           health, webhooks/{clerk,stripe}, uploads, stylists, subscriptions, billing
+│   │   ├── match-quiz/    Public match quiz (guest + authenticated)
+│   │   ├── stylists/      Public stylist directory + profiles
 │   │   ├── sign-in/       Clerk sign-in
 │   │   └── sign-up/       Clerk sign-up
-│   ├── components/        nav/, profile/, ui/
+│   ├── components/        nav/, profile/, quiz/, stylist/, session/, booking/, ui/
 │   ├── generated/prisma/  Generated client (gitignored)
-│   └── lib/               prisma.ts, auth/, s3.ts, utils.ts
+│   └── lib/               prisma.ts, stripe.ts, auth/, payments/, quiz/, matching/, sessions/, services/, s3.ts, plans.ts
 ├── next.config.ts         output: standalone
 └── prisma.config.ts       Prisma 7 config
 ```
@@ -58,12 +63,17 @@ wishi-app/
 - **DB connections:** Always use `?sslmode=require` — RDS rejects unencrypted connections
 - **Docker builds:** Build context is the repo root, Dockerfile at `docker/Dockerfile`, target platform `linux/amd64`
 - **Terraform:** Bootstrap applied locally with admin creds. Main infra uses S3 backend (`terraform init -backend-config=staging.tfbackend`)
+- **Stripe client:** Lazy-initialized via Proxy pattern in `src/lib/stripe.ts` (same pattern as prisma.ts)
+- **Quiz engine:** Data-driven quiz renderer. Quiz questions live in DB (`Quiz`/`QuizQuestion` tables), seeded via `prisma/seeds/quizzes.ts`. `fieldKey` on each question maps to the destination model via `src/lib/quiz/field-router.ts`.
+- **Deferred relations:** Some Prisma relations are deferred to future phases. Session.promoCodeId, Payment.giftCardId/promoCodeId are plain String? fields (no FK). Board/Message/Cart/Affiliate relations on Session, and Board relations on StylistProfile, will be added in Phases 3-5.
+- **Prisma JSON fields:** Use `as Prisma.InputJsonValue` when passing `Record<string, unknown>` to JSON columns — Prisma's strict types reject plain Records.
+- **Seeding:** `npx prisma db seed` or `npx tsx prisma/seed.ts` with DATABASE_URL set. Seeds are idempotent (upserts).
 
 ## Build phase progress
 
 - [x] Phase 0: AWS Foundation (ECS, RDS, ALB, S3, CI/CD)
 - [x] Phase 1: Authentication & User Management
-- [ ] Phase 2: Quizzes, Booking & Payments
+- [x] Phase 2: Quizzes, Booking & Payments
 - [ ] Phase 3: Real-Time Chat
 - [ ] Phase 4: Moodboards & Styleboards
 - [ ] Phase 5: Inventory Integration

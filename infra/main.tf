@@ -100,6 +100,8 @@ module "service" {
   db_direct_url_secret_arn = module.database.db_direct_url_secret_arn
   clerk_secret_key_arn     = module.secrets.secret_arns["clerk/secret_key"]
   clerk_webhook_secret_arn = module.secrets.secret_arns["clerk/webhook_secret"]
+  stripe_secret_key_arn    = module.secrets.secret_arns["stripe/secret_key"]
+  stripe_webhook_secret_arn = module.secrets.secret_arns["stripe/webhook_secret"]
   ecr_web_url              = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.project}-web"
   cpu                  = var.ecs_cpu
   memory               = var.ecs_memory

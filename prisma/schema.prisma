@@ -11,6 +11,8 @@ generator client {
 
 // ─── Enums ────────────────────────────────────────────────
 
+// === Auth & Roles ===
+
 enum UserRole {
   CLIENT
   STYLIST
@@ -30,17 +32,181 @@ enum Gender {
   PREFER_NOT_TO_SAY
 }
 
+// === Sessions ===
+
+enum SessionStatus {
+  BOOKED
+  ACTIVE
+  PENDING_END
+  PENDING_END_APPROVAL
+  END_DECLINED
+  COMPLETED
+  FROZEN
+  REASSIGNED
+  CANCELLED
+}
+
+enum PlanType {
+  MINI
+  MAJOR
+  LUX
+}
+
+// === Stylist ===
+
+enum StylistType {
+  IN_HOUSE
+  PLATFORM
+}
+
+enum StylistOnboardingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  PROFILE_CREATED
+  STRIPE_CONNECTED
+  AWAITING_ELIGIBILITY
+  ELIGIBLE
+}
+
+// === Commerce ===
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentType {
+  SESSION
+  UPGRADE
+  TIP
+  GIFT_CARD_PURCHASE
+  GIFT_CARD_REDEMPTION
+  SUBSCRIPTION
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  SKIPPED
+}
+
+enum PayoutTrigger {
+  SESSION_COMPLETED
+  LUX_THIRD_LOOK
+  LUX_FINAL
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  PAUSED
+  CANCELLED
+  EXPIRED
+}
+
+enum SubscriptionFrequency {
+  MONTHLY
+  QUARTERLY
+}
+
+// === Loyalty ===
+
 enum LoyaltyTier {
   BRONZE
-  SILVER
   GOLD
   PLATINUM
 }
+
+// === Preferences ===
+
+enum FitPreference {
+  SLIM
+  REGULAR
+  RELAXED
+  OVERSIZED
+}
+
+enum HeelPreference {
+  FLAT
+  LOW
+  MEDIUM
+  HIGH
+  NO_PREFERENCE
+}
+
+enum JewelryPreference {
+  GOLD
+  SILVER
+  ROSE_GOLD
+  MIXED
+  NO_PREFERENCE
+}
+
+enum BudgetCategory {
+  TOPS
+  BOTTOMS
+  DRESSES
+  OUTERWEAR
+  SHOES
+  BAGS
+  JEWELRY
+  ACCESSORIES
+}
+
+// === Notifications ===
 
 enum NotificationChannel {
   EMAIL
   SMS
   PUSH
+}
+
+// === Quiz ===
+
+enum QuizType {
+  MATCH
+  STYLE_PREFERENCE
+}
+
+enum QuizQuestionType {
+  SINGLE_SELECT
+  MULTI_SELECT
+  TEXT
+  NUMBER
+  RANGE
+  IMAGE_PICKER
+}
+
+// === Pending Actions ===
+
+enum PendingActionType {
+  PENDING_MOODBOARD
+  PENDING_STYLEBOARD
+  PENDING_CLIENT_FEEDBACK
+  PENDING_RESTYLE
+  PENDING_STYLIST_RESPONSE
+  PENDING_FOLLOWUP
+  PENDING_END_APPROVAL
+}
+
+enum PendingActionStatus {
+  OPEN
+  RESOLVED
+  EXPIRED
+}
+
+// === Waitlist ===
+
+enum WaitlistStatus {
+  PENDING
+  NOTIFIED
+  CONVERTED
+  CANCELLED
 }
 
 // ─── Domain 1: Auth & Users ───────────────────────────────
@@ -72,7 +238,7 @@ model User {
   updatedAt       DateTime  @updatedAt @map("updated_at")
   deletedAt       DateTime? @map("deleted_at")
 
-  // Relations
+  // Relations — Domain 1: Auth & Users
   referredByUser    User?                    @relation("UserReferrals", fields: [referredByUserId], references: [id])
   referredUsers     User[]                   @relation("UserReferrals")
   locations         UserLocation[]
@@ -81,6 +247,30 @@ model User {
   notes             UserNote[]
   matchQuizResults  MatchQuizResult[]
   notificationPrefs NotificationPreference[]
+
+  // Relations — Domain 2: Profiles & Preferences
+  styleProfile        StyleProfile?
+  bodyProfile         BodyProfile?
+  budgetByCategory    BudgetByCategory[]
+  colorPreferences    ColorPreference[]
+  fabricPreferences   FabricPreference[]
+  patternPreferences  PatternPreference[]
+  specificPreferences SpecificPreference?
+
+  // Relations — Domain 3: Stylist
+  stylistProfile        StylistProfile?
+  waitlistEntries       StylistWaitlistEntry[]
+  stylistReviewsWritten StylistReview[]
+  favoriteStylists      FavoriteStylist[]
+
+  // Relations — Domain 4: Sessions
+  clientSessions        Session[]              @relation("ClientSessions")
+  stylistSessions       Session[]              @relation("StylistSessions")
+  matchedStylistHistory SessionMatchHistory[]  @relation("ClientMatchHistory")
+
+  // Relations — Domain 8: Commerce
+  payments      Payment[]
+  subscriptions Subscription[]
 
   @@index([email])
   @@index([role])
@@ -150,25 +340,497 @@ model UserNote {
   @@map("user_notes")
 }
 
-// ─── Domain 2: Match Quiz (stub for guest-token claim) ────
+// ─── Domain 2: Profiles, Preferences & Quizzes ───────────
 
 model MatchQuizResult {
-  id             String    @id @default(cuid())
-  userId         String?   @map("user_id")
-  guestToken     String?   @unique @map("guest_token")
-  genderToStyle  Gender?   @map("gender_to_style")
-  styleDirection String[]  @map("style_direction")
-  occasion       String?
-  budgetBracket  String?   @map("budget_bracket")
-  rawAnswers     Json?     @map("raw_answers")
-  completedAt    DateTime  @default(now()) @map("completed_at")
-  claimedAt      DateTime? @map("claimed_at")
+  id            String    @id @default(cuid())
+  userId        String?   @map("user_id")
+  guestToken    String?   @unique @map("guest_token")
+  genderToStyle Gender?   @map("gender_to_style")
+  styleDirection String[] @map("style_direction")
+  occasion      String?
+  budgetBracket String?   @map("budget_bracket")
+  rawAnswers    Json?     @map("raw_answers")
+  completedAt   DateTime  @default(now()) @map("completed_at")
+  claimedAt     DateTime? @map("claimed_at")
 
   user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([guestToken])
   @@map("match_quiz_results")
+}
+
+model StyleProfile {
+  id               String    @id @default(cuid())
+  userId           String    @unique @map("user_id")
+  stylePreferences String[]  @map("style_preferences")
+  styleIcons       String[]  @map("style_icons")
+  comfortZoneLevel Int?      @map("comfort_zone_level")
+  dressCode        String?   @map("dress_code")
+  occupation       String?
+  typicallyWears   String?   @map("typically_wears")
+  needsDescription String?   @db.Text @map("needs_description")
+  quizAnswers      Json?     @map("quiz_answers")
+  quizCompletedAt  DateTime? @map("quiz_completed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("style_profiles")
+}
+
+model BodyProfile {
+  id             String         @id @default(cuid())
+  userId         String         @unique @map("user_id")
+  bodyType       String?        @map("body_type")
+  bodyIssues     String?        @db.Text @map("body_issues")
+  highlightAreas String[]       @map("highlight_areas")
+  height         String?
+  topFit         FitPreference? @map("top_fit")
+  bottomFit      FitPreference? @map("bottom_fit")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sizes BodySize[]
+
+  @@map("body_profiles")
+}
+
+model BodySize {
+  id            String   @id @default(cuid())
+  bodyProfileId String   @map("body_profile_id")
+  category      String
+  size          String
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  bodyProfile BodyProfile @relation(fields: [bodyProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([bodyProfileId, category])
+  @@map("body_sizes")
+}
+
+model ColorPreference {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  color     String
+  isLiked   Boolean  @map("is_liked")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, color])
+  @@map("color_preferences")
+}
+
+model FabricPreference {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  fabric     String
+  isDisliked Boolean  @default(true) @map("is_disliked")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fabric])
+  @@map("fabric_preferences")
+}
+
+model PatternPreference {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  pattern    String
+  isDisliked Boolean  @default(true) @map("is_disliked")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, pattern])
+  @@map("pattern_preferences")
+}
+
+model SpecificPreference {
+  id                String             @id @default(cuid())
+  userId            String             @unique @map("user_id")
+  denimFit          String?            @map("denim_fit")
+  dressStyles       String[]           @map("dress_styles")
+  heelPreference    HeelPreference?    @map("heel_preference")
+  jewelryPreference JewelryPreference? @map("jewelry_preference")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("specific_preferences")
+}
+
+model BudgetByCategory {
+  id         String         @id @default(cuid())
+  userId     String         @map("user_id")
+  category   BudgetCategory
+  minInCents Int            @map("min_in_cents")
+  maxInCents Int            @map("max_in_cents")
+  currency   String         @default("usd")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, category])
+  @@index([userId])
+  @@map("budget_by_category")
+}
+
+// ─── Domain 3: Stylist Profile ────────────────────────────
+
+model StylistProfile {
+  id                    String                  @id @default(cuid())
+  userId                String                  @unique @map("user_id")
+  stylistType           StylistType             @default(PLATFORM) @map("stylist_type")
+  bio                   String?                 @db.Text
+  philosophy            String?                 @db.Text
+  styleSpecialties      String[]                @map("style_specialties")
+  styleExpertiseLevels  Json?                   @map("style_expertise_levels")
+  bodySpecialties       String[]                @map("body_specialties")
+  genderPreference      Gender[]                @map("gender_preference")
+  budgetBrackets        String[]                @map("budget_brackets")
+  expertiseByGender     Json?                   @map("expertise_by_gender")
+  yearsExperience       Int?                    @map("years_experience")
+  isAvailable           Boolean                 @default(true) @map("is_available")
+  directorPick          String?                 @db.Text @map("director_pick")
+  profileMoodboardId    String?                 @unique @map("profile_moodboard_id") // Board relation deferred to Phase 4
+  instagramHandle       String?                 @map("instagram_handle")
+
+  // Onboarding wizard
+  onboardingStatus      StylistOnboardingStatus @default(NOT_STARTED) @map("onboarding_status")
+  onboardingStep        Int                     @default(0) @map("onboarding_step")
+  onboardingCompletedAt DateTime?               @map("onboarding_completed_at")
+
+  // Admin-controlled match eligibility
+  matchEligible      Boolean   @default(false) @map("match_eligible")
+  matchEligibleSetAt DateTime? @map("match_eligible_set_at")
+  matchEligibleSetBy String?   @map("match_eligible_set_by")
+
+  // Stripe Connect (PLATFORM stylists only)
+  stripeConnectId    String? @unique @map("stripe_connect_id")
+  payoutPercentage   Int     @default(70) @map("payout_percentage")
+
+  // Performance
+  averageRating          Float? @map("average_rating")
+  totalSessionsCompleted Int    @default(0) @map("total_sessions_completed")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // profileMoodboard and profileBoards — Board relations deferred to Phase 4
+  payouts         Payout[]
+  waitlistEntries StylistWaitlistEntry[]
+  reviews         StylistReview[]
+  favoritedBy     FavoriteStylist[]
+
+  @@index([stylistType])
+  @@index([isAvailable])
+  @@index([matchEligible])
+  @@index([onboardingStatus])
+  @@index([matchEligible, isAvailable])
+  @@map("stylist_profiles")
+}
+
+model StylistWaitlistEntry {
+  id               String         @id @default(cuid())
+  userId           String         @map("user_id")
+  stylistProfileId String         @map("stylist_profile_id")
+  status           WaitlistStatus @default(PENDING)
+  notifiedAt       DateTime?      @map("notified_at")
+  convertedAt      DateTime?      @map("converted_at")
+  cancelledAt      DateTime?      @map("cancelled_at")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stylistProfile StylistProfile @relation(fields: [stylistProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, stylistProfileId])
+  @@index([stylistProfileId, status])
+  @@index([userId])
+  @@map("stylist_waitlist_entries")
+}
+
+model StylistReview {
+  id               String   @id @default(cuid())
+  stylistProfileId String   @map("stylist_profile_id")
+  userId           String   @map("user_id")
+  sessionId        String?  @map("session_id")
+  rating           Int
+  reviewText       String   @db.Text @map("review_text")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  stylistProfile StylistProfile @relation(fields: [stylistProfileId], references: [id], onDelete: Cascade)
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session        Session?       @relation(fields: [sessionId], references: [id])
+
+  @@unique([userId, stylistProfileId])
+  @@index([stylistProfileId, createdAt])
+  @@map("stylist_reviews")
+}
+
+model FavoriteStylist {
+  id               String   @id @default(cuid())
+  userId           String   @map("user_id")
+  stylistProfileId String   @map("stylist_profile_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stylistProfile StylistProfile @relation(fields: [stylistProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, stylistProfileId])
+  @@index([userId])
+  @@map("favorite_stylists")
+}
+
+// ─── Domain 4: Sessions ──────────────────────────────────
+
+model Session {
+  id                   String        @id @default(cuid())
+  clientId             String        @map("client_id")
+  stylistId            String?       @map("stylist_id")
+  planType             PlanType      @map("plan_type")
+  status               SessionStatus @default(BOOKED)
+  amountPaidInCents    Int           @map("amount_paid_in_cents")
+  tipInCents           Int           @default(0) @map("tip_in_cents")
+  currency             String        @default("usd")
+
+  // Plan limits
+  moodboardsAllowed  Int @default(1) @map("moodboards_allowed")
+  styleboardsAllowed Int @map("styleboards_allowed")
+  bonusBoardsGranted Int @default(0) @map("bonus_boards_granted")
+
+  // Tracking
+  moodboardsSent  Int @default(0) @map("moodboards_sent")
+  styleboardsSent Int @default(0) @map("styleboards_sent")
+  revisionsSent   Int @default(0) @map("revisions_sent")
+  itemsSent       Int @default(0) @map("items_sent")
+  singleItemsSent Int @default(0) @map("single_items_sent")
+
+  // Promo & membership
+  promoCodeId  String?  @map("promo_code_id") // PromoCode relation deferred to Phase 9
+  isMembership Boolean  @default(false) @map("is_membership")
+
+  // Plan upgrades
+  upgradedAt           DateTime? @map("upgraded_at")
+  upgradedFromPlanType PlanType? @map("upgraded_from_plan_type")
+
+  // Chat
+  twilioChannelSid String? @unique @map("twilio_channel_sid")
+
+  // AI-generated match message
+  matchMessage String? @db.Text @map("match_message")
+
+  // Timing & state-transition timestamps
+  startedAt           DateTime? @map("started_at")
+  startDeadline       DateTime? @map("start_deadline")
+  deliveredAt         DateTime? @map("delivered_at")
+  endRequestedAt      DateTime? @map("end_requested_at")
+  endApprovalDeadline DateTime? @map("end_approval_deadline")
+  endDeclinedAt       DateTime? @map("end_declined_at")
+  completedAt         DateTime? @map("completed_at")
+  cancelledAt         DateTime? @map("cancelled_at")
+  frozenAt            DateTime? @map("frozen_at")
+  frozenReason        String?   @map("frozen_reason")
+  reassignedAt        DateTime? @map("reassigned_at")
+
+  // Feedback
+  rating     Int?
+  reviewText String?   @db.Text @map("review_text")
+  ratedAt    DateTime? @map("rated_at")
+
+  // Stripe
+  stripePaymentIntentId String? @unique @map("stripe_payment_intent_id")
+  stripeTipPaymentId    String? @unique @map("stripe_tip_payment_id")
+
+  // Subscription
+  subscriptionId String? @map("subscription_id")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Relations
+  client         User          @relation("ClientSessions", fields: [clientId], references: [id])
+  stylist        User?         @relation("StylistSessions", fields: [stylistId], references: [id])
+  subscription   Subscription? @relation("SubscriptionSessions", fields: [subscriptionId], references: [id])
+  // boards, messages, cartItems, affiliateClicks — deferred to Phases 3-5
+  payments       Payment[]
+  matchHistory   SessionMatchHistory[]
+  pendingActions SessionPendingAction[]
+  payouts        Payout[]
+  reviews        StylistReview[]
+
+  @@index([clientId])
+  @@index([stylistId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@index([subscriptionId])
+  @@map("sessions")
+}
+
+model SessionPendingAction {
+  id         String              @id @default(cuid())
+  sessionId  String              @map("session_id")
+  type       PendingActionType
+  status     PendingActionStatus @default(OPEN)
+  boardId    String?             @map("board_id")
+  messageId  String?             @map("message_id")
+  dueAt      DateTime            @map("due_at")
+  resolvedAt DateTime?           @map("resolved_at")
+  expiredAt  DateTime?           @map("expired_at")
+  createdAt  DateTime            @default(now()) @map("created_at")
+  updatedAt  DateTime            @updatedAt @map("updated_at")
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([status, dueAt])
+  @@index([sessionId, status])
+  @@index([type])
+  @@map("session_pending_actions")
+}
+
+model SessionMatchHistory {
+  id          String    @id @default(cuid())
+  sessionId   String    @map("session_id")
+  clientId    String    @map("client_id")
+  stylistId   String    @map("stylist_id")
+  matchedAt   DateTime  @default(now()) @map("matched_at")
+  unmatchedAt DateTime? @map("unmatched_at")
+  reason      String?
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  client  User    @relation("ClientMatchHistory", fields: [clientId], references: [id])
+
+  @@index([sessionId])
+  @@index([clientId])
+  @@index([stylistId])
+  @@map("session_match_history")
+}
+
+// ─── Domain 8: Commerce ──────────────────────────────────
+
+model Plan {
+  id                        String        @id @default(cuid())
+  type                      PlanType      @unique
+  name                      String
+  priceInCents              Int           @map("price_in_cents")
+  currency                  String        @default("usd")
+  moodboards                Int           @default(1)
+  styleboards               Int
+  payoutTrigger             PayoutTrigger @default(SESSION_COMPLETED) @map("payout_trigger")
+  luxMilestoneAmountCents   Int?          @map("lux_milestone_amount_cents")
+  luxMilestoneLookNumber    Int?          @map("lux_milestone_look_number")
+  additionalLookPriceCents  Int           @default(2000) @map("additional_look_price_cents")
+  subscriptionAvailable     Boolean       @default(false) @map("subscription_available")
+  defaultsToSubscription    Boolean       @default(false) @map("defaults_to_subscription")
+  stripeProductId           String?       @unique @map("stripe_product_id")
+  stripePriceIdOneTime      String?       @unique @map("stripe_price_id_one_time")
+  stripePriceIdSubscription String?       @unique @map("stripe_price_id_subscription")
+  trialDays                 Int           @default(0) @map("trial_days")
+  description               String?       @db.Text
+  isActive                  Boolean       @default(true) @map("is_active")
+  createdAt                 DateTime      @default(now()) @map("created_at")
+  updatedAt                 DateTime      @updatedAt @map("updated_at")
+
+  @@map("plans")
+}
+
+model Payment {
+  id                    String        @id @default(cuid())
+  userId                String        @map("user_id")
+  sessionId             String?       @map("session_id")
+  type                  PaymentType
+  status                PaymentStatus @default(PENDING)
+  amountInCents         Int           @map("amount_in_cents")
+  currency              String        @default("usd")
+  stripePaymentIntentId String?       @unique @map("stripe_payment_intent_id")
+  stripeChargeId        String?       @map("stripe_charge_id")
+  giftCardId            String?       @map("gift_card_id")  // GiftCard relation deferred to Phase 9
+  promoCodeId           String?       @map("promo_code_id") // PromoCode relation deferred to Phase 9
+  description           String?
+  metadata              Json?
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+
+  user    User     @relation(fields: [userId], references: [id])
+  session Session? @relation(fields: [sessionId], references: [id])
+
+  @@index([userId])
+  @@index([sessionId])
+  @@index([status])
+  @@index([stripePaymentIntentId])
+  @@map("payments")
+}
+
+model Payout {
+  id               String        @id @default(cuid())
+  stylistProfileId String        @map("stylist_profile_id")
+  sessionId        String?       @map("session_id")
+  trigger          PayoutTrigger @default(SESSION_COMPLETED)
+  amountInCents    Int           @map("amount_in_cents")
+  tipInCents       Int           @default(0) @map("tip_in_cents")
+  currency         String        @default("usd")
+  status           PayoutStatus  @default(PENDING)
+  stripeTransferId String?       @unique @map("stripe_transfer_id")
+  skippedReason    String?       @map("skipped_reason")
+  triggeredAt      DateTime?     @map("triggered_at")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  stylistProfile StylistProfile @relation(fields: [stylistProfileId], references: [id])
+  session        Session?       @relation(fields: [sessionId], references: [id])
+
+  @@unique([sessionId, trigger])
+  @@index([stylistProfileId])
+  @@index([status])
+  @@index([trigger])
+  @@map("payouts")
+}
+
+model Subscription {
+  id                   String                @id @default(cuid())
+  userId               String                @map("user_id")
+  stylistId            String?               @map("stylist_id")
+  planType             PlanType              @map("plan_type")
+  pendingPlanType      PlanType?             @map("pending_plan_type")
+  status               SubscriptionStatus    @default(TRIALING)
+  frequency            SubscriptionFrequency @default(MONTHLY)
+  stripeSubscriptionId String                @unique @map("stripe_subscription_id")
+  stripePriceId        String?               @map("stripe_price_id")
+  trialEndsAt          DateTime?             @map("trial_ends_at")
+  currentPeriodStart   DateTime?             @map("current_period_start")
+  currentPeriodEnd     DateTime?             @map("current_period_end")
+  pausedUntil          DateTime?             @map("paused_until")
+  cancelRequestedAt    DateTime?             @map("cancel_requested_at")
+  cancelledAt          DateTime?             @map("cancelled_at")
+  reactivatedAt        DateTime?             @map("reactivated_at")
+  lastPaymentFailedAt  DateTime?             @map("last_payment_failed_at")
+  paymentRetryCount    Int                   @default(0) @map("payment_retry_count")
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+
+  user     User      @relation(fields: [userId], references: [id])
+  sessions Session[] @relation("SubscriptionSessions")
+
+  @@index([userId])
+  @@index([stripeSubscriptionId])
+  @@index([status])
+  @@index([currentPeriodEnd])
+  @@map("subscriptions")
 }
 
 // ─── Domain 10: Notifications ─────────────────────────────
@@ -186,4 +848,44 @@ model NotificationPreference {
 
   @@unique([userId, channel, category])
   @@map("notification_preferences")
+}
+
+// ─── Domain 11: Admin / CMS (Quiz Builder) ────────────────
+
+model Quiz {
+  id          String   @id @default(cuid())
+  type        QuizType @unique
+  title       String
+  description String?  @db.Text
+  isActive    Boolean  @default(true) @map("is_active")
+  version     Int      @default(1)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  questions QuizQuestion[]
+
+  @@map("quizzes")
+}
+
+model QuizQuestion {
+  id           String           @id @default(cuid())
+  quizId       String           @map("quiz_id")
+  prompt       String           @db.Text
+  helperText   String?          @db.Text @map("helper_text")
+  questionType QuizQuestionType @map("question_type")
+  isRequired   Boolean          @default(false) @map("is_required")
+  sortOrder    Int              @default(0) @map("sort_order")
+  options      Json?
+  metadata     Json?
+  fieldKey     String           @map("field_key")
+  isActive     Boolean          @default(true) @map("is_active")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@unique([quizId, sortOrder])
+  @@index([quizId])
+  @@index([sortOrder])
+  @@map("quiz_questions")
 }
