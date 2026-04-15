@@ -1,4 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { E2E_CLERK_ID_COOKIE } from "@/lib/auth/e2e-auth";
 
 const isPublicRoute = createRouteMatcher([
   "/",
@@ -16,6 +17,10 @@ const isPublicRoute = createRouteMatcher([
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
+  if (process.env.E2E_AUTH_MODE === "true" && req.cookies.get(E2E_CLERK_ID_COOKIE)?.value) {
+    return;
+  }
+
   if (!isPublicRoute(req)) {
     await auth.protect();
   }

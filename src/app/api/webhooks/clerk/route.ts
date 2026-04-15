@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateReferralCode } from "@/lib/auth/referral-code";
 import type { AuthProvider, NotificationChannel } from "@/generated/prisma/client";
+import { claimGuestQuizResult } from "@/lib/quiz/claim-guest-quiz";
 
 export const dynamic = "force-dynamic";
 
@@ -55,24 +56,6 @@ async function seedNotificationPreferences(userId: string) {
   }
 
   await prisma.notificationPreference.createMany({ data: rows });
-}
-
-async function claimGuestQuizResult(
-  userId: string,
-  guestToken: string | undefined,
-) {
-  if (!guestToken) return;
-
-  await prisma.matchQuizResult.updateMany({
-    where: {
-      guestToken,
-      userId: null,
-    },
-    data: {
-      userId,
-      claimedAt: new Date(),
-    },
-  });
 }
 
 async function handleUserCreated(data: UserJSON) {

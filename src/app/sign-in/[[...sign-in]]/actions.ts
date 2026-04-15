@@ -1,0 +1,32 @@
+"use server";
+
+import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import { setE2EAuthCookies } from "@/lib/auth/server-auth";
+import { isE2EAuthModeEnabled } from "@/lib/auth/e2e-auth";
+
+export async function signInForE2E(formData: FormData) {
+  if (!isE2EAuthModeEnabled()) {
+    throw new Error("E2E sign-in is only available when E2E_AUTH_MODE=true");
+  }
+
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  if (!email) {
+    throw new Error("Email is required");
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: { clerkId: true, role: true },
+  });
+  if (!user?.clerkId) {
+    throw new Error("Test user not found");
+  }
+
+  await setE2EAuthCookies({
+    clerkId: user.clerkId,
+    role: user.role,
+  });
+
+  redirect("/sessions");
+}

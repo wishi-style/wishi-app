@@ -1,8 +1,8 @@
-import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { getQuizWithQuestions } from "@/lib/quiz/engine";
 import { redirect, notFound } from "next/navigation";
 import { StyleQuizClient } from "./style-quiz-client";
+import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -12,13 +12,7 @@ interface Props {
 
 export default async function StyleQuizPage({ params }: Props) {
   const { id: sessionId } = await params;
-  const { userId: clerkId } = await auth();
-  if (!clerkId) redirect("/sign-in");
-
-  const user = await prisma.user.findUnique({
-    where: { clerkId },
-    select: { id: true },
-  });
+  const user = await getCurrentAuthUser();
   if (!user) redirect("/sign-in");
 
   // Verify session ownership
