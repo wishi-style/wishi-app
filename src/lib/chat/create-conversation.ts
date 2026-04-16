@@ -64,6 +64,10 @@ export async function createChatConversation(sessionId: string): Promise<string>
         kind: "SYSTEM_AUTOMATED",
         systemTemplate: SystemTemplate.WELCOME,
       }),
+      // Tell Twilio to fire post-event webhooks for this server-sent message
+      // so handleMessageAdded persists it to our Message table. Without this,
+      // REST-API messages bypass the webhook to prevent loops.
+      xTwilioWebhookEnabled: "true",
     });
 
   return conversation.sid;
