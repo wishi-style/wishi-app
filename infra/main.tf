@@ -102,6 +102,13 @@ module "service" {
   clerk_webhook_secret_arn = module.secrets.secret_arns["clerk/webhook_secret"]
   stripe_secret_key_arn    = module.secrets.secret_arns["stripe/secret_key"]
   stripe_webhook_secret_arn = module.secrets.secret_arns["stripe/webhook_secret"]
+  twilio_account_sid_arn               = module.secrets.secret_arns["twilio/account_sid"]
+  twilio_auth_token_arn                = module.secrets.secret_arns["twilio/auth_token"]
+  twilio_api_key_sid_arn               = module.secrets.secret_arns["twilio/api_key_sid"]
+  twilio_api_key_secret_arn            = module.secrets.secret_arns["twilio/api_key_secret"]
+  twilio_conversations_service_sid_arn = module.secrets.secret_arns["twilio/conversations_service_sid"]
+  vapid_public_key_arn                 = module.secrets.secret_arns["web_push/vapid_public_key"]
+  vapid_private_key_arn                = module.secrets.secret_arns["web_push/vapid_private_key"]
   ecr_web_url              = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.project}-web"
   cpu                  = var.ecs_cpu
   memory               = var.ecs_memory

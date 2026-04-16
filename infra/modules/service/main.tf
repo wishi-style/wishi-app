@@ -10,6 +10,13 @@ variable "clerk_secret_key_arn" { type = string }
 variable "clerk_webhook_secret_arn" { type = string }
 variable "stripe_secret_key_arn" { type = string }
 variable "stripe_webhook_secret_arn" { type = string }
+variable "twilio_account_sid_arn" { type = string }
+variable "twilio_auth_token_arn" { type = string }
+variable "twilio_api_key_sid_arn" { type = string }
+variable "twilio_api_key_secret_arn" { type = string }
+variable "twilio_conversations_service_sid_arn" { type = string }
+variable "vapid_public_key_arn" { type = string }
+variable "vapid_private_key_arn" { type = string }
 variable "ecr_web_url" { type = string }
 variable "cpu" {
   type    = number
@@ -275,6 +282,13 @@ resource "aws_ecs_task_definition" "web" {
       { name = "CLERK_WEBHOOK_SIGNING_SECRET", valueFrom = var.clerk_webhook_secret_arn },
       { name = "STRIPE_SECRET_KEY", valueFrom = var.stripe_secret_key_arn },
       { name = "STRIPE_WEBHOOK_SECRET", valueFrom = var.stripe_webhook_secret_arn },
+      { name = "TWILIO_ACCOUNT_SID", valueFrom = var.twilio_account_sid_arn },
+      { name = "TWILIO_AUTH_TOKEN", valueFrom = var.twilio_auth_token_arn },
+      { name = "TWILIO_API_KEY_SID", valueFrom = var.twilio_api_key_sid_arn },
+      { name = "TWILIO_API_KEY_SECRET", valueFrom = var.twilio_api_key_secret_arn },
+      { name = "TWILIO_CONVERSATIONS_SERVICE_SID", valueFrom = var.twilio_conversations_service_sid_arn },
+      { name = "VAPID_PUBLIC_KEY", valueFrom = var.vapid_public_key_arn },
+      { name = "VAPID_PRIVATE_KEY", valueFrom = var.vapid_private_key_arn },
     ]
 
     logConfiguration = {

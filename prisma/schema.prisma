@@ -209,6 +209,19 @@ enum WaitlistStatus {
   CANCELLED
 }
 
+// === Chat ===
+
+enum MessageKind {
+  TEXT
+  PHOTO
+  MOODBOARD
+  STYLEBOARD
+  RESTYLE
+  SINGLE_ITEM
+  END_SESSION_REQUEST
+  SYSTEM_AUTOMATED
+}
+
 // ─── Domain 1: Auth & Users ───────────────────────────────
 
 model User {
@@ -267,6 +280,10 @@ model User {
   clientSessions        Session[]              @relation("ClientSessions")
   stylistSessions       Session[]              @relation("StylistSessions")
   matchedStylistHistory SessionMatchHistory[]  @relation("ClientMatchHistory")
+
+  // Relations — Domain 5: Chat & Notifications
+  messages          Message[]
+  pushSubscriptions PushSubscription[]
 
   // Relations — Domain 8: Commerce
   payments      Payment[]
@@ -665,7 +682,8 @@ model Session {
   client         User          @relation("ClientSessions", fields: [clientId], references: [id])
   stylist        User?         @relation("StylistSessions", fields: [stylistId], references: [id])
   subscription   Subscription? @relation("SubscriptionSessions", fields: [subscriptionId], references: [id])
-  // boards, messages, cartItems, affiliateClicks — deferred to Phases 3-5
+  messages       Message[]
+  // boards, cartItems, affiliateClicks — deferred to Phases 4-5
   payments       Payment[]
   matchHistory   SessionMatchHistory[]
   pendingActions SessionPendingAction[]
@@ -888,4 +906,45 @@ model QuizQuestion {
   @@index([quizId])
   @@index([sortOrder])
   @@map("quiz_questions")
+}
+
+// ─── Domain 5: Chat & Notifications ──────────────────────
+
+model Message {
+  id                           String      @id @default(cuid())
+  sessionId                    String      @map("session_id")
+  userId                       String?     @map("user_id")
+  kind                         MessageKind @default(TEXT)
+  text                         String?     @db.Text
+  mediaUrl                     String?     @map("media_url")
+  mediaS3Key                   String?     @map("media_s3_key")
+  boardId                      String?     @map("board_id")
+  singleItemInventoryProductId String?     @map("single_item_inventory_product_id")
+  singleItemWebUrl             String?     @map("single_item_web_url")
+  systemTemplate               String?     @map("system_template")
+  twilioMessageSid             String?     @unique @map("twilio_message_sid")
+  createdAt                    DateTime    @default(now()) @map("created_at")
+  updatedAt                    DateTime    @updatedAt @map("updated_at")
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id])
+
+  @@index([sessionId, createdAt])
+  @@index([sessionId, kind])
+  @@index([twilioMessageSid])
+  @@map("messages")
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }

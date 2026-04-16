@@ -146,6 +146,15 @@ export default async function SessionDetailPage({ params }: Props) {
               Complete Style Quiz
             </Link>
           )}
+          {session.twilioChannelSid &&
+            ["ACTIVE", "PENDING_END", "PENDING_END_APPROVAL", "END_DECLINED"].includes(session.status) && (
+              <Link
+                href={`/sessions/${session.id}/chat`}
+                className="rounded-full bg-teal-600 px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
+              >
+                Chat with Stylist
+              </Link>
+            )}
         </div>
       </div>
     </main>

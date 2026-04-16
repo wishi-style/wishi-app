@@ -33,6 +33,25 @@ export async function getPresignedUploadUrl(
 }
 
 /**
+ * Generate a presigned PUT URL for chat media uploads.
+ */
+export async function getChatMediaPresignedUrl(
+  sessionId: string,
+  filename: string,
+  contentType: string,
+): Promise<{ uploadUrl: string; key: string; publicUrl: string }> {
+  const key = `chat/${sessionId}/${Date.now()}-${filename}`;
+  const command = new PutObjectCommand({
+    Bucket: getBucket(),
+    Key: key,
+    ContentType: contentType,
+  });
+
+  const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
+  return { uploadUrl, key, publicUrl: getPublicUrl(key) };
+}
+
+/**
  * Build the public URL for an S3 object.
  * Uses direct S3 URL for now; will switch to CloudFront when CDN is configured.
  */

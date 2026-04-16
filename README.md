@@ -11,6 +11,7 @@ Styling marketplace rebuilt as a single Next.js 16 monolith on AWS ECS Fargate.
 | Database | RDS Postgres 16 + RDS Proxy + Prisma 7 |
 | Auth | Clerk (Google + Apple + Email) with RBAC |
 | Payments | Stripe (one-time + subscription checkout, webhooks, billing portal) |
+| Chat | Twilio Conversations (real-time messaging, media, Web Push) |
 | Compute | AWS ECS Fargate behind ALB |
 | CDN | CloudFront (pending) |
 | CI/CD | GitHub Actions with OIDC auth to AWS |
@@ -20,7 +21,7 @@ Styling marketplace rebuilt as a single Next.js 16 monolith on AWS ECS Fargate.
 
 ```bash
 cp .env.example .env
-# Fill in DATABASE_URL, Clerk keys, Stripe keys, and S3 bucket
+# Fill in DATABASE_URL, Clerk keys, Stripe keys, Twilio keys, VAPID keys, and S3 bucket
 npm install
 npx prisma generate
 npx prisma migrate dev
@@ -73,20 +74,20 @@ Pushes to `main` auto-deploy to staging via GitHub Actions. Production deploys a
 ├── docker/               Multi-stage Dockerfile
 ├── infra/                Terraform (bootstrap + modules)
 ├── prisma/
-│   ├── schema.prisma     28 models, 25 enums
+│   ├── schema.prisma     30 models, 26 enums
 │   ├── seed.ts           Entry point for seeding
 │   └── seeds/            Domain seeders (plans, quizzes)
 └── src/
     ├── app/
-    │   ├── (client)/     Client routes: /sessions, /bookings, /settings
-    │   ├── (stylist)/    Stylist routes: /stylist/*
+    │   ├── (client)/     Client routes: /sessions, /sessions/[id]/chat, /bookings, /settings
+    │   ├── (stylist)/    Stylist routes: /stylist/dashboard, /stylist/sessions, /stylist/sessions/[id]/chat
     │   ├── (admin)/      Admin routes: /admin/*
-    │   ├── api/          health, webhooks/{clerk,stripe}, uploads, stylists, subscriptions, billing
+    │   ├── api/          health, webhooks/{clerk,stripe,twilio}, uploads, stylists, subscriptions, billing, chat, push
     │   ├── match-quiz/   Public match quiz (guest + authenticated)
     │   ├── stylists/     Public stylist directory + profiles
     │   ├── sign-in/      Clerk sign-in
     │   └── sign-up/      Clerk sign-up
-    ├── components/       nav/, profile/, quiz/, stylist/, session/, booking/, ui/
-    ├── lib/              prisma.ts, stripe.ts, auth/, payments/, quiz/, matching/, sessions/, services/, s3.ts, plans.ts
+    ├── components/       nav/, profile/, quiz/, stylist/, session/, booking/, chat/, ui/
+    ├── lib/              prisma.ts, stripe.ts, twilio.ts, web-push.ts, auth/, payments/, quiz/, matching/, sessions/, services/, chat/, s3.ts, plans.ts
     └── generated/        Prisma client (gitignored)
 ```
