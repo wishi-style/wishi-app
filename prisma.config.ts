@@ -7,6 +7,10 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL || "",
+    // Use DATABASE_URL everywhere. In staging/prod this points at the
+    // RDS Proxy endpoint, which is the only endpoint reachable from the
+    // ECS task SG. RDS Proxy session-pins on advisory locks so
+    // `prisma migrate deploy` operates correctly through it.
+    url: process.env.DATABASE_URL || "",
   },
 });
