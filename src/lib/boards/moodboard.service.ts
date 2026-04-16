@@ -76,11 +76,14 @@ export async function sendMoodboard(boardId: string): Promise<Board> {
 
   const sessionId = board.sessionId;
 
+  // Atomic compare-and-set on sentAt: null. If a concurrent send already
+  // transitioned the row, skip counters / pending actions / side effects.
   const updated = await prisma.$transaction(async (tx) => {
-    const b = await tx.board.update({
-      where: { id: boardId },
+    const { count } = await tx.board.updateMany({
+      where: { id: boardId, sentAt: null },
       data: { sentAt: new Date() },
     });
+    if (count === 0) return null;
     await tx.session.update({
       where: { id: sessionId },
       data: { moodboardsSent: { increment: 1 } },
@@ -90,8 +93,12 @@ export async function sendMoodboard(boardId: string): Promise<Board> {
       boardId,
       tx,
     });
-    return b;
+    return tx.board.findUniqueOrThrow({ where: { id: boardId } });
   });
+
+  if (!updated) {
+    return prisma.board.findUniqueOrThrow({ where: { id: boardId } });
+  }
 
   const stylist = board.session.stylistId
     ? await prisma.user.findUnique({
@@ -148,14 +155,25 @@ export async function rateMoodboard(
   if (!board.sessionId || !board.session) {
     throw new Error(`Moodboard ${boardId} has no session`);
   }
+  if (!board.sentAt) {
+    throw new Error(`Moodboard ${boardId} has not been sent — cannot rate`);
+  }
+  if (board.rating != null) {
+    throw new Error(`Moodboard ${boardId} has already been rated`);
+  }
 
   const sessionId = board.sessionId;
 
+  // Atomic rate: only transition rows that are sent and not yet rated.
+  // Prevents duplicate PENDING_STYLEBOARD actions from re-rate races.
   const updated = await prisma.$transaction(async (tx) => {
-    const b = await tx.board.update({
-      where: { id: boardId },
+    const { count } = await tx.board.updateMany({
+      where: { id: boardId, rating: null, sentAt: { not: null } },
       data: { rating, feedbackText: feedbackText ?? null, ratedAt: new Date() },
     });
+    if (count === 0) {
+      throw new Error(`Moodboard ${boardId} was already rated`);
+    }
     await resolveAction(sessionId, "PENDING_CLIENT_FEEDBACK", {
       boardId,
       tx,
@@ -163,7 +181,7 @@ export async function rateMoodboard(
     if (rating === "LOVE") {
       await openAction(sessionId, "PENDING_STYLEBOARD", { tx });
     }
-    return b;
+    return tx.board.findUniqueOrThrow({ where: { id: boardId } });
   });
 
   const client = await prisma.user.findUnique({

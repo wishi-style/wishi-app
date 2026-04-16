@@ -87,24 +87,45 @@ export async function addStyleboardItem(
   });
 }
 
-export async function removeStyleboardItem(itemId: string): Promise<void> {
-  await prisma.boardItem.delete({ where: { id: itemId } });
+export async function removeStyleboardItem(
+  boardId: string,
+  itemId: string,
+): Promise<void> {
+  const { count } = await prisma.boardItem.deleteMany({
+    where: { id: itemId, boardId },
+  });
+  if (count === 0) {
+    throw new Error(`Item ${itemId} not found on board ${boardId}`);
+  }
 }
 
 export async function reorderStyleboardItems(
   boardId: string,
   order: string[],
 ): Promise<void> {
+  const existing = await prisma.boardItem.findMany({
+    where: { boardId },
+    select: { id: true },
+  });
+  const existingIds = new Set(existing.map((i) => i.id));
+  if (order.length !== existingIds.size) {
+    throw new Error(
+      `reorder payload has ${order.length} ids but board has ${existingIds.size}`,
+    );
+  }
+  for (const id of order) {
+    if (!existingIds.has(id)) {
+      throw new Error(`Item ${id} does not belong to board ${boardId}`);
+    }
+  }
   await prisma.$transaction(
     order.map((id, idx) =>
-      prisma.boardItem.update({
-        where: { id },
+      prisma.boardItem.updateMany({
+        where: { id, boardId },
         data: { orderIndex: idx },
       }),
     ),
   );
-  // Silently ignore items not on this board — guarded by the route handler.
-  void boardId;
 }
 
 /**
@@ -133,11 +154,15 @@ export async function sendStyleboard(boardId: string): Promise<Board> {
   const sessionId = board.sessionId;
   const isRevision = board.isRevision;
 
+  // Atomic compare-and-set on sentAt: null. If a concurrent send already
+  // transitioned the row, `updated` is null and we return without
+  // re-running counters / side effects.
   const updated = await prisma.$transaction(async (tx) => {
-    const b = await tx.board.update({
-      where: { id: boardId },
+    const { count } = await tx.board.updateMany({
+      where: { id: boardId, sentAt: null },
       data: { sentAt: new Date() },
     });
+    if (count === 0) return null;
     await tx.session.update({
       where: { id: sessionId },
       data: {
@@ -146,8 +171,7 @@ export async function sendStyleboard(boardId: string): Promise<Board> {
         itemsSent: { increment: board.items.length },
       },
     });
-    // Moodboard may not have been explicitly gated; resolve just in case
-    // a styleboard lands without an earlier moodboard decision (edge case).
+    // Resolve the PENDING_STYLEBOARD gate that `rateMoodboard(LOVE)` opens.
     await resolveAction(sessionId, "PENDING_STYLEBOARD", { tx });
     if (isRevision) {
       await resolveAction(sessionId, "PENDING_RESTYLE", { tx });
@@ -156,8 +180,13 @@ export async function sendStyleboard(boardId: string): Promise<Board> {
       boardId,
       tx,
     });
-    return b;
+    return tx.board.findUniqueOrThrow({ where: { id: boardId } });
   });
+
+  if (!updated) {
+    // Lost the race — return the already-sent board, skip side effects.
+    return prisma.board.findUniqueOrThrow({ where: { id: boardId } });
+  }
 
   const stylist = board.session.stylistId
     ? await prisma.user.findUnique({
@@ -239,17 +268,32 @@ export async function rateStyleboard(
   if (board.session.clientId !== clientUserId) {
     throw new Error("Only the client can rate");
   }
+  if (!board.sentAt) {
+    throw new Error(`Styleboard ${boardId} has not been sent — cannot rate`);
+  }
+  if (board.rating != null) {
+    throw new Error(`Styleboard ${boardId} has already been rated`);
+  }
   const sessionId = board.sessionId;
   const subscriptionId = board.session.subscriptionId;
 
   const result = await prisma.$transaction(async (tx) => {
-    const updatedBoard = await tx.board.update({
-      where: { id: boardId },
+    // Atomic rate: only transition rows that haven't been rated yet.
+    // Prevents re-rate races from creating multiple restyle boards or
+    // re-incrementing bonusBoardsGranted.
+    const { count } = await tx.board.updateMany({
+      where: { id: boardId, rating: null, sentAt: { not: null } },
       data: {
         rating: input.rating,
         feedbackText: input.feedbackText ?? null,
         ratedAt: new Date(),
       },
+    });
+    if (count === 0) {
+      throw new Error(`Styleboard ${boardId} was already rated`);
+    }
+    const updatedBoard = await tx.board.findUniqueOrThrow({
+      where: { id: boardId },
     });
 
     if (input.itemFeedback?.length) {

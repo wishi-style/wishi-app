@@ -28,6 +28,10 @@ export async function DELETE(
       { status: 400 },
     );
   }
-  await removeStyleboardItem(itemId);
+  try {
+    await removeStyleboardItem(id, itemId);
+  } catch {
+    return NextResponse.json({ error: "Item not found on board" }, { status: 404 });
+  }
   return NextResponse.json({ ok: true });
 }

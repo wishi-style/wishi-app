@@ -23,6 +23,14 @@ export async function handleMessageAdded(event: TwilioMessageEvent) {
     return;
   }
 
+  // Idempotency: skip early on duplicate Twilio deliveries before doing
+  // any further DB work (user + board lookups below).
+  const existing = await prisma.message.findUnique({
+    where: { twilioMessageSid: event.MessageSid },
+    select: { id: true },
+  });
+  if (existing) return;
+
   // Look up user by Twilio identity (clerkId)
   let userId: string | null = null;
   if (event.Author && event.Author !== "system") {
@@ -62,13 +70,6 @@ export async function handleMessageAdded(event: TwilioMessageEvent) {
     });
     boardId = board?.id ?? null;
   }
-
-  // Idempotency: skip if we already have this Twilio message
-  const existing = await prisma.message.findUnique({
-    where: { twilioMessageSid: event.MessageSid },
-    select: { id: true },
-  });
-  if (existing) return;
 
   await prisma.message.create({
     data: {
