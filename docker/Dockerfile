@@ -31,7 +31,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+# Prisma 7 with the `prisma-client` generator outputs to src/generated/prisma
+# (per schema.prisma), which is included in the .next/standalone bundle via
+# Next.js file tracing. The old `node_modules/.prisma` directory is no longer
+# created. We still copy the prisma CLI and runtime packages explicitly so the
+# container has them for migrations / engine binaries.
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
