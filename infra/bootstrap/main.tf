@@ -273,7 +273,39 @@ resource "aws_iam_policy" "github_deploy" {
         ]
         Resource = [
           "arn:aws:s3:::${var.project}-web-assets-*",
-          "arn:aws:s3:::${var.project}-web-assets-*/*"
+          "arn:aws:s3:::${var.project}-web-assets-*/*",
+          "arn:aws:s3:::${var.project}-uploads-*",
+          "arn:aws:s3:::${var.project}-uploads-*/*"
+        ]
+      },
+      {
+        Sid    = "S3TerraformBucketRead"
+        Effect = "Allow"
+        # Bucket-level configuration reads required for `terraform apply` to
+        # refresh existing-bucket state. Without these, the storage module
+        # apply step fails with AccessDenied on every merge to main even
+        # though no actual storage changes are being made. Scoped to the two
+        # buckets Terraform manages: web-assets and uploads.
+        Action = [
+          "s3:GetBucketVersioning",
+          "s3:GetBucketPublicAccessBlock",
+          "s3:GetEncryptionConfiguration",
+          "s3:GetBucketCORS",
+          "s3:GetLifecycleConfiguration",
+          "s3:GetBucketPolicy",
+          "s3:GetBucketAcl",
+          "s3:GetBucketLogging",
+          "s3:GetBucketTagging",
+          "s3:GetBucketLocation",
+          "s3:GetBucketObjectLockConfiguration",
+          "s3:GetReplicationConfiguration",
+          "s3:GetAccelerateConfiguration",
+          "s3:GetBucketRequestPayment",
+          "s3:GetBucketWebsite"
+        ]
+        Resource = [
+          "arn:aws:s3:::${var.project}-web-assets-*",
+          "arn:aws:s3:::${var.project}-uploads-*"
         ]
       },
       {
