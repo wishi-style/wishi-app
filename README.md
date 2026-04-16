@@ -74,20 +74,20 @@ Pushes to `main` auto-deploy to staging via GitHub Actions. Production deploys a
 ├── docker/               Multi-stage Dockerfile
 ├── infra/                Terraform (bootstrap + modules)
 ├── prisma/
-│   ├── schema.prisma     30 models, 26 enums
+│   ├── schema.prisma     Prisma schema (Users, Sessions, Chat, Boards, Closet, Favorites, Inventory refs)
 │   ├── seed.ts           Entry point for seeding
 │   └── seeds/            Domain seeders (plans, quizzes)
 └── src/
     ├── app/
-    │   ├── (client)/     Client routes: /sessions, /sessions/[id]/chat, /bookings, /settings
-    │   ├── (stylist)/    Stylist routes: /stylist/dashboard, /stylist/sessions, /stylist/sessions/[id]/chat
-    │   ├── (admin)/      Admin routes: /admin/*
-    │   ├── api/          health, webhooks/{clerk,stripe,twilio}, uploads, stylists, subscriptions, billing, chat, push
+    │   ├── (client)/     Client routes: /sessions, /sessions/[id]/workspace, /sessions/[id]/moodboards/*, /sessions/[id]/styleboards/*, /closet, /settings
+    │   ├── (stylist)/    Stylist routes: /stylist/sessions/[id]/workspace, /stylist/sessions/[id]/moodboards/new, /stylist/sessions/[id]/styleboards/new
+    │   ├── (admin)/      Admin routes: /admin/inspiration-photos
+    │   ├── api/          health, webhooks/{clerk,stripe,twilio}, products, moodboards, styleboards, closet, favorites, inspiration-photos, sessions/[id]/end/{request,approve,decline}, uploads, stylists, subscriptions, billing, chat, push
     │   ├── match-quiz/   Public match quiz (guest + authenticated)
     │   ├── stylists/     Public stylist directory + profiles
     │   ├── sign-in/      Clerk sign-in
     │   └── sign-up/      Clerk sign-up
-    ├── components/       nav/, profile/, quiz/, stylist/, session/, booking/, chat/, ui/
-    ├── lib/              prisma.ts, stripe.ts, twilio.ts, web-push.ts, auth/, payments/, quiz/, matching/, sessions/, services/, chat/, s3.ts, plans.ts
+    ├── components/       nav/, profile/, quiz/, stylist/, session/, booking/, chat/, board/, closet/, ui/
+    ├── lib/              prisma.ts, stripe.ts, twilio.ts, web-push.ts, auth/, payments/, quiz/, matching/, sessions/, services/, chat/, boards/, inventory/, pending-actions/, notifications/, s3.ts, plans.ts
     └── generated/        Prisma client (gitignored)
 ```

@@ -2,11 +2,13 @@
 
 import { useEffect, useRef } from "react";
 import type { ChatMessage } from "./use-chat";
-import { MessageBubble } from "./message-renderers";
+import { MessageBubble, type ViewerRole } from "./message-renderers";
 
 interface MessageListProps {
   messages: ChatMessage[];
   currentIdentity: string;
+  sessionId: string;
+  viewerRole: ViewerRole;
 }
 
 function formatDateSeparator(date: Date): string {
@@ -41,7 +43,12 @@ function shouldShowDateSeparator(
   return currentDate !== previousDate;
 }
 
-export function MessageList({ messages, currentIdentity }: MessageListProps) {
+export function MessageList({
+  messages,
+  currentIdentity,
+  sessionId,
+  viewerRole,
+}: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -86,7 +93,12 @@ export function MessageList({ messages, currentIdentity }: MessageListProps) {
               }`}
             >
               <div className="flex flex-col gap-0.5">
-                <MessageBubble message={msg} isOwn={isOwn} />
+                <MessageBubble
+                  message={msg}
+                  isOwn={isOwn}
+                  sessionId={sessionId}
+                  viewerRole={viewerRole}
+                />
                 {!isSystem && (
                   <span
                     className={`text-[10px] text-stone-300 ${isOwn ? "text-right" : "text-left"}`}

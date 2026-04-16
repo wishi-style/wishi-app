@@ -52,6 +52,7 @@ export default async function ClientChatPage({ params }: Props) {
         otherUserName={stylistName}
         otherUserAvatar={session.stylist?.avatarUrl}
         sessionStatus={session.status}
+        viewerRole="CLIENT"
       />
       <PushPermission />
     </div>

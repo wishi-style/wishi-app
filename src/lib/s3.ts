@@ -52,6 +52,59 @@ export async function getChatMediaPresignedUrl(
 }
 
 /**
+ * Presigned PUT for a stylist's custom board photo (moodboard uploads).
+ */
+export async function getBoardPhotoPresignedUrl(
+  stylistUserId: string,
+  filename: string,
+  contentType: string,
+): Promise<{ uploadUrl: string; key: string; publicUrl: string }> {
+  const key = `boards/${stylistUserId}/${Date.now()}-${filename}`;
+  const command = new PutObjectCommand({
+    Bucket: getBucket(),
+    Key: key,
+    ContentType: contentType,
+  });
+  const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
+  return { uploadUrl, key, publicUrl: getPublicUrl(key) };
+}
+
+/**
+ * Presigned PUT for an admin-uploaded inspiration library photo.
+ */
+export async function getInspirationPhotoPresignedUrl(
+  filename: string,
+  contentType: string,
+): Promise<{ uploadUrl: string; key: string; publicUrl: string }> {
+  const key = `inspiration/${Date.now()}-${filename}`;
+  const command = new PutObjectCommand({
+    Bucket: getBucket(),
+    Key: key,
+    ContentType: contentType,
+  });
+  const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
+  return { uploadUrl, key, publicUrl: getPublicUrl(key) };
+}
+
+/**
+ * Presigned PUT for a client-uploaded closet item photo.
+ */
+export async function getClosetItemPresignedUrl(
+  userId: string,
+  filename: string,
+  contentType: string,
+): Promise<{ uploadUrl: string; key: string; publicUrl: string }> {
+  const key = `closet/${userId}/${Date.now()}-${filename}`;
+  const command = new PutObjectCommand({
+    Bucket: getBucket(),
+    Key: key,
+    ContentType: contentType,
+  });
+  const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
+  return { uploadUrl, key, publicUrl: getPublicUrl(key) };
+}
+
+/**
  * Build the public URL for an S3 object.
  * Uses direct S3 URL for now; will switch to CloudFront when CDN is configured.
  */

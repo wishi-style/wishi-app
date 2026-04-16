@@ -403,20 +403,22 @@ test.describe("Phase 3: Real-time chat", () => {
         timeout: 15_000,
       });
 
-      // Board placeholders show 🎨 and label
+      // Board cards show 🎨/✨/🔄 and label
       await expect(page.getByText("Moodboard", { exact: true })).toBeVisible();
       await expect(page.getByText("Styleboard", { exact: true })).toBeVisible();
-      await expect(page.getByText("Restyle Request", { exact: true })).toBeVisible();
+      await expect(page.getByText("Restyle", { exact: true })).toBeVisible();
 
-      // Single item placeholder shows 👗 + product link
+      // Single item card shows 👗 + product link (prefers inventory id)
       await expect(page.getByText("Product Suggestion")).toBeVisible();
-      await expect(page.getByRole("link", { name: "View item" })).toHaveAttribute(
+      await expect(page.getByRole("link", { name: "View product" })).toHaveAttribute(
         "href",
-        "https://example.com/item/123",
+        "/products/inv_test_123",
       );
 
-      // End session card centered
+      // End-session card now renders Approve/Decline CTAs for the client
       await expect(page.getByText("Session end requested")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Approve" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Decline" })).toBeVisible();
 
       await browserCtx.close();
     } finally {
