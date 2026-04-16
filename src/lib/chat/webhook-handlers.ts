@@ -44,11 +44,24 @@ export async function handleMessageAdded(event: TwilioMessageEvent) {
   const kind = (attributes.kind as MessageKind) ?? "TEXT";
   const mediaUrl = (attributes.mediaUrl as string) ?? null;
   const mediaS3Key = (attributes.mediaS3Key as string) ?? null;
-  const boardId = (attributes.boardId as string) ?? null;
+  const rawBoardId = (attributes.boardId as string) ?? null;
   const singleItemInventoryProductId =
     (attributes.singleItemInventoryProductId as string) ?? null;
   const singleItemWebUrl = (attributes.singleItemWebUrl as string) ?? null;
   const systemTemplate = (attributes.systemTemplate as string) ?? null;
+
+  // Message.boardId is a FK with onDelete:SetNull. If the attribute
+  // references a non-existent board (stale webhook, test placeholder,
+  // race with board creation), drop the link rather than failing the
+  // insert — the message kind + attributes remain intact.
+  let boardId: string | null = null;
+  if (rawBoardId) {
+    const board = await prisma.board.findUnique({
+      where: { id: rawBoardId },
+      select: { id: true },
+    });
+    boardId = board?.id ?? null;
+  }
 
   // Idempotency: skip if we already have this Twilio message
   const existing = await prisma.message.findUnique({
