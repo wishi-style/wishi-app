@@ -31,13 +31,15 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
-# Prisma 7 with the `prisma-client` generator outputs to src/generated/prisma
-# (per schema.prisma), which is included in the .next/standalone bundle via
-# Next.js file tracing. The old `node_modules/.prisma` directory is no longer
-# created. We still copy the prisma CLI and runtime packages explicitly so the
-# container has them for migrations / engine binaries.
-COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/package.json ./package.json
+# Copy full node_modules so the deployed image can run `npx prisma migrate
+# deploy` against the production DB during the deploy workflow. Next.js
+# standalone bundles only what the app code traces — it intentionally does
+# NOT include the prisma CLI or its transitive deps (e.g. `effect`), which
+# is why a narrow `node_modules/prisma + @prisma` copy fails at runtime
+# with `Cannot find module 'effect'`. Bloating the image by ~300MB is the
+# right trade-off for reliable in-deploy migrations.
+COPY --from=builder /app/node_modules ./node_modules
 
 USER nextjs
 

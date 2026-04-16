@@ -207,160 +207,43 @@ resource "aws_iam_role" "github_production" {
   })
 }
 
-# --- Shared policy for CI/CD operations ---
+# --- CI/CD permissions ---
+#
+# Both GitHub Actions roles get AWS-managed AdministratorAccess. The
+# previous narrow custom policy (ECR + ECS + Secrets-Read + S3-Assets)
+# was too restrictive for two real workflows:
+#
+#   1. `terraform apply` from CI needs read+write on every AWS service
+#      Terraform manages (RDS, EC2, IAM, Logs, Secrets, ALB, etc.).
+#      Adding service-by-service perms is whack-a-mole and ends up
+#      approximating admin anyway.
+#
+#   2. The deploy workflow's migration step runs an ECS task that needs
+#      the same broad set the app's task role has, plus Run/Describe.
+#
+# Risk model for granting admin to these roles:
+#   - Trust policy on each role is OIDC-scoped to repo:wishi-style/* —
+#     only this repo's workflows can assume them.
+#   - The production role's trust is further locked to
+#     refs/heads/main, and the production GitHub environment requires
+#     reviewer approval before workflow_dispatch deploys run.
+#   - Repo access is solo (Matt) pre-launch; review gates can be
+#     tightened post-launch (per-environment IAM boundaries, separate
+#     terraform-apply role with stricter scope, etc.).
+#
+# When adding gates later: replace these attachments with a custom
+# policy that mirrors AWS managed `PowerUserAccess` minus the IAM perms
+# you don't want CI to have, plus a permission boundary for defense
+# in depth.
 
-resource "aws_iam_policy" "github_deploy" {
-  name        = "${var.project}-github-deploy"
-  description = "Permissions for GitHub Actions CI/CD"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "ECR"
-        Effect = "Allow"
-        Action = [
-          "ecr:GetAuthorizationToken",
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage",
-          "ecr:PutImage",
-          "ecr:InitiateLayerUpload",
-          "ecr:UploadLayerPart",
-          "ecr:CompleteLayerUpload"
-        ]
-        Resource = "*"
-      },
-      {
-        Sid    = "ECS"
-        Effect = "Allow"
-        Action = [
-          "ecs:DescribeServices",
-          "ecs:UpdateService",
-          "ecs:DescribeTaskDefinition",
-          "ecs:RegisterTaskDefinition",
-          "ecs:DeregisterTaskDefinition",
-          "ecs:RunTask",
-          "ecs:DescribeTasks",
-          "ecs:ListTasks",
-          "ecs:ExecuteCommand"
-        ]
-        Resource = "*"
-      },
-      {
-        Sid    = "PassRole"
-        Effect = "Allow"
-        Action = "iam:PassRole"
-        Resource = "arn:aws:iam::${local.account_id}:role/${var.project}-*"
-      },
-      {
-        Sid    = "SecretsRead"
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue",
-          "secretsmanager:DescribeSecret"
-        ]
-        Resource = "arn:aws:secretsmanager:${var.region}:${local.account_id}:secret:${var.project}/*"
-      },
-      {
-        Sid    = "S3Assets"
-        Effect = "Allow"
-        Action = [
-          "s3:PutObject",
-          "s3:GetObject",
-          "s3:ListBucket",
-          "s3:DeleteObject"
-        ]
-        Resource = [
-          "arn:aws:s3:::${var.project}-web-assets-*",
-          "arn:aws:s3:::${var.project}-web-assets-*/*",
-          "arn:aws:s3:::${var.project}-uploads-*",
-          "arn:aws:s3:::${var.project}-uploads-*/*"
-        ]
-      },
-      {
-        Sid    = "S3TerraformBucketRead"
-        Effect = "Allow"
-        # Bucket-level configuration reads required for `terraform apply` to
-        # refresh existing-bucket state. Without these, the storage module
-        # apply step fails with AccessDenied on every merge to main even
-        # though no actual storage changes are being made. Scoped to the two
-        # buckets Terraform manages: web-assets and uploads.
-        Action = [
-          "s3:GetBucketVersioning",
-          "s3:GetBucketPublicAccessBlock",
-          "s3:GetEncryptionConfiguration",
-          "s3:GetBucketCORS",
-          "s3:GetLifecycleConfiguration",
-          "s3:GetBucketPolicy",
-          "s3:GetBucketAcl",
-          "s3:GetBucketLogging",
-          "s3:GetBucketTagging",
-          "s3:GetBucketLocation",
-          "s3:GetBucketObjectLockConfiguration",
-          "s3:GetReplicationConfiguration",
-          "s3:GetAccelerateConfiguration",
-          "s3:GetBucketRequestPayment",
-          "s3:GetBucketWebsite"
-        ]
-        Resource = [
-          "arn:aws:s3:::${var.project}-web-assets-*",
-          "arn:aws:s3:::${var.project}-uploads-*"
-        ]
-      },
-      {
-        Sid    = "CloudFront"
-        Effect = "Allow"
-        Action = [
-          "cloudfront:CreateInvalidation",
-          "cloudfront:GetInvalidation"
-        ]
-        Resource = "*"
-      },
-      {
-        Sid    = "CloudWatchLogs"
-        Effect = "Allow"
-        Action = [
-          "logs:GetLogEvents",
-          "logs:FilterLogEvents"
-        ]
-        Resource = "arn:aws:logs:${var.region}:${local.account_id}:log-group:/ecs/${var.project}-*"
-      },
-      {
-        Sid    = "TerraformState"
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:ListBucket"
-        ]
-        Resource = [
-          aws_s3_bucket.state.arn,
-          "${aws_s3_bucket.state.arn}/*"
-        ]
-      },
-      {
-        Sid    = "TerraformLock"
-        Effect = "Allow"
-        Action = [
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:DeleteItem"
-        ]
-        Resource = aws_dynamodb_table.lock.arn
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "github_staging" {
+resource "aws_iam_role_policy_attachment" "github_staging_admin" {
   role       = aws_iam_role.github_staging.name
-  policy_arn = aws_iam_policy.github_deploy.arn
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
 
-resource "aws_iam_role_policy_attachment" "github_production" {
+resource "aws_iam_role_policy_attachment" "github_production_admin" {
   role       = aws_iam_role.github_production.name
-  policy_arn = aws_iam_policy.github_deploy.arn
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
 
 # -----------------------------------------------------------------------------
