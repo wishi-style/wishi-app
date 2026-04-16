@@ -63,7 +63,19 @@ terraform apply -var-file=staging.tfvars
 
 ## Deployment
 
-Pushes to `main` auto-deploy to staging via GitHub Actions. Production deploys are manual (workflow dispatch with required reviewer).
+Both staging and production deploys are manual (`workflow_dispatch`). CI runs build/lint/typecheck/tests on every PR and merge to main; deploys are triggered explicitly when ready.
+
+```bash
+# 1. Apply migrations to the target DB locally first
+DATABASE_URL=<staging-url> npx prisma migrate deploy
+
+# 2. Trigger the deploy
+gh workflow run "Deploy Staging"
+# or for prod (requires reviewer):
+gh workflow run "Deploy Production"
+```
+
+`Deploy Staging` builds + pushes the image, updates the ECS service, and polls `/api/health` to verify.
 
 **Staging URL:** `http://wishi-staging-alb-823228000.us-east-1.elb.amazonaws.com`
 

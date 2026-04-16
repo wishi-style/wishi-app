@@ -97,6 +97,26 @@ wishi-app/
 - **AWS account:** 815935788935, region us-east-1
 - **DNS/HTTPS/CloudFront:** Deferred — wishi.me Route 53 zone is in the old AWS account
 
+## Deployment workflow
+
+CI runs on every PR + merge (build, lint, typecheck, unit + E2E tests). **Deploys are manual** — both staging and production are `workflow_dispatch` only. This matches the bootstrap convention (infra applied locally with admin creds) and gives an explicit "deploy when ready" gate.
+
+**To deploy a code change to staging:**
+1. Apply any new migrations to the staging DB locally first:
+   ```bash
+   DATABASE_URL=<staging-url-from-secrets-manager> npx prisma migrate deploy
+   ```
+2. Trigger the deploy:
+   ```bash
+   gh workflow run "Deploy Staging"
+   ```
+   (or click "Run workflow" in the Actions tab)
+3. Verify staging at the ALB URL — `Deploy Staging` polls `/api/health` 5x with 10s backoff.
+
+**To deploy to production:** same flow with `Deploy Production` workflow (already gated by the `production` GitHub environment, requires reviewer approval).
+
+**To apply infra changes:** the GitHub Actions IAM role is intentionally narrow (least-privilege for app deploys). `terraform apply` runs locally with admin creds — see the `Infrastructure` section in `README.md`. Plans run automatically on PRs that touch `infra/`.
+
 ## Running locally
 
 ```bash

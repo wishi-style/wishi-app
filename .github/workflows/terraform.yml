@@ -1,22 +1,30 @@
 name: Terraform
 
+# Plan-only on PRs that touch infra/ — gives a preview of changes in the PR
+# discussion. Auto-apply on merge was removed because the GitHub Actions
+# IAM role is intentionally narrowly scoped (least-privilege for app
+# deploys: ECR/ECS/Secrets-Read/S3-Assets) and granting it the
+# read-everything + write-many perms that `terraform apply` requires would
+# defeat the point.
+#
+# Terraform changes are applied manually with admin creds:
+#   cd infra && terraform init -backend-config=staging.tfbackend
+#   terraform apply -var-file=staging.tfvars
+#
+# Same for production (use production.tfbackend / production.tfvars).
 on:
   pull_request:
     paths:
       - "infra/**"
-  push:
-    branches: [main]
-    paths:
-      - "infra/**"
   workflow_dispatch:
     inputs:
-      environment:
-        description: "Environment to apply"
+      action:
+        description: "Plan only (apply still runs locally)"
         required: true
         type: choice
         options:
-          - staging
-          - production
+          - plan-staging
+          - plan-production
 
 permissions:
   id-token: write
@@ -29,7 +37,6 @@ env:
 
 jobs:
   plan:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
     steps:
@@ -38,7 +45,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_STAGING_ROLE_ARN }}
+          role-to-assume: ${{ (github.event.inputs.action == 'plan-production') && vars.AWS_PRODUCTION_ROLE_ARN || vars.AWS_STAGING_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - uses: hashicorp/setup-terraform@v3
@@ -47,62 +54,9 @@ jobs:
 
       - name: Terraform Init
         working-directory: infra
-        run: terraform init -backend-config=staging.tfbackend
+        run: terraform init -backend-config=${{ (github.event.inputs.action == 'plan-production') && 'production' || 'staging' }}.tfbackend
 
       - name: Terraform Plan
         working-directory: infra
-        run: terraform plan -var-file=staging.tfvars -no-color
+        run: terraform plan -var-file=${{ (github.event.inputs.action == 'plan-production') && 'production' || 'staging' }}.tfvars -no-color
         continue-on-error: true
-
-  apply-staging:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    concurrency: terraform-staging
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.AWS_STAGING_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-
-      - name: Terraform Init
-        working-directory: infra
-        run: terraform init -backend-config=staging.tfbackend
-
-      - name: Terraform Apply
-        working-directory: infra
-        run: terraform apply -var-file=staging.tfvars -auto-approve
-
-  apply-manual:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
-    concurrency: terraform-${{ github.event.inputs.environment }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ github.event.inputs.environment == 'production' && vars.AWS_PRODUCTION_ROLE_ARN || vars.AWS_STAGING_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-
-      - name: Terraform Init
-        working-directory: infra
-        run: terraform init -backend-config=${{ github.event.inputs.environment }}.tfbackend
-
-      - name: Terraform Apply
-        working-directory: infra
-        run: terraform apply -var-file=${{ github.event.inputs.environment }}.tfvars -auto-approve
