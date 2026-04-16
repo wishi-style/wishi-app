@@ -123,6 +123,19 @@ async function getMessages(sessionId: string) {
   return rows;
 }
 
+async function insertFixtureBoard(
+  sessionId: string,
+  type: "MOODBOARD" | "STYLEBOARD",
+): Promise<string> {
+  const id = crypto.randomUUID();
+  await getPool().query(
+    `INSERT INTO boards (id, session_id, type, created_at, updated_at)
+     VALUES ($1, $2, $3::"BoardType", NOW(), NOW())`,
+    [id, sessionId, type],
+  );
+  return id;
+}
+
 // ---------------------------------------------------------------------------
 // Browser helpers
 // ---------------------------------------------------------------------------
@@ -325,6 +338,10 @@ test.describe("Phase 3: Real-time chat", () => {
   }) => {
     test.setTimeout(90_000);
     const ctx = await setupChatSession({ prefix: "renderkinds" });
+    // Phase 4: Message.boardId is a FK — create real Board rows so
+    // MOODBOARD/STYLEBOARD/RESTYLE messages can persist with a valid link.
+    const moodboardId = await insertFixtureBoard(ctx.session.id, "MOODBOARD");
+    const styleboardId = await insertFixtureBoard(ctx.session.id, "STYLEBOARD");
     try {
       await expect
         .poll(() => getMessageCount(ctx.session.id), { timeout: 15_000 })
@@ -341,15 +358,15 @@ test.describe("Phase 3: Real-time chat", () => {
       });
       await sendTwilioMessage(ctx.channelSid, {
         author: ctx.stylist.clerkId,
-        attributes: { kind: "MOODBOARD", boardId: "moodboard-test-1" },
+        attributes: { kind: "MOODBOARD", boardId: moodboardId },
       });
       await sendTwilioMessage(ctx.channelSid, {
         author: ctx.stylist.clerkId,
-        attributes: { kind: "STYLEBOARD", boardId: "styleboard-test-1" },
+        attributes: { kind: "STYLEBOARD", boardId: styleboardId },
       });
       await sendTwilioMessage(ctx.channelSid, {
         author: ctx.client.clerkId,
-        attributes: { kind: "RESTYLE", boardId: "styleboard-test-1" },
+        attributes: { kind: "RESTYLE", boardId: styleboardId },
       });
       await sendTwilioMessage(ctx.channelSid, {
         author: ctx.stylist.clerkId,
@@ -386,7 +403,7 @@ test.describe("Phase 3: Real-time chat", () => {
       expect(photo.media_url).toBe("https://placehold.co/600x400/png");
 
       const moodboard = msgs.find((m) => m.kind === "MOODBOARD")!;
-      expect(moodboard.board_id).toBe("moodboard-test-1");
+      expect(moodboard.board_id).toBe(moodboardId);
 
       const singleItem = msgs.find((m) => m.kind === "SINGLE_ITEM")!;
       expect(singleItem.single_item_inventory_product_id).toBe("inv_test_123");
@@ -403,20 +420,22 @@ test.describe("Phase 3: Real-time chat", () => {
         timeout: 15_000,
       });
 
-      // Board placeholders show 🎨 and label
+      // Board cards show 🎨/✨/🔄 and label
       await expect(page.getByText("Moodboard", { exact: true })).toBeVisible();
       await expect(page.getByText("Styleboard", { exact: true })).toBeVisible();
-      await expect(page.getByText("Restyle Request", { exact: true })).toBeVisible();
+      await expect(page.getByText("Restyle", { exact: true })).toBeVisible();
 
-      // Single item placeholder shows 👗 + product link
+      // Single item card shows 👗 + product link (prefers inventory id)
       await expect(page.getByText("Product Suggestion")).toBeVisible();
-      await expect(page.getByRole("link", { name: "View item" })).toHaveAttribute(
+      await expect(page.getByRole("link", { name: "View product" })).toHaveAttribute(
         "href",
-        "https://example.com/item/123",
+        "/products/inv_test_123",
       );
 
-      // End session card centered
+      // End-session card now renders Approve/Decline CTAs for the client
       await expect(page.getByText("Session end requested")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Approve" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Decline" })).toBeVisible();
 
       await browserCtx.close();
     } finally {

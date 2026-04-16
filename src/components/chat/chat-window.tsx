@@ -7,12 +7,15 @@ import { MessageList } from "./message-list";
 import { ChatInput } from "./chat-input";
 import { useDictation } from "./use-dictation";
 
+import type { ViewerRole } from "./message-renderers";
+
 interface ChatWindowProps {
   sessionId: string;
   currentIdentity: string;
   otherUserName: string;
   otherUserAvatar?: string | null;
   sessionStatus: string;
+  viewerRole: ViewerRole;
 }
 
 export function ChatWindow({
@@ -21,6 +24,7 @@ export function ChatWindow({
   otherUserName,
   otherUserAvatar,
   sessionStatus,
+  viewerRole,
 }: ChatWindowProps) {
   const {
     messages,
@@ -107,7 +111,12 @@ export function ChatWindow({
         </div>
       )}
 
-      <MessageList messages={messages} currentIdentity={currentIdentity} />
+      <MessageList
+        messages={messages}
+        currentIdentity={currentIdentity}
+        sessionId={sessionId}
+        viewerRole={viewerRole}
+      />
 
       <ChatInput
         onSendText={handleSendText}

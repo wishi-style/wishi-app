@@ -222,6 +222,26 @@ enum MessageKind {
   SYSTEM_AUTOMATED
 }
 
+// === Boards ===
+
+enum BoardType {
+  MOODBOARD
+  STYLEBOARD
+}
+
+enum BoardRating {
+  LOVE
+  REVISE
+  NOT_MY_STYLE
+}
+
+enum BoardItemSource {
+  INVENTORY
+  CLOSET
+  INSPIRATION_PHOTO
+  WEB_ADDED
+}
+
 // ─── Domain 1: Auth & Users ───────────────────────────────
 
 model User {
@@ -284,6 +304,11 @@ model User {
   // Relations — Domain 5: Chat & Notifications
   messages          Message[]
   pushSubscriptions PushSubscription[]
+
+  // Relations — Domain 6: Boards & Closet
+  closetItems    ClosetItem[]
+  favoriteItems  FavoriteItem[]
+  favoriteBoards FavoriteBoard[]
 
   // Relations — Domain 8: Commerce
   payments      Payment[]
@@ -518,7 +543,7 @@ model StylistProfile {
   yearsExperience       Int?                    @map("years_experience")
   isAvailable           Boolean                 @default(true) @map("is_available")
   directorPick          String?                 @db.Text @map("director_pick")
-  profileMoodboardId    String?                 @unique @map("profile_moodboard_id") // Board relation deferred to Phase 4
+  profileMoodboardId    String?                 @unique @map("profile_moodboard_id")
   instagramHandle       String?                 @map("instagram_handle")
 
   // Onboarding wizard
@@ -543,12 +568,13 @@ model StylistProfile {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  user            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  // profileMoodboard and profileBoards — Board relations deferred to Phase 4
-  payouts         Payout[]
-  waitlistEntries StylistWaitlistEntry[]
-  reviews         StylistReview[]
-  favoritedBy     FavoriteStylist[]
+  user             User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileMoodboard Board?                 @relation("StylistProfileMoodboard", fields: [profileMoodboardId], references: [id])
+  profileBoards    Board[]                @relation("StylistProfileBoards")
+  payouts          Payout[]
+  waitlistEntries  StylistWaitlistEntry[]
+  reviews          StylistReview[]
+  favoritedBy      FavoriteStylist[]
 
   @@index([stylistType])
   @@index([isAvailable])
@@ -683,7 +709,8 @@ model Session {
   stylist        User?         @relation("StylistSessions", fields: [stylistId], references: [id])
   subscription   Subscription? @relation("SubscriptionSessions", fields: [subscriptionId], references: [id])
   messages       Message[]
-  // boards, cartItems, affiliateClicks — deferred to Phases 4-5
+  boards         Board[]
+  // cartItems, affiliateClicks — deferred to Phase 5
   payments       Payment[]
   matchHistory   SessionMatchHistory[]
   pendingActions SessionPendingAction[]
@@ -928,9 +955,11 @@ model Message {
 
   session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   user    User?   @relation(fields: [userId], references: [id])
+  board   Board?  @relation(fields: [boardId], references: [id], onDelete: SetNull)
 
   @@index([sessionId, createdAt])
   @@index([sessionId, kind])
+  @@index([boardId])
   @@index([twilioMessageSid])
   @@map("messages")
 }
@@ -947,4 +976,167 @@ model PushSubscription {
 
   @@index([userId])
   @@map("push_subscriptions")
+}
+
+// ─── Domain 6: Boards, Closet & Favorites ────────────────
+
+model Board {
+  id                  String       @id @default(cuid())
+  type                BoardType
+  sessionId           String?      @map("session_id")
+  stylistProfileId    String?      @map("stylist_profile_id")
+  isFeaturedOnProfile Boolean      @default(false) @map("is_featured_on_profile")
+  profileStyle        String?      @map("profile_style")
+  parentBoardId       String?      @map("parent_board_id")
+  isRevision          Boolean      @default(false) @map("is_revision")
+  title               String?
+  stylistNote         String?      @db.Text @map("stylist_note")
+  sentAt              DateTime?    @map("sent_at")
+  rating              BoardRating?
+  feedbackText        String?      @db.Text @map("feedback_text")
+  ratedAt             DateTime?    @map("rated_at")
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+
+  session        Session?        @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  stylistProfile StylistProfile? @relation("StylistProfileBoards", fields: [stylistProfileId], references: [id], onDelete: SetNull)
+  parentBoard    Board?          @relation("BoardRevisions", fields: [parentBoardId], references: [id], onDelete: SetNull)
+  revisions      Board[]         @relation("BoardRevisions")
+  photos         BoardPhoto[]
+  items          BoardItem[]
+  messages       Message[]
+  favoritedBy    FavoriteBoard[]
+  featuredFor    StylistProfile? @relation("StylistProfileMoodboard")
+
+  @@index([sessionId, type, sentAt])
+  @@index([stylistProfileId, isFeaturedOnProfile, profileStyle])
+  @@index([parentBoardId])
+  @@map("boards")
+}
+
+model BoardItem {
+  id                   String          @id @default(cuid())
+  boardId              String          @map("board_id")
+  source               BoardItemSource
+  orderIndex           Int             @default(0) @map("order_index")
+  inventoryProductId   String?         @map("inventory_product_id")
+  closetItemId         String?         @map("closet_item_id")
+  inspirationPhotoId   String?         @map("inspiration_photo_id")
+  webItemUrl           String?         @map("web_item_url")
+  webItemTitle         String?         @map("web_item_title")
+  webItemBrand         String?         @map("web_item_brand")
+  webItemPriceInCents  Int?            @map("web_item_price_in_cents")
+  webItemImageUrl      String?         @map("web_item_image_url")
+  reaction             BoardRating?
+  feedbackText         String?         @db.Text @map("feedback_text")
+  suggestedFeedback    String[]        @map("suggested_feedback")
+  createdAt            DateTime        @default(now()) @map("created_at")
+  updatedAt            DateTime        @updatedAt @map("updated_at")
+
+  board            Board             @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  closetItem       ClosetItem?       @relation(fields: [closetItemId], references: [id], onDelete: SetNull)
+  inspirationPhoto InspirationPhoto? @relation(fields: [inspirationPhotoId], references: [id], onDelete: SetNull)
+
+  @@index([boardId, orderIndex])
+  @@index([closetItemId])
+  @@index([inspirationPhotoId])
+  @@index([inventoryProductId])
+  @@map("board_items")
+}
+
+model BoardPhoto {
+  id                 String   @id @default(cuid())
+  boardId            String   @map("board_id")
+  s3Key              String   @map("s3_key")
+  url                String
+  orderIndex         Int      @default(0) @map("order_index")
+  inspirationPhotoId String?  @map("inspiration_photo_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  board            Board             @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  inspirationPhoto InspirationPhoto? @relation(fields: [inspirationPhotoId], references: [id], onDelete: SetNull)
+
+  @@index([boardId, orderIndex])
+  @@index([inspirationPhotoId])
+  @@map("board_photos")
+}
+
+model InspirationPhoto {
+  id          String   @id @default(cuid())
+  s3Key       String   @map("s3_key")
+  url         String
+  title       String?
+  category    String?
+  tags        String[]
+  createdBy   String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  boardPhotos BoardPhoto[]
+  boardItems  BoardItem[]
+
+  @@index([category])
+  @@index([deletedAt])
+  @@map("inspiration_photos")
+}
+
+model ClosetItem {
+  id                 String   @id @default(cuid())
+  userId             String   @map("user_id")
+  s3Key              String   @map("s3_key")
+  url                String
+  name               String?
+  designer           String?
+  season             String?
+  category           String?
+  colors             String[]
+  size               String?
+  material           String?
+  sourceOrderItemId  String?  @map("source_order_item_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+  deletedAt          DateTime? @map("deleted_at")
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  boardItems BoardItem[]
+
+  @@index([userId])
+  @@index([userId, category])
+  @@index([userId, designer])
+  @@index([userId, deletedAt])
+  @@map("closet_items")
+}
+
+model FavoriteItem {
+  id                   String   @id @default(cuid())
+  userId               String   @map("user_id")
+  inventoryProductId   String?  @map("inventory_product_id")
+  webUrl               String?  @map("web_url")
+  webItemTitle         String?  @map("web_item_title")
+  webItemBrand         String?  @map("web_item_brand")
+  webItemImageUrl      String?  @map("web_item_image_url")
+  webItemPriceInCents  Int?     @map("web_item_price_in_cents")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, inventoryProductId])
+  @@map("favorite_items")
+}
+
+model FavoriteBoard {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  boardId   String   @map("board_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, boardId])
+  @@index([userId])
+  @@map("favorite_boards")
 }

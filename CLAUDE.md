@@ -71,7 +71,12 @@ wishi-app/
 - **System messages:** Templates in `src/lib/chat/system-templates.ts`. Sent via Twilio API with `author: "system"` and `kind: SYSTEM_AUTOMATED` in attributes. Phase 4 wires the actual triggers.
 - **Twilio REST messages and webhooks:** Server-sent messages via the Twilio REST API DO NOT fire webhooks by default — Twilio suppresses them to prevent infinite loops where a webhook handler that sends a message would trigger another webhook. To make a server-sent message persist via our `/api/webhooks/twilio` handler, pass `xTwilioWebhookEnabled: "true"` to `messages.create()`. Currently used for the WELCOME system message in `createChatConversation`.
 - **Local Twilio webhooks:** Twilio webhooks need a public URL — `localhost:3000` is unreachable. For local dev, set `TWILIO_WEBHOOK_URL` in `.env` to your ngrok tunnel URL (`ngrok http 3000`) and configure the same URL on the Twilio Conversations Service webhook config. The route handler uses `TWILIO_WEBHOOK_URL` for signature verification when set; otherwise reconstructs from `X-Forwarded-*` headers (which is what works in deployed envs behind ALB).
-- **Deferred relations:** Some Prisma relations are deferred to future phases. Session.promoCodeId, Payment.giftCardId/promoCodeId are plain String? fields (no FK). Board/Cart/Affiliate relations on Session, and Board relations on StylistProfile, will be added in Phases 4-5.
+- **Deferred relations:** Some Prisma relations are deferred to future phases. Session.promoCodeId, Payment.giftCardId/promoCodeId are plain String? fields (no FK). Cart and Affiliate relations on Session remain deferred to Phase 5.
+- **Boards (Phase 4):** Polymorphic `Board` (`type = MOODBOARD | STYLEBOARD`). `BoardItem.source` = `INVENTORY | CLOSET | INSPIRATION_PHOTO | WEB_ADDED` with a raw-SQL CHECK constraint enforcing exactly one source field is populated. Restyles live as `Board(type=STYLEBOARD, isRevision=true, parentBoardId=<original>)`. Profile boards (used in Phase 6 stylist onboarding) are `Board(sessionId=null, stylistProfileId=<self>, isFeaturedOnProfile=true, profileStyle=<style>)`. **After running `npx prisma migrate dev --name phase4_boards`, apply `prisma/migrations/phase4_constraints.sql` by hand** (Prisma can't express the polymorphism CHECK or the partial unique indexes on `favorite_items`).
+- **Pending actions:** `src/lib/pending-actions/` exposes `openAction(sessionId, type, opts)` / `resolveAction(sessionId, type, opts)` / `expireAction(id)`. Default `dueAt` offsets (24h/48h/72h/6h) live in `policy.ts` so they can be tuned without a schema change. Every state-transition in `src/lib/sessions/transitions.ts` and `src/lib/boards/*.service.ts` rolls actions atomically in a transaction.
+- **Session transitions:** `src/lib/sessions/transitions.ts` owns `activateSession`, `requestEnd`, `approveEnd`, `declineEnd`, `freezeSession`, `unfreezeSession`, `detectPendingEnd`. Each mutation (a) updates the session, (b) writes a SYSTEM_AUTOMATED chat message via `sendSystemMessage`, (c) rolls pending actions, (d) fan-outs notifications via `lib/notifications/dispatcher.ts`.
+- **Inventory service:** Wishi does NOT store product data locally. `src/lib/inventory/inventory-client.ts` proxies the tastegraph inventory service (`INVENTORY_SERVICE_URL`). 5-minute in-process cache; returns empty arrays on failure so the board builder's Inventory tab degrades gracefully. `inventoryProductId` stored on `BoardItem` / `Message.singleItemInventoryProductId` / `FavoriteItem` is a plain string — resolve it via `/api/products/[id]` at render time.
+- **Sending boards through chat:** Board helpers use Twilio REST with `xTwilioWebhookEnabled="true"` so the webhook handler persists the `Message` row with `kind = MOODBOARD|STYLEBOARD|RESTYLE` + `boardId` attribute. `src/lib/chat/send-message.ts` centralizes the Twilio call; don't call `twilioClient.conversations...messages.create` directly from service code.
 - **Prisma JSON fields:** Use `as Prisma.InputJsonValue` when passing `Record<string, unknown>` to JSON columns — Prisma's strict types reject plain Records.
 - **Seeding:** `npx prisma db seed` or `npx tsx prisma/seed.ts` with DATABASE_URL set. Seeds are idempotent (upserts).
 
@@ -81,7 +86,7 @@ wishi-app/
 - [x] Phase 1: Authentication & User Management
 - [x] Phase 2: Quizzes, Booking & Payments
 - [x] Phase 3: Real-Time Chat
-- [ ] Phase 4: Moodboards & Styleboards
+- [x] Phase 4: Moodboards & Styleboards
 - [ ] Phase 5: Inventory Integration
 - [ ] Phase 6: Stylist Dashboard & Payouts
 - [ ] Phase 7: AI Features
