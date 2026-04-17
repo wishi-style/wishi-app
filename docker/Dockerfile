@@ -32,6 +32,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/package.json ./package.json
+# Generated Prisma client — needed so prisma/seed.ts can import the
+# typed client (it resolves `../src/generated/prisma/client`). Without
+# this, `npx tsx prisma/seed.ts` fails at module resolution.
+COPY --from=builder --chown=nextjs:nodejs /app/src/generated ./src/generated
 # Copy full node_modules so the deployed image can run `npx prisma migrate
 # deploy` against the production DB during the deploy workflow. Next.js
 # standalone bundles only what the app code traces — it intentionally does

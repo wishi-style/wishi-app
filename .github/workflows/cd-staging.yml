@@ -73,6 +73,32 @@ jobs:
           fi
           echo "Migration completed successfully"
 
+      - name: Run database seed (idempotent)
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          TASK_DEF=$(aws ecs describe-task-definition --task-definition $TASK_FAMILY --query 'taskDefinition' --output json)
+          NETWORK_CONFIG=$(aws ecs describe-services --cluster $ECS_CLUSTER --services $ECS_SERVICE --query 'services[0].networkConfiguration' --output json)
+
+          SEED_TASK_ARN=$(aws ecs run-task \
+            --cluster $ECS_CLUSTER \
+            --task-definition $TASK_FAMILY \
+            --launch-type FARGATE \
+            --network-configuration "$NETWORK_CONFIG" \
+            --overrides "{\"containerOverrides\":[{\"name\":\"web\",\"command\":[\"npx\",\"tsx\",\"prisma/seed.ts\"]}]}" \
+            --query 'tasks[0].taskArn' --output text)
+
+          echo "Waiting for seed task to complete..."
+          aws ecs wait tasks-stopped --cluster $ECS_CLUSTER --tasks $SEED_TASK_ARN
+
+          EXIT_CODE=$(aws ecs describe-tasks --cluster $ECS_CLUSTER --tasks $SEED_TASK_ARN --query 'tasks[0].containers[0].exitCode' --output text)
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "Seed failed with exit code $EXIT_CODE"
+            exit 1
+          fi
+          echo "Seed completed successfully"
+
       - name: Update ECS service
         env:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
