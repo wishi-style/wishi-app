@@ -173,6 +173,43 @@ export function UserActions({ user }: { user: ActionUser }) {
             {pending === "note" ? "…" : "Save note"}
           </Button>
         </div>
+
+        <div className="border-t border-border pt-4">
+          <Button
+            variant="destructive"
+            disabled={pending !== null}
+            onClick={async () => {
+              const reason = prompt(
+                "Reason for impersonating this user? (audit logged)",
+              );
+              if (!reason?.trim()) return;
+              setPending("impersonate");
+              try {
+                const res = await fetch(
+                  `/api/admin/users/${user.id}/impersonate`,
+                  {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ reason: reason.trim() }),
+                  },
+                );
+                if (!res.ok) {
+                  const err = await res
+                    .json()
+                    .catch(() => ({ error: res.statusText }));
+                  alert(err.error ?? "Impersonation failed");
+                  return;
+                }
+                const { url } = (await res.json()) as { url: string };
+                window.location.href = url;
+              } finally {
+                setPending(null);
+              }
+            }}
+          >
+            {pending === "impersonate" ? "…" : "Impersonate user"}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

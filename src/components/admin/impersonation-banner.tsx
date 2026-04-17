@@ -1,19 +1,17 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle } from "lucide-react";
 
 export function ImpersonationBanner({ username }: { username?: string }) {
-  const router = useRouter();
   const [ending, setEnding] = useState(false);
 
   async function endImpersonation() {
     setEnding(true);
     await fetch("/api/admin/impersonation/end", { method: "POST" });
-    router.push("/admin/dashboard");
-    router.refresh();
+    // Session is revoked — force a hard navigation so Clerk redirects to sign-in.
+    window.location.href = "/sign-in";
   }
 
   return (
@@ -25,7 +23,12 @@ export function ImpersonationBanner({ username }: { username?: string }) {
           Destructive actions are blocked.
         </span>
       </div>
-      <Button size="sm" variant="outline" onClick={endImpersonation} disabled={ending}>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={endImpersonation}
+        disabled={ending}
+      >
         {ending ? "Ending…" : "End session"}
       </Button>
     </div>
