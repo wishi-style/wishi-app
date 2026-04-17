@@ -112,3 +112,22 @@ export function getPublicUrl(key: string): string {
   const region = process.env.AWS_REGION ?? "us-east-1";
   return `https://${getBucket()}.s3.${region}.amazonaws.com/${key}`;
 }
+
+/**
+ * Direct server-side upload. Used by the URL-based closet scraper to push
+ * fetched product images into the uploads bucket.
+ */
+export async function putObject(
+  key: string,
+  body: Uint8Array,
+  contentType: string,
+): Promise<void> {
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: getBucket(),
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    }),
+  );
+}
