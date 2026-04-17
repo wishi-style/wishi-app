@@ -215,7 +215,45 @@ export async function sendStyleboard(boardId: string): Promise<Board> {
     url: `/sessions/${sessionId}/styleboards/${boardId}`,
   });
 
+  // Lux milestone payout: fires when styleboardsSent reaches the plan's
+  // luxMilestoneLookNumber (3 for Lux). Idempotent via @@unique on
+  // (sessionId, trigger). Revisions don't count toward the milestone (a
+  // restyle is still within the existing look's allowance).
+  if (!isRevision) {
+    await maybeDispatchLuxMilestone(sessionId);
+  }
+
   return updated;
+}
+
+/**
+ * Lux milestone payout hook. Fires on the first non-revision styleboard that
+ * reaches `Plan.luxMilestoneLookNumber`. Swallows errors — a failed milestone
+ * payout should not block the board from reaching the client.
+ */
+async function maybeDispatchLuxMilestone(sessionId: string): Promise<void> {
+  try {
+    const session = await prisma.session.findUnique({
+      where: { id: sessionId },
+      select: { planType: true, styleboardsSent: true },
+    });
+    if (!session) return;
+    const plan = await prisma.plan.findUnique({
+      where: { type: session.planType },
+      select: {
+        payoutTrigger: true,
+        luxMilestoneLookNumber: true,
+      },
+    });
+    if (!plan || plan.payoutTrigger === "SESSION_COMPLETED") return;
+    if (plan.luxMilestoneLookNumber == null) return;
+    if (session.styleboardsSent !== plan.luxMilestoneLookNumber) return;
+
+    const { dispatchPayout } = await import("@/lib/payouts/dispatch.service");
+    await dispatchPayout({ sessionId, trigger: "LUX_THIRD_LOOK" });
+  } catch (error) {
+    console.error("[styleboard] Lux milestone dispatch failed", { sessionId, error });
+  }
 }
 
 export interface ItemFeedback {
