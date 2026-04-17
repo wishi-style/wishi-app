@@ -10,7 +10,8 @@ export type NotificationEvent =
   | "session.end_requested"
   | "session.end_declined"
   | "session.overdue"
-  | "session.auto_completed";
+  | "session.auto_completed"
+  | "stylist.waitlist_available";
 
 export interface DispatchInput {
   event: NotificationEvent;
