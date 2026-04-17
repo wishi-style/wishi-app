@@ -8,6 +8,12 @@ import {
   handleInvoicePaymentSucceeded,
   handleInvoicePaymentFailed,
 } from "@/lib/payments/webhook-handlers";
+import {
+  handleAccountUpdated,
+  handleTipPaymentSucceeded,
+  handleTransferFailed,
+  handleTransferPaid,
+} from "@/lib/payments/payout-webhooks";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +58,18 @@ export async function POST(req: Request) {
         break;
       case "invoice.payment_failed":
         await handleInvoicePaymentFailed(event.data.object);
+        break;
+      case "transfer.paid":
+        await handleTransferPaid(event.data.object);
+        break;
+      case "transfer.failed":
+        await handleTransferFailed(event.data.object);
+        break;
+      case "account.updated":
+        await handleAccountUpdated(event.data.object);
+        break;
+      case "payment_intent.succeeded":
+        await handleTipPaymentSucceeded(event.data.object);
         break;
       default:
         console.log(`[stripe webhook] Unhandled event type: ${event.type}`);
