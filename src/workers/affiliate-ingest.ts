@@ -11,6 +11,7 @@ import { iterateCommissions } from "@/lib/inventory/inventory-client";
 import {
   findCandidateClicks,
   linkOrder,
+  type AffiliateClickWithOrder,
 } from "@/lib/affiliate/click-service";
 import {
   createOrder,
@@ -55,27 +56,45 @@ export async function runAffiliateIngest(
   return summary;
 }
 
-type Action = "skip" | "upgrade" | "create";
+export type CommissionAction = "skip" | "upgrade" | "create";
 
-async function reconcileCommission(event: CommissionEvent): Promise<Action> {
+/**
+ * Pure decision function extracted for unit testing. Given the candidate
+ * clicks for a commission event, decide which dedup branch applies.
+ *   (a) any candidate has an AFFILIATE_CONFIRMED order → skip
+ *   (b) a candidate has a SELF_REPORTED order          → upgrade
+ *   (c) at least one candidate with no order           → create
+ *   (d) no candidates at all                           → skip
+ */
+export function decideCommissionAction(
+  candidates: AffiliateClickWithOrder[],
+): CommissionAction {
+  if (candidates.some((c) => c.order?.source === "AFFILIATE_CONFIRMED")) {
+    return "skip";
+  }
+  if (candidates.some((c) => c.order?.source === "SELF_REPORTED" && c.orderId)) {
+    return "upgrade";
+  }
+  if (candidates.length === 0) return "skip";
+  return "create";
+}
+
+async function reconcileCommission(event: CommissionEvent): Promise<CommissionAction> {
   const orderPlacedAt = new Date(event.order_placed_at);
   const candidates = await findCandidateClicks(
     event.product_id,
     event.merchant_name,
     orderPlacedAt,
   );
+  const action = decideCommissionAction(candidates);
 
-  // (a) — a candidate click already has a confirmed order: already reconciled.
-  const confirmed = candidates.find(
-    (c) => c.order?.source === "AFFILIATE_CONFIRMED",
-  );
-  if (confirmed) return "skip";
+  if (action === "skip") return "skip";
 
-  // (b) — a candidate click has a SELF_REPORTED order we can upgrade.
-  const selfReported = candidates.find(
-    (c) => c.order?.source === "SELF_REPORTED",
-  );
-  if (selfReported?.orderId) {
+  if (action === "upgrade") {
+    const selfReported = candidates.find(
+      (c) => c.order?.source === "SELF_REPORTED" && c.orderId,
+    );
+    if (!selfReported?.orderId) return "skip";
     await upgradeToConfirmed(selfReported.orderId, {
       commissionInCents: event.commission_in_cents,
       orderReference: event.order_reference,
