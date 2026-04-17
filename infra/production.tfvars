@@ -22,3 +22,6 @@ cloudfront_price_class = "PriceClass_200"
 
 # Observability
 log_retention_days = 90
+
+# Scheduler targets the production ALB (update to https://app.wishi.me once CloudFront/DNS cut over).
+app_url = "http://wishi-production-alb.us-east-1.elb.amazonaws.com"

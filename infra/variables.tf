@@ -78,3 +78,8 @@ variable "log_retention_days" {
   type    = number
   default = 30
 }
+
+variable "app_url" {
+  type        = string
+  description = "Base URL of the deployed app — used by EventBridge Scheduler to invoke /api/workers/*"
+}

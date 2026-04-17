@@ -22,3 +22,6 @@ cloudfront_price_class = "PriceClass_100"
 
 # Observability
 log_retention_days = 30
+
+# Scheduler targets the staging ALB (CloudFront/HTTPS deferred).
+app_url = "http://wishi-staging-alb-823228000.us-east-1.elb.amazonaws.com"
