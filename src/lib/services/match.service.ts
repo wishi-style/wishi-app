@@ -143,3 +143,77 @@ export async function matchStylistForSession(sessionId: string) {
 
   return bestMatch;
 }
+
+/**
+ * Admin override: reassign a session's stylist. Closes the previous
+ * SessionMatchHistory row and writes a new one with `reason`.
+ */
+export async function reassignStylist({
+  sessionId,
+  newStylistUserId,
+  reason,
+}: {
+  sessionId: string;
+  newStylistUserId: string;
+  reason: string;
+}) {
+  const session = await prisma.session.findUniqueOrThrow({
+    where: { id: sessionId },
+    select: { id: true, clientId: true, stylistId: true, status: true },
+  });
+
+  if (session.stylistId === newStylistUserId) {
+    throw new Error("Session is already assigned to this stylist");
+  }
+
+  if (!["BOOKED", "ACTIVE", "PENDING_END", "FROZEN"].includes(session.status)) {
+    throw new Error(`Cannot reassign session in status ${session.status}`);
+  }
+
+  await prisma.$transaction([
+    prisma.sessionMatchHistory.updateMany({
+      where: { sessionId, unmatchedAt: null },
+      data: { unmatchedAt: new Date() },
+    }),
+    prisma.session.update({
+      where: { id: sessionId },
+      data: { stylistId: newStylistUserId },
+    }),
+    prisma.sessionMatchHistory.create({
+      data: {
+        sessionId,
+        clientId: session.clientId,
+        stylistId: newStylistUserId,
+        reason,
+      },
+    }),
+  ]);
+
+  return {
+    sessionId,
+    previousStylistId: session.stylistId,
+    newStylistId: newStylistUserId,
+  };
+}
+
+/**
+ * Admin override: cancel an active session. Reason is captured in AuditLog
+ * at the call site (not on the session row) to avoid a schema change.
+ */
+export async function adminCancelSession({ sessionId }: { sessionId: string }) {
+  const session = await prisma.session.findUniqueOrThrow({
+    where: { id: sessionId },
+    select: { status: true },
+  });
+
+  if (session.status === "COMPLETED" || session.status === "CANCELLED") {
+    throw new Error(`Session already in status ${session.status}`);
+  }
+
+  await prisma.session.update({
+    where: { id: sessionId },
+    data: { status: "CANCELLED", cancelledAt: new Date() },
+  });
+
+  return { sessionId };
+}
