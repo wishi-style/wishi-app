@@ -7,10 +7,12 @@ import { prisma } from "@/lib/prisma";
 import { accountIsPayoutReady } from "@/lib/stripe-connect";
 import { dispatchNotification } from "@/lib/notifications/dispatcher";
 
-// ── transfer.paid ──────────────────────────────────────────────────────────
-// Fires when Stripe confirms the platform-to-connected-account transfer has
-// landed in the stylist's available balance. We flip the Payout row to
-// COMPLETED and notify the stylist.
+// ── transfer.created ───────────────────────────────────────────────────────
+// Our own code already flips Payout to PROCESSING right after
+// stripe.transfers.create returns. The webhook is the authoritative
+// confirmation — we mark COMPLETED because the platform-to-connected-account
+// transfer has landed in the stylist's Stripe balance (their own bank payout
+// is async and not our responsibility to track).
 export async function handleTransferPaid(transfer: Stripe.Transfer): Promise<void> {
   const payout = await prisma.payout.findUnique({
     where: { stripeTransferId: transfer.id },

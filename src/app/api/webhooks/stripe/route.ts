@@ -59,10 +59,14 @@ export async function POST(req: Request) {
       case "invoice.payment_failed":
         await handleInvoicePaymentFailed(event.data.object);
         break;
-      case "transfer.paid":
+      case "transfer.created":
+        // Stripe confirms the platform-to-connected-account transfer has
+        // cleared into the stylist's Stripe balance. We mark Payout as
+        // COMPLETED here; the subsequent connected-account bank payout is
+        // Stripe's concern, not ours to track.
         await handleTransferPaid(event.data.object);
         break;
-      case "transfer.failed":
+      case "transfer.reversed":
         await handleTransferFailed(event.data.object);
         break;
       case "account.updated":
