@@ -26,8 +26,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "url required" }, { status: 400 });
   }
   try {
-    // eslint-disable-next-line no-new
-    new URL(body.url);
+    void new URL(body.url);
   } catch {
     return NextResponse.json({ error: "invalid url" }, { status: 400 });
   }

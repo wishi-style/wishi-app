@@ -26,6 +26,7 @@ import {
 } from "@/lib/orders/order-service";
 import { createClosetItemsFromOrder } from "@/lib/closet/auto-create";
 import { runPendingActionExpiry } from "@/workers/pending-action-expiry";
+import { runStaleCleanup } from "@/workers/stale-cleanup";
 
 const isIntegrationEnv =
   !!process.env.DATABASE_URL &&
@@ -83,7 +84,7 @@ before(async () => {
 beforeEach(async () => {
   if (!isIntegrationEnv) return;
   await prisma.$executeRawUnsafe(
-    `TRUNCATE TABLE affiliate_clicks, order_items, orders, closet_items, session_pending_actions RESTART IDENTITY CASCADE`,
+    `TRUNCATE TABLE affiliate_clicks, order_items, orders, closet_items, session_pending_actions, match_quiz_results RESTART IDENTITY CASCADE`,
   );
 });
 
@@ -357,5 +358,44 @@ integrationTest(
     const byId = Object.fromEntries(after.map((a) => [a.id, a.status]));
     assert.equal(byId[expiredTarget.id], "EXPIRED");
     assert.equal(byId[stillOpen.id], "OPEN");
+  },
+);
+
+integrationTest(
+  "stale-cleanup worker deletes anonymous MatchQuizResult rows older than 30 days",
+  async () => {
+    // Anonymous + old — should be deleted.
+    await prisma.matchQuizResult.create({
+      data: {
+        userId: null,
+        guestToken: "guest-stale-1",
+        completedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000),
+      },
+    });
+    // Anonymous + fresh — keep.
+    const fresh = await prisma.matchQuizResult.create({
+      data: {
+        userId: null,
+        guestToken: "guest-fresh-1",
+        completedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+      },
+    });
+    // Claimed (has userId) — keep even if old.
+    const claimed = await prisma.matchQuizResult.create({
+      data: {
+        userId: testUserId,
+        guestToken: "guest-claimed-1",
+        completedAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
+      },
+    });
+
+    const summary = await runStaleCleanup();
+    assert.equal(summary.anonymousQuizResultsDeleted, 1);
+
+    const remaining = await prisma.matchQuizResult.findMany({
+      orderBy: { completedAt: "desc" },
+    });
+    const ids = remaining.map((r) => r.id).sort();
+    assert.deepEqual(ids, [fresh.id, claimed.id].sort());
   },
 );
