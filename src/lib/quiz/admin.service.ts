@@ -14,6 +14,69 @@ export type QuizDraftQuestion = {
   isActive: boolean;
 };
 
+type IncomingQuizQuestion = {
+  id?: string;
+  prompt?: unknown;
+  helperText?: unknown;
+  questionType?: unknown;
+  isRequired?: unknown;
+  fieldKey?: unknown;
+  isActive?: unknown;
+  options?: unknown;
+  metadata?: unknown;
+};
+
+const VALID_QUESTION_TYPES: QuizQuestionType[] = [
+  "SINGLE_SELECT",
+  "MULTI_SELECT",
+  "TEXT",
+  "NUMBER",
+  "RANGE",
+  "IMAGE_PICKER",
+];
+
+/**
+ * Pure validator for a quiz draft payload. Normalizes input shape and
+ * surfaces the first validation error. Throws with a 1-indexed question
+ * number so API responses stay useful.
+ */
+export function normalizeQuizDraft(
+  questions: IncomingQuizQuestion[],
+): QuizDraftQuestion[] {
+  if (!Array.isArray(questions)) {
+    throw new Error("questions[] required");
+  }
+  return questions.map((q, i) => {
+    const prompt = typeof q.prompt === "string" ? q.prompt.trim() : "";
+    const fieldKey = typeof q.fieldKey === "string" ? q.fieldKey.trim() : "";
+    if (!prompt) {
+      throw new Error(`Question ${i + 1} missing prompt`);
+    }
+    if (!fieldKey) {
+      throw new Error(`Question ${i + 1} missing fieldKey`);
+    }
+    if (
+      !VALID_QUESTION_TYPES.includes(q.questionType as QuizQuestionType)
+    ) {
+      throw new Error(`Question ${i + 1} has invalid questionType`);
+    }
+    return {
+      id: q.id,
+      prompt,
+      helperText:
+        typeof q.helperText === "string" && q.helperText.trim()
+          ? q.helperText.trim()
+          : null,
+      questionType: q.questionType as QuizQuestionType,
+      isRequired: Boolean(q.isRequired),
+      fieldKey,
+      isActive: q.isActive !== false,
+      options: q.options ?? null,
+      metadata: q.metadata ?? null,
+    };
+  });
+}
+
 export async function getAdminQuiz(type: QuizType) {
   return prisma.quiz.findUnique({
     where: { type },

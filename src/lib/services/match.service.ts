@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { Gender } from "@/generated/prisma/client";
 import { createChatConversation } from "@/lib/chat/create-conversation";
+import { canReassignSession } from "./admin-guards";
 
 /**
  * Auto-matcher: assigns the best-fit stylist to a session.
@@ -166,7 +167,7 @@ export async function reassignStylist({
     throw new Error("Session is already assigned to this stylist");
   }
 
-  if (!["BOOKED", "ACTIVE", "PENDING_END", "FROZEN"].includes(session.status)) {
+  if (!canReassignSession(session.status)) {
     throw new Error(`Cannot reassign session in status ${session.status}`);
   }
 
