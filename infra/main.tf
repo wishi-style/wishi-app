@@ -89,19 +89,19 @@ resource "aws_cloudwatch_log_group" "web" {
 # -----------------------------------------------------------------------------
 
 module "service" {
-  source               = "./modules/service"
-  project              = var.project
-  env                  = var.env
-  vpc_id               = module.network.vpc_id
-  public_subnet_ids    = module.network.public_subnet_ids
-  private_subnet_ids   = module.network.private_subnet_ids
-  ecs_task_sg_id       = module.network.ecs_task_sg_id
-  db_url_secret_arn        = module.database.db_url_secret_arn
-  db_direct_url_secret_arn = module.database.db_direct_url_secret_arn
-  clerk_secret_key_arn     = module.secrets.secret_arns["clerk/secret_key"]
-  clerk_webhook_secret_arn = module.secrets.secret_arns["clerk/webhook_secret"]
-  stripe_secret_key_arn    = module.secrets.secret_arns["stripe/secret_key"]
-  stripe_webhook_secret_arn = module.secrets.secret_arns["stripe/webhook_secret"]
+  source                               = "./modules/service"
+  project                              = var.project
+  env                                  = var.env
+  vpc_id                               = module.network.vpc_id
+  public_subnet_ids                    = module.network.public_subnet_ids
+  private_subnet_ids                   = module.network.private_subnet_ids
+  ecs_task_sg_id                       = module.network.ecs_task_sg_id
+  db_url_secret_arn                    = module.database.db_url_secret_arn
+  db_direct_url_secret_arn             = module.database.db_direct_url_secret_arn
+  clerk_secret_key_arn                 = module.secrets.secret_arns["clerk/secret_key"]
+  clerk_webhook_secret_arn             = module.secrets.secret_arns["clerk/webhook_secret"]
+  stripe_secret_key_arn                = module.secrets.secret_arns["stripe/secret_key"]
+  stripe_webhook_secret_arn            = module.secrets.secret_arns["stripe/webhook_secret"]
   twilio_account_sid_arn               = module.secrets.secret_arns["twilio/account_sid"]
   twilio_auth_token_arn                = module.secrets.secret_arns["twilio/auth_token"]
   twilio_api_key_sid_arn               = module.secrets.secret_arns["twilio/api_key_sid"]
@@ -110,13 +110,13 @@ module "service" {
   vapid_public_key_arn                 = module.secrets.secret_arns["web_push/vapid_public_key"]
   vapid_private_key_arn                = module.secrets.secret_arns["web_push/vapid_private_key"]
   worker_secret_arn                    = module.secrets.secret_arns["app/worker_secret"]
-  ecr_web_url              = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.project}-web"
-  cpu                  = var.ecs_cpu
-  memory               = var.ecs_memory
-  desired_count        = var.ecs_desired_count
-  min_count            = var.ecs_min_count
-  max_count            = var.ecs_max_count
-  log_group_name       = aws_cloudwatch_log_group.web.name
+  ecr_web_url                          = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.project}-web"
+  cpu                                  = var.ecs_cpu
+  memory                               = var.ecs_memory
+  desired_count                        = var.ecs_desired_count
+  min_count                            = var.ecs_min_count
+  max_count                            = var.ecs_max_count
+  log_group_name                       = aws_cloudwatch_log_group.web.name
 }
 
 # -----------------------------------------------------------------------------

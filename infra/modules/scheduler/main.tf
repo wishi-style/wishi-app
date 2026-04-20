@@ -65,9 +65,9 @@ resource "aws_iam_role" "scheduler" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect = "Allow"
+      Effect    = "Allow"
       Principal = { Service = "scheduler.amazonaws.com" }
-      Action = "sts:AssumeRole"
+      Action    = "sts:AssumeRole"
     }]
   })
 }
@@ -79,8 +79,8 @@ resource "aws_iam_role_policy" "scheduler" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["events:InvokeApiDestination"]
+        Effect = "Allow"
+        Action = ["events:InvokeApiDestination"]
         Resource = [
           aws_cloudwatch_event_api_destination.waitlist_notify.arn,
           aws_cloudwatch_event_api_destination.payout_reconcile.arn,

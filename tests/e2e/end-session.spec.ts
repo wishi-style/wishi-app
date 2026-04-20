@@ -229,10 +229,13 @@ test.describe("Phase 4: end-session", () => {
       expect(s.status).toBe("COMPLETED");
       expect(s.completed_at).not.toBeNull();
 
-      // End-session placeholder page accessible
+      // End-session page now shows the real tip/rate/review UI (Phase 6).
+      // Session.rating is null because we approved via the API, not the form,
+      // so we expect the "Wrap up your session" heading, not the
+      // "Thanks for the feedback" post-submit confirmation.
       const endPage = await clientCtx.newPage();
       await endPage.goto(`/sessions/${ctx.session.id}/end-session`);
-      await expect(endPage.getByText("Session wrapped up")).toBeVisible();
+      await expect(endPage.getByRole("heading", { name: "Wrap up your session" })).toBeVisible();
 
       await stylistCtx.close();
       await clientCtx.close();

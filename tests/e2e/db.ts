@@ -52,12 +52,18 @@ export async function cleanupE2EUserByEmail(email: string): Promise<void> {
 export async function cleanupE2EUserById(userId: string): Promise<void> {
   const p = getPool();
   await p.query(
-    `DELETE FROM session_pending_actions WHERE session_id IN (SELECT id FROM sessions WHERE client_id = $1)`,
+    `DELETE FROM session_pending_actions WHERE session_id IN (SELECT id FROM sessions WHERE client_id = $1 OR stylist_id = $1)`,
     [userId],
   );
-  await p.query(`DELETE FROM session_match_history WHERE client_id = $1`, [userId]);
+  await p.query(`DELETE FROM session_match_history WHERE client_id = $1 OR stylist_id = $1`, [userId]);
   await p.query(`DELETE FROM payments WHERE user_id = $1`, [userId]);
-  await p.query(`DELETE FROM sessions WHERE client_id = $1`, [userId]);
+  // Phase 6: Payout rows must be cleared before stylist_profiles can cascade-delete.
+  await p.query(
+    `DELETE FROM payouts WHERE session_id IN (SELECT id FROM sessions WHERE client_id = $1 OR stylist_id = $1)
+       OR stylist_profile_id IN (SELECT id FROM stylist_profiles WHERE user_id = $1)`,
+    [userId],
+  );
+  await p.query(`DELETE FROM sessions WHERE client_id = $1 OR stylist_id = $1`, [userId]);
   await p.query(`DELETE FROM subscriptions WHERE user_id = $1`, [userId]);
   await p.query(`DELETE FROM match_quiz_results WHERE user_id = $1`, [userId]);
   await p.query(`DELETE FROM notification_preferences WHERE user_id = $1`, [userId]);
@@ -183,6 +189,11 @@ export async function cleanupStylistProfile(userId: string): Promise<void> {
   const p = getPool();
   await p.query(`DELETE FROM stylist_waitlist_entries WHERE stylist_profile_id IN (SELECT id FROM stylist_profiles WHERE user_id = $1)`, [userId]);
   await p.query(`DELETE FROM session_match_history WHERE stylist_id = $1`, [userId]);
+  // Phase 6: Payouts FK → stylist_profiles must be cleared before the profile deletes.
+  await p.query(
+    `DELETE FROM payouts WHERE stylist_profile_id IN (SELECT id FROM stylist_profiles WHERE user_id = $1)`,
+    [userId],
+  );
   await p.query(`DELETE FROM sessions WHERE stylist_id = $1`, [userId]);
   await p.query(`DELETE FROM stylist_profiles WHERE user_id = $1`, [userId]);
 }

@@ -91,7 +91,7 @@ export default async function StylistDashboard() {
     }
   }
 
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const completed = await prisma.session.findMany({
     where: {
       stylistId: user.id,

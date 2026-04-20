@@ -23,15 +23,23 @@ export function StepTwelve({
 
   // On return from Stripe we get ?status=complete — check Connect state.
   useEffect(() => {
-    if (status !== "complete" || statusState === "ready") return;
-    setStatusState("checking");
-    fetch("/api/stylist/onboarding/connect/return")
-      .then(async (res) => {
+    if (status !== "complete" || statusState !== "idle") return;
+    let cancelled = false;
+    async function check() {
+      setStatusState("checking");
+      try {
+        const res = await fetch("/api/stylist/onboarding/connect/return");
         const body = await res.json();
         if (!res.ok) throw new Error(body.error ?? "Connect check failed");
-        setStatusState(body.payoutsEnabled ? "ready" : "pending");
-      })
-      .catch((err) => setError(String(err.message ?? err)));
+        if (!cancelled) setStatusState(body.payoutsEnabled ? "ready" : "pending");
+      } catch (err) {
+        if (!cancelled) setError(String(err instanceof Error ? err.message : err));
+      }
+    }
+    void check();
+    return () => {
+      cancelled = true;
+    };
   }, [status, statusState]);
 
   function handleConnect() {
