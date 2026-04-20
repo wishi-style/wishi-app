@@ -20,7 +20,7 @@ export interface ScrapeInput {
   category?: string;
 }
 
-interface OpenGraph {
+export interface OpenGraph {
   title: string | null;
   imageUrl: string | null;
   siteName: string | null;
@@ -69,7 +69,7 @@ async function fetchOpenGraph(url: string): Promise<OpenGraph> {
   }
 }
 
-function parseOpenGraph(html: string): OpenGraph {
+export function parseOpenGraph(html: string): OpenGraph {
   const meta = (property: string): string | null => {
     const m = new RegExp(
       `<meta[^>]+property=["']${property}["'][^>]+content=["']([^"']+)["']`,
