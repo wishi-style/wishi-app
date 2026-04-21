@@ -143,10 +143,8 @@ module "workers" {
   project = var.project
   env     = var.env
 
-  cluster_name = module.service.cluster_name
-  cluster_arn  = "arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:cluster/${module.service.cluster_name}"
+  cluster_arn = "arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:cluster/${module.service.cluster_name}"
 
-  vpc_id             = module.network.vpc_id
   private_subnet_ids = module.network.private_subnet_ids
   ecs_task_sg_id     = module.network.ecs_task_sg_id
 

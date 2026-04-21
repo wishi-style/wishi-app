@@ -1,14 +1,8 @@
 variable "project" { type = string }
 variable "env" { type = string }
 
-variable "cluster_name" {
-  type        = string
-  description = "ECS cluster name from the service module — workers share it."
-}
-
 variable "cluster_arn" { type = string }
 
-variable "vpc_id" { type = string }
 variable "private_subnet_ids" { type = list(string) }
 variable "ecs_task_sg_id" { type = string }
 
