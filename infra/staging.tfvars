@@ -23,13 +23,11 @@ cloudfront_price_class = "PriceClass_100"
 # Observability
 log_retention_days = 30
 
-# Phase 5 — workers
-# TODO(staging): set inventory_service_url to the tastegraph inventory ALB
-# (currently lives in the tastegraph AWS account; likely routed via VPC peering
-# or a public /internal endpoint behind auth). Leaving empty falls back to the
-# inventory-client's empty-array-on-failure path: affiliate-prompt still runs
-# but uses the "your recent find" generic title.
-inventory_service_url = ""
+# Phase 5 — workers. Tastegraph staging inventory service (public ALB in
+# the tastegraph AWS account; /internal/* endpoints are open — no auth
+# key required as of 2026-04-21, confirmed via /internal/commissions
+# probe). Swap to https://inventory.mira.prepx.ai for production.
+inventory_service_url = "https://inventory.stg.mira.prepx.ai"
 
 # Phase 5 workers consume this for deep-link construction; Phase 6 scheduler
 # is gated on https:// (infra/main.tf) and skips on staging until DNS/HTTPS
