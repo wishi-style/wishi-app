@@ -109,6 +109,7 @@ module "service" {
   twilio_conversations_service_sid_arn = module.secrets.secret_arns["twilio/conversations_service_sid"]
   vapid_public_key_arn                 = module.secrets.secret_arns["web_push/vapid_public_key"]
   vapid_private_key_arn                = module.secrets.secret_arns["web_push/vapid_private_key"]
+  worker_secret_arn                    = module.secrets.secret_arns["app/worker_secret"]
   ecr_web_url                          = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.project}-web"
   cpu                                  = var.ecs_cpu
   memory                               = var.ecs_memory
@@ -158,6 +159,20 @@ module "workers" {
   inventory_service_url = var.inventory_service_url
   app_url               = var.app_url
   log_group_name        = module.observability.workers_log_group_name
+}
+
+# -----------------------------------------------------------------------------
+# Scheduler (EventBridge API-destination workers for Phase 6: waitlist-notify,
+# payout-reconcile). These hit the web app over HTTPS with a shared secret —
+# distinct from the ECS-task-based Phase 5 workers module above.
+# -----------------------------------------------------------------------------
+
+module "scheduler" {
+  source            = "./modules/scheduler"
+  project           = var.project
+  env               = var.env
+  app_url           = var.app_url
+  worker_secret_arn = module.secrets.secret_arns["app/worker_secret"]
 }
 
 data "aws_caller_identity" "current" {}
