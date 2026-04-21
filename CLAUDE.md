@@ -96,7 +96,7 @@ wishi-app/
 - [x] Phase 3: Real-Time Chat
 - [x] Phase 4: Moodboards & Styleboards
 - [x] Phase 5: Inventory Integration & Click-Through Tracking
-- [ ] Phase 6: Stylist Dashboard & Payouts
+- [x] Phase 6: Stylist Dashboard & Payouts
 - [ ] Phase 7: AI Features
 - [x] Phase 8: Admin Panel
 - [ ] Phase 9: Commerce Extras
