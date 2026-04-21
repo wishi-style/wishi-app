@@ -28,28 +28,35 @@ export async function notifyWaitlistForStylist(
 
   const stylistName = `${profile.user.firstName} ${profile.user.lastName}`;
 
-  await prisma.stylistWaitlistEntry.updateMany({
-    where: { id: { in: entries.map((e) => e.id) } },
-    data: { status: "NOTIFIED", notifiedAt: new Date() },
-  });
-
-  await Promise.all(
-    entries.map((e) =>
-      dispatchNotification({
-        event: "stylist.waitlist_available",
-        userId: e.userId,
-        title: "Your stylist is available",
-        body: `${stylistName} is taking new clients. Book a session.`,
-        url: "/stylists",
-      }).catch((err) =>
+  const results = await Promise.all(
+    entries.map(async (e) => {
+      try {
+        await dispatchNotification({
+          event: "stylist.waitlist_available",
+          userId: e.userId,
+          title: "Your stylist is available",
+          body: `${stylistName} is taking new clients. Book a session.`,
+          url: "/stylists",
+        });
+        return e.id;
+      } catch (err) {
         console.warn(
           "[waitlist-fanout] push failed for user",
           e.userId,
           err,
-        ),
-      ),
-    ),
+        );
+        return null;
+      }
+    }),
   );
 
-  return { notified: entries.length };
+  const notifiedIds = results.filter((id): id is string => id !== null);
+  if (notifiedIds.length) {
+    await prisma.stylistWaitlistEntry.updateMany({
+      where: { id: { in: notifiedIds } },
+      data: { status: "NOTIFIED", notifiedAt: new Date() },
+    });
+  }
+
+  return { notified: notifiedIds.length };
 }
