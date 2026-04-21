@@ -1,6 +1,12 @@
-# Worker image: same base as web, but runs src/workers/entry.js instead of
-# the Next.js server. EventBridge Scheduler RunTask overrides the WORKER env
-# var to select which handler runs for each scheduled invocation.
+# Worker image: same base as web, but runs src/workers/entry.ts via tsx
+# instead of the Next.js server. EventBridge Scheduler RunTask overrides the
+# WORKER env var to select which handler runs for each scheduled invocation.
+#
+# Why tsx instead of a tsc pre-compile: `tsc --paths` is not accepted on the
+# CLI, and even with a dedicated tsconfig the emitted CommonJS would still
+# contain unresolved `@/*` require() calls at runtime. tsx handles both the
+# path-alias resolution and the TS→JS transform in-process, and its startup
+# cost (~1s) is negligible for a worker that runs every 15 min.
 
 FROM node:22-alpine AS base
 RUN apk add --no-cache libc6-compat
@@ -9,6 +15,8 @@ WORKDIR /app
 # ---- deps ---------------------------------------------------------------
 FROM base AS deps
 COPY package.json package-lock.json* ./
+# Full install (incl. devDependencies) — tsx + typescript are required at
+# runtime because we execute the TypeScript sources directly.
 RUN npm ci
 
 # ---- builder ------------------------------------------------------------
@@ -16,20 +24,16 @@ FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-# The worker reuses the same codebase; we compile just the workers + lib tree.
 RUN npx prisma generate
-RUN npx tsc --project tsconfig.json --outDir dist --module commonjs --target es2022 \
-    --moduleResolution node --esModuleInterop --resolveJsonModule --skipLibCheck \
-    --baseUrl . --paths '{"@/*":["src/*"]}' \
-    src/workers/entry.ts
 
 # ---- runtime ------------------------------------------------------------
 FROM base AS runtime
 ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nodejs
 COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/src/generated ./src/generated
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/src ./src
 USER nodejs
-CMD ["node", "dist/workers/entry.js"]
+CMD ["npx", "tsx", "src/workers/run.ts"]
