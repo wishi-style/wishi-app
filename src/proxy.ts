@@ -47,10 +47,12 @@ export default clerkMiddleware(async (auth, req) => {
     await auth.protect();
   }
 
-  // Stylist onboarding gate: if a stylist hasn't finished the wizard, redirect
-  // any non-onboarding /stylist/* or /api/stylist/* hit to /onboarding. The
-  // check reads from Clerk publicMetadata (set by saveStep/advance) to avoid
-  // a DB round-trip on every request.
+  // Stylist onboarding gate: if a stylist hasn't finished the wizard, block
+  // any non-onboarding /stylist/* or /api/stylist/* hit. Page routes get a
+  // redirect to /onboarding; API routes get a JSON 403 so fetch clients don't
+  // parse an HTML redirect body as JSON. The check reads from Clerk
+  // publicMetadata (set by saveStep/advance) to avoid a DB round-trip on
+  // every request.
   if (isStylistRoute(req) && !isOnboardingRoute(req)) {
     const { sessionClaims } = await auth();
     const metadata = sessionClaims?.metadata as
@@ -59,6 +61,16 @@ export default clerkMiddleware(async (auth, req) => {
     if (metadata?.role === "STYLIST") {
       const status = metadata.onboardingStatus;
       if (!status || !READY_STATUSES.has(status)) {
+        if (req.nextUrl.pathname.startsWith("/api/")) {
+          return NextResponse.json(
+            {
+              error: "Onboarding incomplete",
+              code: "onboarding_incomplete",
+              onboardingStatus: status ?? "NOT_STARTED",
+            },
+            { status: 403 },
+          );
+        }
         const url = req.nextUrl.clone();
         url.pathname = "/onboarding";
         url.search = "";
