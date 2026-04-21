@@ -113,6 +113,8 @@ async function reconcileCommission(event: CommissionEvent): Promise<CommissionAc
     source: "AFFILIATE_CONFIRMED",
     retailer: event.merchant_name,
     totalInCents: event.amount_in_cents,
+    commissionInCents: event.commission_in_cents,
+    orderReference: event.order_reference,
     items: [
       {
         inventoryProductId: event.product_id,

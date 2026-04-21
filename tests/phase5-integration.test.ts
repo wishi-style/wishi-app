@@ -272,7 +272,12 @@ integrationTest(
       orderReference: "REF-001",
     });
     assert.equal(upgraded.source, "AFFILIATE_CONFIRMED");
-    assert.equal(upgraded.totalInCents, 5000 + 250);
+    // totalInCents is the customer's purchase amount; the affiliate network's
+    // commission + order reference live in their own columns so reporting can
+    // tell "what did the user pay" from "how much did we earn".
+    assert.equal(upgraded.totalInCents, 5000);
+    assert.equal(upgraded.commissionInCents, 250);
+    assert.equal(upgraded.orderReference, "REF-001");
   },
 );
 

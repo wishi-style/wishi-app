@@ -25,6 +25,8 @@ export interface CreateOrderInput {
   source: OrderSource;
   retailer: string;
   totalInCents: number;
+  commissionInCents?: number;
+  orderReference?: string;
   currency?: string;
   items: OrderItemInput[];
 }
@@ -43,6 +45,8 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
         source: input.source,
         retailer: input.retailer,
         totalInCents: input.totalInCents,
+        commissionInCents: input.commissionInCents ?? null,
+        orderReference: input.orderReference ?? null,
         currency: input.currency ?? "usd",
         items: {
           create: input.items.map((it) => ({
@@ -73,6 +77,9 @@ export async function createOrder(input: CreateOrderInput): Promise<Order> {
 /**
  * Upgrade a SELF_REPORTED order to AFFILIATE_CONFIRMED when a commission
  * event proves the self-report. No closet changes — items already auto-created.
+ * `totalInCents` is left alone (still reflects the purchase total); commission
+ * and the network's order id live in their own columns so reporting can tell
+ * them apart.
  */
 export async function upgradeToConfirmed(
   orderId: string,
@@ -86,10 +93,8 @@ export async function upgradeToConfirmed(
     where: { id: orderId },
     data: {
       source: "AFFILIATE_CONFIRMED",
-      totalInCents:
-        merge.commissionInCents !== undefined
-          ? existing.totalInCents + merge.commissionInCents
-          : existing.totalInCents,
+      commissionInCents: merge.commissionInCents ?? existing.commissionInCents,
+      orderReference: merge.orderReference ?? existing.orderReference,
     },
   });
 }

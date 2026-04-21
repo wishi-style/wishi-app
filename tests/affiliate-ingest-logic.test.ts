@@ -36,6 +36,8 @@ function orderOf(
     status: "PENDING" as const,
     retailer: "Nordstrom",
     totalInCents: 0,
+    commissionInCents: null,
+    orderReference: null,
     currency: "usd",
     arrivedAt: null,
     createdAt: new Date(),
