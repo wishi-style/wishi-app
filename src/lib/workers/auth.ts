@@ -4,6 +4,8 @@
 // The runtime reads WORKER_SHARED_SECRET (wired from wishi/<env>/worker-secret
 // in Secrets Manager via the ECS task definition).
 
+import { timingSafeEqual } from "node:crypto";
+
 export const WORKER_SECRET_HEADER = "x-worker-secret";
 
 export function workerRequestAuthorized(req: Request): boolean {
@@ -14,7 +16,14 @@ export function workerRequestAuthorized(req: Request): boolean {
     // runner can opt-in by setting WORKER_SHARED_SECRET=dev in .env.
     return false;
   }
-  return header === expected;
+  if (!header) return false;
+  // timingSafeEqual requires equal-length buffers, so do the length check
+  // first (length is not secret) and then compare in constant time to avoid
+  // leaking the secret via response-time side channels.
+  const headerBuf = Buffer.from(header);
+  const expectedBuf = Buffer.from(expected);
+  if (headerBuf.length !== expectedBuf.length) return false;
+  return timingSafeEqual(headerBuf, expectedBuf);
 }
 
 export function unauthorizedWorkerResponse() {

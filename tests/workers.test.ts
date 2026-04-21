@@ -17,6 +17,8 @@ import {
 
 let client: { id: string };
 let stylist: { id: string };
+let clientEmail: string | null = null;
+let stylistEmail: string | null = null;
 
 afterEach(async () => {
   if (client?.id) {
@@ -24,25 +26,29 @@ afterEach(async () => {
       `DELETE FROM stylist_waitlist_entries WHERE user_id = $1`,
       [client.id]
     );
-    await cleanupE2EUserByEmail(`worker-client-${client.id}@example.com`);
+    if (clientEmail) await cleanupE2EUserByEmail(clientEmail);
   }
   if (stylist?.id) {
     await getPool().query("DELETE FROM stylist_profiles WHERE user_id = $1", [stylist.id]);
-    await cleanupE2EUserByEmail(`worker-stylist-${stylist.id}@example.com`);
+    if (stylistEmail) await cleanupE2EUserByEmail(stylistEmail);
   }
+  clientEmail = null;
+  stylistEmail = null;
 });
 
 test("waitlist-notify flips PENDING → NOTIFIED for available + eligible stylists only", async () => {
   const suffix = randomUUID().slice(0, 8);
+  clientEmail = `worker-client-${suffix}@example.com`;
+  stylistEmail = `worker-stylist-${suffix}@example.com`;
   client = await ensureClientUser({
     clerkId: `worker_c_${suffix}`,
-    email: `worker-client-${suffix}@example.com`,
+    email: clientEmail,
     firstName: "Worker",
     lastName: "Client",
   });
   stylist = await ensureStylistUser({
     clerkId: `worker_s_${suffix}`,
-    email: `worker-stylist-${suffix}@example.com`,
+    email: stylistEmail,
     firstName: "Worker",
     lastName: "Stylist",
   });
@@ -77,15 +83,17 @@ test("waitlist-notify flips PENDING → NOTIFIED for available + eligible stylis
 
 test("waitlist-notify skips entries for stylists who are NOT available/eligible", async () => {
   const suffix = randomUUID().slice(0, 8);
+  clientEmail = `worker-client-${suffix}@example.com`;
+  stylistEmail = `worker-stylist-${suffix}@example.com`;
   client = await ensureClientUser({
     clerkId: `worker2_c_${suffix}`,
-    email: `worker-client-${suffix}@example.com`,
+    email: clientEmail,
     firstName: "Worker",
     lastName: "Skip",
   });
   stylist = await ensureStylistUser({
     clerkId: `worker2_s_${suffix}`,
-    email: `worker-stylist-${suffix}@example.com`,
+    email: stylistEmail,
     firstName: "Worker",
     lastName: "Offline",
   });

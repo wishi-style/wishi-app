@@ -45,16 +45,21 @@ export async function runWaitlistNotify(): Promise<WaitlistNotifyResult> {
   for (const entry of entries) {
     const stylistName = `${entry.stylistProfile.user.firstName} ${entry.stylistProfile.user.lastName}`.trim();
     try {
-      await prisma.stylistWaitlistEntry.update({
-        where: { id: entry.id },
-        data: { status: "NOTIFIED", notifiedAt: new Date() },
-      });
+      // Dispatch the notification FIRST — only flip status=NOTIFIED after the
+      // dispatcher returns. If we flipped first and dispatch threw, the entry
+      // would be marked delivered even though the user never got pinged, and
+      // subsequent runs skip it forever. Dispatch-first means a failure
+      // leaves the entry PENDING, so the next hourly run retries it.
       await dispatchNotification({
         event: "stylist.available",
         userId: entry.userId,
         title: "A stylist you wanted is available",
         body: `${stylistName || "Your stylist"} can take new bookings. Tap to book.`,
         url: `/stylists/${entry.stylistProfile.id}`,
+      });
+      await prisma.stylistWaitlistEntry.update({
+        where: { id: entry.id },
+        data: { status: "NOTIFIED", notifiedAt: new Date() },
       });
       notified += 1;
     } catch (err) {
