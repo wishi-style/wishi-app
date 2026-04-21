@@ -23,6 +23,34 @@ locals {
   name_prefix = "${var.project}-${var.env}"
 }
 
+# EventBridge API destinations require HTTPS — http:// invocation endpoints
+# are silently rejected at invocation time and also leak the worker shared
+# secret in plaintext. Fail fast in plan.
+resource "terraform_data" "require_https_app_url" {
+  lifecycle {
+    precondition {
+      condition = (
+        length(var.app_url) > 0 &&
+        substr(var.app_url, 0, 8) == "https://"
+      )
+      error_message = "scheduler module: app_url must be a non-empty https:// URL. Got: \"${var.app_url}\". EventBridge API destinations only accept HTTPS, and the worker shared secret travels in a request header so HTTP would also leak it in plaintext."
+    }
+  }
+}
+
+# Pull the shared secret out of Secrets Manager at plan time so the
+# EventBridge connection gets the real value. The secret is managed in
+# wishi/<env>/app/worker_secret (modules/secrets); rotating it there flows
+# through this data source into the connection on the next apply.
+#
+# Tradeoff: the secret's current value ends up in Terraform state. Matt's
+# backend is the private infra-state S3 bucket with SSE + restricted IAM, so
+# this is acceptable. If that ever changes, switch to AWS Secrets Manager
+# automatic rotation and keep the connection populated via the CLI.
+data "aws_secretsmanager_secret_version" "worker_secret" {
+  secret_id = var.worker_secret_arn
+}
+
 # ── Connection (holds the API key / shared-secret header) ─────────────────
 resource "aws_cloudwatch_event_connection" "workers" {
   name               = "${local.name_prefix}-workers"
@@ -31,14 +59,8 @@ resource "aws_cloudwatch_event_connection" "workers" {
   auth_parameters {
     api_key {
       key   = "x-worker-secret"
-      value = "PLACEHOLDER_ROTATED_BY_SECRETS_MANAGER"
+      value = data.aws_secretsmanager_secret_version.worker_secret.secret_string
     }
-  }
-  lifecycle {
-    # The secret value is managed out-of-band — don't let TF reset it on every
-    # apply. Operators rotate the header value via aws_cloudwatch_event_connection
-    # console or a one-off CLI call after pulling from Secrets Manager.
-    ignore_changes = [auth_parameters]
   }
 }
 
@@ -86,11 +108,11 @@ resource "aws_iam_role_policy" "scheduler" {
           aws_cloudwatch_event_api_destination.payout_reconcile.arn,
         ]
       },
-      {
-        Effect   = "Allow"
-        Action   = ["secretsmanager:GetSecretValue"]
-        Resource = [var.worker_secret_arn]
-      },
+      # Scheduler does not need secretsmanager:GetSecretValue at invocation
+      # time — the x-worker-secret header value is stored inside the
+      # aws_cloudwatch_event_connection (populated via Terraform from the
+      # wishi/<env>/app/worker_secret data source). Secrets Manager is only
+      # touched at apply time.
     ]
   })
 }
