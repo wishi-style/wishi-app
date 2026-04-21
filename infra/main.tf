@@ -165,10 +165,18 @@ module "workers" {
 # Scheduler (EventBridge API-destination workers for Phase 6: waitlist-notify,
 # payout-reconcile). These hit the web app over HTTPS with a shared secret —
 # distinct from the ECS-task-based Phase 5 workers module above.
+#
+# Gated on an https:// app_url. Staging currently has an http:// ALB DNS
+# because wishi.me is still on the legacy AWS account; until that moves and
+# we get an ACM cert wired, the scheduler skips on staging. During UAT,
+# fire the workers manually via POST /api/admin/workers/[name]/run instead.
+# TODO: remove this gate once staging.wishi.me HTTPS is live.
 # -----------------------------------------------------------------------------
 
 module "scheduler" {
-  source            = "./modules/scheduler"
+  count  = startswith(var.app_url, "https://") ? 1 : 0
+  source = "./modules/scheduler"
+
   project           = var.project
   env               = var.env
   app_url           = var.app_url

@@ -31,11 +31,7 @@ log_retention_days = 30
 # but uses the "your recent find" generic title.
 inventory_service_url = ""
 
-# Phase 6 — scheduler/app URL. Used by Phase 5 workers for deep-link construction
-# AND by EventBridge Scheduler (Phase 6) for API-destination invocations.
-# EventBridge API destinations require HTTPS, so the scheduler module's
-# precondition will fail if this isn't https://. HTTPS/CloudFront for the
-# staging ALB is deferred — until then the Phase 6 scheduler workers can be
-# disabled by omitting the scheduler module or pointed at a CloudFront-fronted
-# URL once available. Phase 5 workers tolerate http here.
+# Phase 5 workers consume this for deep-link construction; Phase 6 scheduler
+# is gated on https:// (infra/main.tf) and skips on staging until DNS/HTTPS
+# lands. Manual trigger via POST /api/admin/workers/[name]/run in the meantime.
 app_url = "http://wishi-staging-alb-823228000.us-east-1.elb.amazonaws.com"

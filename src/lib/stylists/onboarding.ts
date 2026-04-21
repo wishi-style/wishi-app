@@ -243,6 +243,45 @@ export async function saveStep<N extends StepNumber>(
 
 // ── Advance / resume / Clerk metadata sync ─────────────────────────────────
 
+export interface AdvanceState {
+  onboardingStep: number;
+  onboardingStatus: string;
+  isInHouse: boolean;
+}
+
+// Pure state-machine for the wizard: derive next step + status from the
+// stylist's current state. Extracted for unit coverage — advance() below is
+// just this plus a Prisma write + Clerk metadata sync.
+//
+// PLATFORM progresses 0→1→…→12 (Stripe Connect). IN_HOUSE caps at 11.
+// PROFILE_CREATED flips the moment the wizard reaches the success panel
+// (target ≥ 10). AWAITING_ELIGIBILITY sets when the user has already
+// saturated the final step — using the *current* onboardingStep (not the
+// target) keeps PLATFORM correct: step 11 → 12 must stay PROFILE_CREATED
+// because Connect isn't done yet; only step 12 → 12 (Connect return
+// completes) flips to AWAITING_ELIGIBILITY.
+export function computeNextState(current: AdvanceState): {
+  step: number;
+  status: string;
+} {
+  const maxStep = current.isInHouse ? 11 : 12;
+  let step = Math.min(current.onboardingStep + 1, maxStep);
+  let status = current.onboardingStatus;
+
+  if (current.onboardingStep === 0) {
+    status = "IN_PROGRESS";
+    step = 1;
+  }
+  const target = Math.max(current.onboardingStep, step);
+  if (target >= 10) {
+    status = "PROFILE_CREATED";
+  }
+  if (current.onboardingStep >= maxStep) {
+    status = "AWAITING_ELIGIBILITY";
+  }
+  return { step, status };
+}
+
 // Advance determines the next step based on stylistType (IN_HOUSE skips step 12)
 // and the final transition into AWAITING_ELIGIBILITY.
 export async function advance(userId: string): Promise<{
@@ -252,32 +291,11 @@ export async function advance(userId: string): Promise<{
   const profile = await loadProfileByUserId(userId);
   if (!profile) throw new Error(`No stylist profile for user ${userId}`);
 
-  const isInHouse = profile.stylistType === "IN_HOUSE";
-  const maxStep = isInHouse ? 11 : 12;
-
-  let nextStep = Math.min(profile.onboardingStep + 1, maxStep);
-  let nextStatus = profile.onboardingStatus;
-
-  if (profile.onboardingStep === 0) {
-    nextStatus = "IN_PROGRESS";
-    nextStep = 1;
-  }
-  // Base PROFILE_CREATED on the step the user is advancing into so the
-  // status flips the moment the wizard reaches the success panel (step 10),
-  // instead of lagging until the next advance() call.
-  const target = Math.max(profile.onboardingStep, nextStep);
-  if (target >= 10) {
-    nextStatus = "PROFILE_CREATED";
-  }
-  // AWAITING_ELIGIBILITY is set when the user saturates past the final step
-  // — detected via "nextStep can no longer move" (profile.onboardingStep is
-  // already at maxStep). Using profile.onboardingStep here (not nextStep)
-  // keeps the PLATFORM flow correct: advancing from step 11 into step 12
-  // (Stripe Connect) must NOT flip to AWAITING_ELIGIBILITY because Connect
-  // hasn't been completed yet.
-  if (profile.onboardingStep >= maxStep) {
-    nextStatus = "AWAITING_ELIGIBILITY";
-  }
+  const { step: nextStep, status: nextStatus } = computeNextState({
+    onboardingStep: profile.onboardingStep,
+    onboardingStatus: profile.onboardingStatus,
+    isInHouse: profile.stylistType === "IN_HOUSE",
+  });
 
   const updated = await prisma.stylistProfile.update({
     where: { id: profile.id },
