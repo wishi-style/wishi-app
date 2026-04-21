@@ -110,6 +110,13 @@ export async function saveQuizDraft({
   });
   if (!quiz) throw new Error(`Quiz ${type} not found`);
 
+  const ownedIds = new Set(quiz.questions.map((q) => q.id));
+  for (const d of draft) {
+    if (d.id && !ownedIds.has(d.id)) {
+      throw new Error(`Question ${d.id} does not belong to quiz ${type}`);
+    }
+  }
+
   const draftIds = new Set(draft.map((d) => d.id).filter(Boolean) as string[]);
 
   await prisma.$transaction(async (tx) => {
