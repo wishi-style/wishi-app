@@ -24,14 +24,18 @@ export async function runPendingActionExpiry(): Promise<ExpirySummary> {
 
   if (due.length === 0) return { expired: 0, notified: 0 };
 
-  // Flip statuses in one shot; emissions are best-effort per-action.
-  await prisma.sessionPendingAction.updateMany({
-    where: { id: { in: due.map((a) => a.id) } },
-    data: { status: "EXPIRED" },
-  });
-
+  let expired = 0;
   let notified = 0;
   for (const action of due) {
+    // Atomic claim: only the run that wins the OPEN→EXPIRED flip gets to
+    // notify. Overlapping runs that see the same row here will get count=0
+    // and silently drop the notification, making emission exactly-once.
+    const { count } = await prisma.sessionPendingAction.updateMany({
+      where: { id: action.id, status: "OPEN" },
+      data: { status: "EXPIRED" },
+    });
+    if (count === 0) continue;
+    expired += 1;
     try {
       await notifyStylist(action.sessionId, {
         event: "session.overdue",
@@ -47,7 +51,7 @@ export async function runPendingActionExpiry(): Promise<ExpirySummary> {
       );
     }
   }
-  return { expired: due.length, notified };
+  return { expired, notified };
 }
 
 function prettyType(type: string): string {

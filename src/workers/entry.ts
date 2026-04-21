@@ -64,9 +64,12 @@ async function main() {
   }
 }
 
-// Only invoke main when this file is the entry point (not when imported by
-// the admin manual-trigger route). Next.js bundles set require.main to
-// undefined, so we check process.argv[1] ending in our filename as a fallback.
+// Only invoke main when this file is the entry point — the admin manual-
+// trigger route imports runWorker() directly and must not spin up a second
+// process.exit() loop. Using require.main === module is enough in the ECS
+// container where the worker image runs this file via `node entry.js`;
+// in Next.js build output this value is undefined so the import path stays
+// dormant.
 const isEntryPoint =
   typeof require !== "undefined" && require.main === module;
 if (isEntryPoint) {

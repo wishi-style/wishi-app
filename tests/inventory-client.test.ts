@@ -118,7 +118,7 @@ test("getCommissions passes since as an ISO string query param", async () => {
     );
   });
   const since = new Date("2026-04-15T00:00:00.000Z");
-  await getCommissions(since);
+  await getCommissions({ since });
   assert.match(capturedUrl, /since_ingested=2026-04-15T00%3A00%3A00\.000Z/);
   assert.match(capturedUrl, /limit=1000/);
 });
@@ -129,8 +129,22 @@ test("getCommissions caps limit at 1000", async () => {
     capturedUrl = url;
     return new Response(JSON.stringify({ data: [], cursor: null }), { status: 200 });
   });
-  await getCommissions(undefined, 99_999);
+  await getCommissions({ limit: 99_999 });
   assert.match(capturedUrl, /limit=1000/);
+});
+
+test("getCommissions forwards cursor and drops since when both given", async () => {
+  let capturedUrl = "";
+  mockFetch((url) => {
+    capturedUrl = url;
+    return new Response(JSON.stringify({ data: [], cursor: null }), { status: 200 });
+  });
+  await getCommissions({
+    since: new Date("2026-04-15T00:00:00.000Z"),
+    cursor: "abc123",
+  });
+  assert.match(capturedUrl, /cursor=abc123/);
+  assert.doesNotMatch(capturedUrl, /since_ingested/);
 });
 
 test("iterateCommissions pages until cursor exhausts", async () => {
@@ -169,3 +183,48 @@ test("iterateCommissions pages until cursor exhausts", async () => {
   }
   assert.deepEqual(collected, ["l1"]);
 });
+
+test("iterateCommissions uses since on first call, cursor thereafter", async () => {
+  const capturedUrls: string[] = [];
+  const pages = [
+    { data: [sampleEvent("l1")], cursor: "next-1" },
+    { data: [sampleEvent("l2")], cursor: "next-2" },
+    { data: [], cursor: null },
+  ];
+  let idx = 0;
+  mockFetch((url) => {
+    capturedUrls.push(url);
+    const page = pages[Math.min(idx, pages.length - 1)];
+    idx += 1;
+    return new Response(JSON.stringify(page), { status: 200 });
+  });
+
+  const since = new Date("2026-04-15T00:00:00.000Z");
+  const collected: string[] = [];
+  for await (const batch of iterateCommissions(since)) {
+    for (const ev of batch) collected.push(ev.listing_id);
+  }
+  assert.deepEqual(collected, ["l1", "l2"]);
+  assert.match(capturedUrls[0], /since_ingested=2026-04-15T00%3A00%3A00\.000Z/);
+  assert.doesNotMatch(capturedUrls[0], /cursor=/);
+  assert.match(capturedUrls[1], /cursor=next-1/);
+  assert.doesNotMatch(capturedUrls[1], /since_ingested=/);
+  assert.match(capturedUrls[2], /cursor=next-2/);
+});
+
+function sampleEvent(listingId: string) {
+  return {
+    listing_id: listingId,
+    product_id: `p-${listingId}`,
+    merchant_id: "m1",
+    merchant_name: "X",
+    order_reference: `r-${listingId}`,
+    click_id: null,
+    user_id: null,
+    amount_in_cents: 100,
+    commission_in_cents: 5,
+    currency: "usd",
+    order_placed_at: "2026-04-16T00:00:00Z",
+    ingested_at: "2026-04-17T01:00:00Z",
+  };
+}

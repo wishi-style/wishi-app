@@ -171,19 +171,25 @@ export async function lookupListings(
 }
 
 /**
- * Fetch commission events ingested after `since`. Paginated via cursor —
- * caller iterates until `cursor` is null. No caching (each poll must see
- * fresh data). Returns an empty page on failure; the worker retries next run.
+ * Fetch commission events ingested after `since`. The inventory service
+ * returns an opaque `cursor` token that must be passed back on subsequent
+ * calls to continue paging — `since_ingested` is only used for the first
+ * page. No caching (each poll must see fresh data). Returns an empty page
+ * on failure; the worker retries next run.
  */
 export async function getCommissions(
-  since?: Date,
-  limit = 1000,
+  opts: { since?: Date; cursor?: string; limit?: number } = {},
 ): Promise<CommissionsResponse> {
   const base = getBaseUrl();
   if (!base) return { data: [], cursor: null };
 
+  const { since, cursor, limit = 1000 } = opts;
   const params = new URLSearchParams();
-  if (since) params.set("since_ingested", since.toISOString());
+  if (cursor) {
+    params.set("cursor", cursor);
+  } else if (since) {
+    params.set("since_ingested", since.toISOString());
+  }
   params.set("limit", String(Math.min(limit, 1000)));
 
   try {
@@ -199,20 +205,24 @@ export async function getCommissions(
 }
 
 /**
- * Iterate the commission feed across pages. Yields batches until cursor exhausts.
- * Used by the affiliate-ingest worker to process a full day of events.
+ * Iterate the commission feed across pages, forwarding the server's cursor
+ * token each call. Stops when the server returns a null cursor OR an empty
+ * page. Used by the affiliate-ingest worker to process a full day of events.
  */
 export async function* iterateCommissions(
   since?: Date,
 ): AsyncGenerator<CommissionEvent[]> {
-  let nextSince = since;
+  let cursor: string | undefined;
+  let firstCall = true;
   for (;;) {
-    const page = await getCommissions(nextSince);
-    if (page.data.length === 0) return;
-    yield page.data;
+    const page = await getCommissions({
+      since: firstCall ? since : undefined,
+      cursor,
+    });
+    firstCall = false;
+    if (page.data.length > 0) yield page.data;
     if (!page.cursor) return;
-    const last = page.data[page.data.length - 1];
-    nextSince = new Date(last.ingested_at);
+    cursor = page.cursor;
   }
 }
 
