@@ -1246,3 +1246,33 @@ model FavoriteBoard {
   @@index([userId])
   @@map("favorite_boards")
 }
+
+// ─── Domain 9: Admin ──────────────────────────────────────
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  actorUserId  String?  @map("actor_user_id")
+  action       String
+  entityType   String   @map("entity_type")
+  entityId     String?  @map("entity_id")
+  meta         Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
+model AdminImpersonation {
+  id             String   @id @default(cuid())
+  adminUserId    String   @map("admin_user_id")
+  targetUserId   String   @map("target_user_id")
+  reason         String
+  startedAt      DateTime @default(now()) @map("started_at")
+  endedAt        DateTime? @map("ended_at")
+
+  @@index([adminUserId, startedAt])
+  @@index([targetUserId, startedAt])
+  @@map("admin_impersonations")
+}

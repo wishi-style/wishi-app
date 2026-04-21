@@ -15,7 +15,8 @@ export type NotificationEvent =
   | "payout.queued"
   | "payout.completed"
   | "payout.failed"
-  | "stylist.available";
+  | "stylist.available"
+  | "stylist.waitlist_available";
 
 export interface DispatchInput {
   event: NotificationEvent;

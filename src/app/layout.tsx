@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DM_Sans } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
+import { ImpersonationBannerMount } from "@/components/admin/impersonation-banner-mount";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -14,7 +15,7 @@ export const metadata: Metadata = {
     "The styling marketplace that connects you with expert stylists for personalized fashion advice.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
@@ -28,6 +29,7 @@ export default function RootLayout({
           signInFallbackRedirectUrl="/"
           signUpFallbackRedirectUrl="/"
         >
+          <ImpersonationBannerMount />
           {children}
         </ClerkProvider>
       </body>
