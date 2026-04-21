@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { putObject } from "@/lib/s3";
+import { getPublicUrl, putObject } from "@/lib/s3";
+import { assertPublicHttpUrl, UnsafeUrlError } from "./url-safety";
 import { normalizeDesigner, deriveSeason } from "./taxonomy";
 import type { ClosetItem } from "@/generated/prisma/client";
 
@@ -11,7 +12,7 @@ const USER_AGENT =
 
 export interface ScrapeResult {
   closetItem: ClosetItem;
-  partial: boolean; // true if we couldn't parse a full product
+  partial: boolean; // true if metadata is incomplete or image didn't land in S3
 }
 
 export interface ScrapeInput {
@@ -28,22 +29,36 @@ export interface OpenGraph {
 }
 
 export async function scrapeFromUrl(input: ScrapeInput): Promise<ScrapeResult> {
+  // `url` is validated again here (not just at the route) so worker/test
+  // callers can't skip the SSRF guard.
+  await assertPublicHttpUrl(input.url);
+
   const og = await fetchOpenGraph(input.url);
 
   let s3Key = "";
+  let uploadFailed = false;
   if (og.imageUrl) {
     try {
       s3Key = await downloadAndUpload(og.imageUrl, input.userId);
     } catch (err) {
+      uploadFailed = true;
       console.warn("[closet-scrape] image upload failed:", err);
     }
   }
+
+  // `ClosetItem.url` is read as the `<img src>` across closet/styleboard UI,
+  // so it must be an image URL. Prefer the S3 copy, fall back to the OG image
+  // (at least renders something while we investigate the upload failure), and
+  // last-resort leave it empty rather than writing the retailer page URL.
+  const imageUrl = s3Key
+    ? getPublicUrl(s3Key)
+    : og.imageUrl ?? "";
 
   const closetItem = await prisma.closetItem.create({
     data: {
       userId: input.userId,
       s3Key,
-      url: input.url,
+      url: imageUrl,
       name: og.title,
       designer: normalizeDesigner(og.brand ?? og.siteName),
       season: deriveSeason(input.category),
@@ -52,7 +67,8 @@ export async function scrapeFromUrl(input: ScrapeInput): Promise<ScrapeResult> {
     },
   });
 
-  return { closetItem, partial: !og.title || !og.imageUrl };
+  const partial = !og.title || !og.imageUrl || uploadFailed;
+  return { closetItem, partial };
 }
 
 async function fetchOpenGraph(url: string): Promise<OpenGraph> {
@@ -60,6 +76,7 @@ async function fetchOpenGraph(url: string): Promise<OpenGraph> {
     const res = await fetch(url, {
       headers: { "user-agent": USER_AGENT },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      redirect: "manual",
     });
     if (!res.ok) return { title: null, imageUrl: null, siteName: null, brand: null };
     const html = await res.text();
@@ -96,9 +113,22 @@ async function downloadAndUpload(
   imageUrl: string,
   userId: string,
 ): Promise<string> {
+  // OG image URLs come from the scraped page — still untrusted. Re-run the
+  // SSRF guard before fetching so a malicious product page can't send us to
+  // 169.254.169.254 via `og:image`.
+  try {
+    await assertPublicHttpUrl(imageUrl);
+  } catch (err) {
+    if (err instanceof UnsafeUrlError) {
+      throw new Error(`og:image rejected: ${err.message}`);
+    }
+    throw err;
+  }
+
   const res = await fetch(imageUrl, {
     headers: { "user-agent": USER_AGENT },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    redirect: "manual",
   });
   if (!res.ok) throw new Error(`image fetch failed: ${res.status}`);
   const buf = new Uint8Array(await res.arrayBuffer());

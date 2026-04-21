@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { scrapeFromUrl } from "@/lib/closet/scrape-from-url";
+import {
+  assertPublicHttpUrl,
+  UnsafeUrlError,
+} from "@/lib/closet/url-safety";
 
 export const dynamic = "force-dynamic";
 
@@ -25,10 +29,14 @@ export async function POST(req: Request) {
   if (!body.url) {
     return NextResponse.json({ error: "url required" }, { status: 400 });
   }
+
   try {
-    void new URL(body.url);
-  } catch {
-    return NextResponse.json({ error: "invalid url" }, { status: 400 });
+    await assertPublicHttpUrl(body.url);
+  } catch (err) {
+    if (err instanceof UnsafeUrlError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    throw err;
   }
 
   const { closetItem, partial } = await scrapeFromUrl({
