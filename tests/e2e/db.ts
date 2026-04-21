@@ -116,6 +116,20 @@ export async function ensureStylistUser(params: UserParams) {
   return rows[0];
 }
 
+export async function ensureAdminUser(params: UserParams) {
+  await cleanupE2EUserByEmail(params.email);
+  const id = generateId();
+  const referralCode = `E2E-${params.clerkId.toUpperCase()}`;
+
+  const { rows } = await getPool().query(
+    `INSERT INTO users (id, clerk_id, auth_provider, email, first_name, last_name, role, referral_code, created_at, updated_at)
+     VALUES ($1, $2, 'EMAIL', $3, $4, $5, 'ADMIN', $6, NOW(), NOW())
+     RETURNING *`,
+    [id, params.clerkId, params.email, params.firstName, params.lastName, referralCode],
+  );
+  return rows[0];
+}
+
 export async function createSessionForClient({
   amountPaidInCents = 6000,
   clientId,

@@ -1,0 +1,71 @@
+name: E2E Nightly
+
+on:
+  schedule:
+    # 07:00 UTC daily (02:00 EST). Runs the full Playwright suite against
+    # an ephemeral local staging (same pattern the check job uses, but with
+    # the browser specs — too slow to put on the per-PR critical path).
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: wishi
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: wishi_p5
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U wishi"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DATABASE_URL: postgresql://wishi:password@localhost:5432/wishi_p5?sslmode=disable
+      DIRECT_DATABASE_URL: postgresql://wishi:password@localhost:5432/wishi_p5?sslmode=disable
+      E2E_AUTH_MODE: "true"
+      # Twilio envs referenced by end-session.spec.ts. Real provisioning
+      # only runs if TWILIO_ACCOUNT_SID is set; otherwise affected specs skip.
+      TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+      TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+      TWILIO_API_KEY_SID: ${{ secrets.TWILIO_API_KEY_SID }}
+      TWILIO_API_KEY_SECRET: ${{ secrets.TWILIO_API_KEY_SECRET }}
+      TWILIO_CONVERSATIONS_SERVICE_SID: ${{ secrets.TWILIO_CONVERSATIONS_SERVICE_SID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx prisma generate
+
+      - name: Apply migrations + phase4 constraints
+        run: |
+          npx prisma migrate deploy
+          psql "$DATABASE_URL" -f prisma/migrations/phase4_constraints.sql
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright suite
+        run: npm run e2e
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
