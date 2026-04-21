@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 import { createProfileBoard, listProfileBoards } from "@/lib/boards/profile-boards.service";
+import { isDomainError } from "@/lib/errors/domain-error";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +46,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ board }, { status: 201 });
   } catch (err) {
     if (err instanceof Response) return err;
-    const message = err instanceof Error ? err.message : "Create failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    if (isDomainError(err)) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    console.error("[profile-boards/create] failed", err);
+    return NextResponse.json({ error: "Create failed" }, { status: 500 });
   }
 }

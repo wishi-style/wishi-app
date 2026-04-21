@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 import { saveStep, stepSchemas, type StepNumber } from "@/lib/stylists/onboarding";
+import { isDomainError } from "@/lib/errors/domain-error";
 
 export const dynamic = "force-dynamic";
 
@@ -34,8 +35,10 @@ export async function POST(req: Request) {
     return NextResponse.json(result);
   } catch (err) {
     if (err instanceof Response) return err;
-    const message = err instanceof Error ? err.message : "Save failed";
+    if (isDomainError(err)) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error("[onboarding/save] failed", err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Save failed" }, { status: 500 });
   }
 }

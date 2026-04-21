@@ -13,6 +13,7 @@
 
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { DomainError } from "@/lib/errors/domain-error";
 import type { StylistProfile, User } from "@/generated/prisma/client";
 
 export const TOTAL_STEPS = 12;
@@ -140,22 +141,27 @@ export async function saveStep<N extends StepNumber>(
     }
     case 5: {
       // Profile boards — the user creates them via the builder. We only
-      // advance when the required minimum per claimed style is met.
+      // advance when the required minimum per claimed style is met. Scope
+      // the count to profile boards (sessionId = null, isFeaturedOnProfile)
+      // so session boards can't spoof the gate.
       const counts = await prisma.board.groupBy({
         by: ["profileStyle"],
         where: {
           stylistProfileId: profile.id,
+          sessionId: null,
           isFeaturedOnProfile: true,
+          profileStyle: { not: null },
         },
         _count: true,
       });
       const styleCounts = new Map(counts.map((c) => [c.profileStyle ?? "", c._count]));
       const missing = profile.styleSpecialties.filter(
-        (style) => (styleCounts.get(style) ?? 0) < 3
+        (style) => (styleCounts.get(style) ?? 0) < 3,
       );
       if (missing.length > 0) {
-        throw new Error(
-          `Need at least 3 featured boards per style. Missing: ${missing.join(", ")}`
+        throw new DomainError(
+          `Need at least 3 featured boards per style. Missing: ${missing.join(", ")}`,
+          400,
         );
       }
       break;
@@ -256,9 +262,19 @@ export async function advance(userId: string): Promise<{
     nextStatus = "IN_PROGRESS";
     nextStep = 1;
   }
-  if (profile.onboardingStep >= 10) {
+  // Base PROFILE_CREATED on the step the user is advancing into so the
+  // status flips the moment the wizard reaches the success panel (step 10),
+  // instead of lagging until the next advance() call.
+  const target = Math.max(profile.onboardingStep, nextStep);
+  if (target >= 10) {
     nextStatus = "PROFILE_CREATED";
   }
+  // AWAITING_ELIGIBILITY is set when the user saturates past the final step
+  // — detected via "nextStep can no longer move" (profile.onboardingStep is
+  // already at maxStep). Using profile.onboardingStep here (not nextStep)
+  // keeps the PLATFORM flow correct: advancing from step 11 into step 12
+  // (Stripe Connect) must NOT flip to AWAITING_ELIGIBILITY because Connect
+  // hasn't been completed yet.
   if (profile.onboardingStep >= maxStep) {
     nextStatus = "AWAITING_ELIGIBILITY";
   }

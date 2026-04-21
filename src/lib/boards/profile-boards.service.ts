@@ -4,6 +4,7 @@
 // rows skip the session path entirely.
 
 import { prisma } from "@/lib/prisma";
+import { DomainError, NotFoundError } from "@/lib/errors/domain-error";
 import type { Board, BoardPhoto } from "@/generated/prisma/client";
 
 export const MIN_BOARDS_PER_STYLE = 3;
@@ -21,13 +22,15 @@ export async function createProfileBoard(input: {
   const existing = await prisma.board.count({
     where: {
       stylistProfileId: stylist.id,
+      sessionId: null,
       isFeaturedOnProfile: true,
       profileStyle: input.profileStyle,
     },
   });
   if (existing >= MAX_BOARDS_PER_STYLE) {
-    throw new Error(
-      `Max ${MAX_BOARDS_PER_STYLE} profile boards per style — unfeature an existing one first.`
+    throw new DomainError(
+      `Max ${MAX_BOARDS_PER_STYLE} profile boards per style — unfeature an existing one first.`,
+      409,
     );
   }
 
@@ -79,7 +82,7 @@ export async function unfeatureProfileBoard(
     },
     data: { isFeaturedOnProfile: false },
   });
-  if (result.count === 0) throw new Error("Profile board not found");
+  if (result.count === 0) throw new NotFoundError("Profile board not found");
 }
 
 export async function addProfileBoardPhoto(
@@ -99,7 +102,7 @@ export async function addProfileBoardPhoto(
     },
     select: { id: true },
   });
-  if (!board) throw new Error("Profile board not found");
+  if (!board) throw new NotFoundError("Profile board not found");
 
   const count = await prisma.boardPhoto.count({ where: { boardId } });
   return prisma.boardPhoto.create({
