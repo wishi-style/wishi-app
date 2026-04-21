@@ -38,6 +38,7 @@ export default async function OnboardingStepPage({
     select: {
       id: true,
       stylistType: true,
+      onboardingStep: true,
       genderPreference: true,
       bodySpecialties: true,
       styleSpecialties: true,
@@ -49,13 +50,21 @@ export default async function OnboardingStepPage({
       instagramHandle: true,
       stripeConnectId: true,
       payoutsEnabled: true,
+      user: { select: { favoriteBrands: true } },
     },
   });
   if (!profile) notFound();
 
-  // Block navigating past an unfinished earlier step.
-  // (The proxy redirect will bring the user to their current step; this
-  // is a defense-in-depth check.)
+  // Block navigating past an unfinished earlier step. If the user has only
+  // reached step N via the wizard, jumping to step N+2 by URL could skip
+  // required persistence/validation. Send them back to their current step
+  // (the proxy gate handles the "outside the wizard entirely" case; this is
+  // defense-in-depth for direct step URLs).
+  const currentStep = Math.max(1, profile.onboardingStep || 1);
+  if (stepNum > currentStep) {
+    redirect(`/onboarding/step-${currentStep}`);
+  }
+
   const sp = (await searchParams) ?? {};
   const statusParam = typeof sp.status === "string" ? sp.status : null;
 
@@ -75,7 +84,7 @@ export default async function OnboardingStepPage({
         />
       );
     case 4:
-      return <StepFour />;
+      return <StepFour initial={{ favoriteBrands: profile.user?.favoriteBrands ?? [] }} />;
     case 5:
       return <StepFive stylistProfileId={profile.id} styleSpecialties={profile.styleSpecialties} />;
     case 6:

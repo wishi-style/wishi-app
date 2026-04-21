@@ -2,11 +2,21 @@
 import { useState } from "react";
 import { OnboardingShell } from "@/components/stylist/onboarding-shell";
 
-export function StepFour() {
+const MAX_BRANDS = 30;
+
+type StepFourProps = {
+  initial?: { favoriteBrands?: string[] };
+};
+
+export function StepFour({ initial }: StepFourProps = {}) {
   const [input, setInput] = useState("");
-  const [brands, setBrands] = useState<string[]>([]);
+  // Prefill from User.favoriteBrands so reload/revisit doesn't overwrite an
+  // existing list with an empty array when the user clicks Continue.
+  const [brands, setBrands] = useState<string[]>(initial?.favoriteBrands ?? []);
+  const atCap = brands.length >= MAX_BRANDS;
 
   function addBrand() {
+    if (atCap) return;
     const trimmed = input.trim();
     if (!trimmed) return;
     if (brands.includes(trimmed)) return;
@@ -33,16 +43,21 @@ export function StepFour() {
               addBrand();
             }
           }}
-          placeholder="e.g. Everlane"
-          className="flex-1 rounded border border-muted px-3 py-2 text-sm"
+          placeholder={atCap ? `Max ${MAX_BRANDS} brands reached` : "e.g. Everlane"}
+          disabled={atCap}
+          className="flex-1 rounded border border-muted px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
         />
         <button
           type="button"
           onClick={addBrand}
-          className="rounded border border-muted px-3 py-2 text-sm"
+          disabled={atCap}
+          className="rounded border border-muted px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
           Add
         </button>
+      </div>
+      <div className="mb-2 text-xs text-muted-foreground">
+        {brands.length} / {MAX_BRANDS}
       </div>
       <div className="flex flex-wrap gap-2">
         {brands.map((b) => (
