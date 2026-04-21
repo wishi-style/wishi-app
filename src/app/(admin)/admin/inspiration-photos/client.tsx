@@ -223,6 +223,7 @@ export function InspirationLibraryClient({ initialPhotos }: Props) {
       </div>
 
       <EditDialog
+        key={editing?.id ?? "none"}
         photo={editing}
         onClose={() => setEditing(null)}
         onSave={saveEdit}
