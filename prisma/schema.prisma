@@ -573,6 +573,7 @@ model StylistProfile {
   // Stripe Connect (PLATFORM stylists only)
   stripeConnectId  String? @unique @map("stripe_connect_id")
   payoutPercentage Int     @default(70) @map("payout_percentage")
+  payoutsEnabled   Boolean @default(false) @map("payouts_enabled")
 
   // Performance
   averageRating          Float? @map("average_rating")
@@ -848,6 +849,7 @@ model Payout {
   stripeTransferId String?       @unique @map("stripe_transfer_id")
   skippedReason    String?       @map("skipped_reason")
   triggeredAt      DateTime?     @map("triggered_at")
+  reconciledAt     DateTime?     @map("reconciled_at")
   createdAt        DateTime      @default(now()) @map("created_at")
   updatedAt        DateTime      @updatedAt @map("updated_at")
 
@@ -894,19 +896,19 @@ model Subscription {
 }
 
 model Order {
-  id                 String      @id @default(cuid())
-  userId             String      @map("user_id")
-  sessionId          String?     @map("session_id")
-  source             OrderSource
-  status             OrderStatus @default(PENDING)
-  retailer           String
-  totalInCents       Int         @default(0) @map("total_in_cents")
-  commissionInCents  Int?        @map("commission_in_cents")
-  orderReference     String?     @map("order_reference")
-  currency           String      @default("usd")
-  arrivedAt          DateTime?   @map("arrived_at")
-  createdAt          DateTime    @default(now()) @map("created_at")
-  updatedAt          DateTime    @updatedAt @map("updated_at")
+  id                String      @id @default(cuid())
+  userId            String      @map("user_id")
+  sessionId         String?     @map("session_id")
+  source            OrderSource
+  status            OrderStatus @default(PENDING)
+  retailer          String
+  totalInCents      Int         @default(0) @map("total_in_cents")
+  commissionInCents Int?        @map("commission_in_cents")
+  orderReference    String?     @map("order_reference")
+  currency          String      @default("usd")
+  arrivedAt         DateTime?   @map("arrived_at")
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
 
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   session         Session?         @relation(fields: [sessionId], references: [id])

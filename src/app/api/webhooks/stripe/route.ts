@@ -8,6 +8,12 @@ import {
   handleInvoicePaymentSucceeded,
   handleInvoicePaymentFailed,
 } from "@/lib/payments/webhook-handlers";
+import {
+  handleAccountUpdated,
+  handleTipPaymentSucceeded,
+  handleTransferFailed,
+  handleTransferPaid,
+} from "@/lib/payments/payout-webhooks";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +58,22 @@ export async function POST(req: Request) {
         break;
       case "invoice.payment_failed":
         await handleInvoicePaymentFailed(event.data.object);
+        break;
+      case "transfer.created":
+        // Stripe confirms the platform-to-connected-account transfer has
+        // cleared into the stylist's Stripe balance. We mark Payout as
+        // COMPLETED here; the subsequent connected-account bank payout is
+        // Stripe's concern, not ours to track.
+        await handleTransferPaid(event.data.object);
+        break;
+      case "transfer.reversed":
+        await handleTransferFailed(event.data.object);
+        break;
+      case "account.updated":
+        await handleAccountUpdated(event.data.object);
+        break;
+      case "payment_intent.succeeded":
+        await handleTipPaymentSucceeded(event.data.object);
         break;
       default:
         console.log(`[stripe webhook] Unhandled event type: ${event.type}`);

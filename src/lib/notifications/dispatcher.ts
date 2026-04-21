@@ -11,7 +11,11 @@ export type NotificationEvent =
   | "session.end_requested"
   | "session.end_declined"
   | "session.overdue"
-  | "session.auto_completed";
+  | "session.auto_completed"
+  | "payout.queued"
+  | "payout.completed"
+  | "payout.failed"
+  | "stylist.available";
 
 export interface DispatchInput {
   event: NotificationEvent;
