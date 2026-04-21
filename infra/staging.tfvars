@@ -22,3 +22,12 @@ cloudfront_price_class = "PriceClass_100"
 
 # Observability
 log_retention_days = 30
+
+# Phase 5 — workers
+# TODO(staging): set inventory_service_url to the tastegraph inventory ALB
+# (currently lives in the tastegraph AWS account; likely routed via VPC peering
+# or a public /internal endpoint behind auth). Leaving empty falls back to the
+# inventory-client's empty-array-on-failure path: affiliate-prompt still runs
+# but uses the "your recent find" generic title.
+inventory_service_url = ""
+app_url               = "http://wishi-staging-alb-823228000.us-east-1.elb.amazonaws.com"
