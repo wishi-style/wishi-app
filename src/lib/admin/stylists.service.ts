@@ -36,7 +36,11 @@ export async function listAdminStylists(filter?: {
       stripeConnectId: true,
       createdAt: true,
       user: { select: { firstName: true, lastName: true, email: true } },
-      _count: { select: { waitlistEntries: true } },
+      _count: {
+        select: {
+          waitlistEntries: { where: { status: "PENDING" } },
+        },
+      },
     },
   });
 
