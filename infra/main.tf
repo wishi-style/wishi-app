@@ -135,7 +135,36 @@ module "observability" {
 }
 
 # -----------------------------------------------------------------------------
-# Scheduler (EventBridge-backed workers for Phase 6)
+# Workers (Phase 5: scheduled background jobs on shared ECS cluster)
+# -----------------------------------------------------------------------------
+
+module "workers" {
+  source = "./modules/workers"
+
+  project = var.project
+  env     = var.env
+
+  cluster_arn = "arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:cluster/${module.service.cluster_name}"
+
+  private_subnet_ids = module.network.private_subnet_ids
+  ecs_task_sg_id     = module.network.ecs_task_sg_id
+
+  db_url_secret_arn        = module.database.db_url_secret_arn
+  db_direct_url_secret_arn = module.database.db_direct_url_secret_arn
+  anthropic_api_key_arn    = try(module.secrets.secret_arns["anthropic/api_key"], "")
+  vapid_public_key_arn     = module.secrets.secret_arns["web_push/vapid_public_key"]
+  vapid_private_key_arn    = module.secrets.secret_arns["web_push/vapid_private_key"]
+
+  ecr_worker_url        = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.project}-worker"
+  inventory_service_url = var.inventory_service_url
+  app_url               = var.app_url
+  log_group_name        = module.observability.workers_log_group_name
+}
+
+# -----------------------------------------------------------------------------
+# Scheduler (EventBridge API-destination workers for Phase 6: waitlist-notify,
+# payout-reconcile). These hit the web app over HTTPS with a shared secret —
+# distinct from the ECS-task-based Phase 5 workers module above.
 # -----------------------------------------------------------------------------
 
 module "scheduler" {

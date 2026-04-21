@@ -90,3 +90,42 @@ export interface SearchResponse {
   pages: number;
   results: ProductSearchDoc[];
 }
+
+export interface FilterValuesResponse {
+  brands: Array<{ id: string; name: string }>;
+  categories: Array<{ id: string; slug: string; label: string }>;
+  colors: string[];
+  sizes: string[];
+  primaryFabrics: string[];
+  merchants: Array<{ id: string; name: string }>;
+  genders: string[];
+}
+
+export interface ListingLookupRow {
+  title: string;
+  image_url: string;
+  merchant_name: string;
+  product_id: string;
+}
+
+export type ListingsLookupResponse = Record<string, ListingLookupRow>;
+
+export interface CommissionEvent {
+  listing_id: string;
+  product_id: string;
+  merchant_id: string;
+  merchant_name: string;
+  order_reference: string;
+  click_id: string | null;
+  user_id: string | null;
+  amount_in_cents: number;
+  commission_in_cents: number;
+  currency: string;
+  order_placed_at: string;
+  ingested_at: string;
+}
+
+export interface CommissionsResponse {
+  data: CommissionEvent[];
+  cursor: string | null;
+}

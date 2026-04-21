@@ -37,6 +37,7 @@ export async function submitEndSessionFeedback(
       clientId: true,
       status: true,
       planType: true,
+      rating: true,
     },
   });
   if (!session || session.clientId !== user.id) {
@@ -44,6 +45,12 @@ export async function submitEndSessionFeedback(
   }
   if (session.status !== "PENDING_END_APPROVAL" && session.status !== "COMPLETED") {
     return { status: "error", message: `Cannot submit feedback for session in ${session.status}` };
+  }
+  if (session.rating !== null) {
+    // Rating is a once-per-session write. Blocking replays here means a client
+    // can't silently overwrite a previous rating or spin up a second tip PI
+    // by calling the Server Action again.
+    return { status: "error", message: "Feedback already submitted for this session" };
   }
   if (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5) {
     return { status: "error", message: "Rating must be 1–5 stars" };
@@ -58,7 +65,36 @@ export async function submitEndSessionFeedback(
   const tipCheck = validateTip(input.tipCents, plan.priceInCents);
   if (!tipCheck.ok) return { status: "error", message: tipCheck.reason };
 
-  // Write rating/review immediately — not payment-gated.
+  // Create the tip PaymentIntent BEFORE writing the rating. If Stripe fails,
+  // we return an error and the session stays in PENDING_END_APPROVAL so the
+  // client can retry. The Stripe idempotency key is keyed on sessionId so a
+  // retry after a partial failure returns the same PI instead of creating a
+  // duplicate.
+  let clientSecret: string | null = null;
+  if (tipCheck.amountCents > 0) {
+    try {
+      const pi = await stripe.paymentIntents.create(
+        {
+          amount: tipCheck.amountCents,
+          currency: "usd",
+          metadata: {
+            sessionId: session.id,
+            purpose: "tip",
+            clientId: session.clientId,
+          },
+          description: `Tip for session ${session.id}`,
+        },
+        { idempotencyKey: `tip_${session.id}` },
+      );
+      clientSecret = pi.client_secret;
+    } catch (err) {
+      console.error("[end-session] create tip PaymentIntent failed", err);
+      return { status: "error", message: "Could not set up tip payment" };
+    }
+  }
+
+  // Rating/review write is idempotent; the already-rated guard above makes
+  // this the point of no return for this session.
   await prisma.session.update({
     where: { id: session.id },
     data: {
@@ -67,21 +103,6 @@ export async function submitEndSessionFeedback(
       ratedAt: new Date(),
     },
   });
-
-  let clientSecret: string | null = null;
-  if (tipCheck.amountCents > 0) {
-    const pi = await stripe.paymentIntents.create({
-      amount: tipCheck.amountCents,
-      currency: plan ? "usd" : "usd",
-      metadata: {
-        sessionId: session.id,
-        purpose: "tip",
-        clientId: session.clientId,
-      },
-      description: `Tip for session ${session.id}`,
-    });
-    clientSecret = pi.client_secret;
-  }
 
   // Transition to COMPLETED (idempotent — approveEnd guards on status) which
   // also dispatches the completion payout. Safe to call even with a pending

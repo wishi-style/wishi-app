@@ -79,7 +79,15 @@ variable "log_retention_days" {
   default = 30
 }
 
+# Phase 5 — workers
+variable "inventory_service_url" {
+  type        = string
+  description = "Base URL of the tastegraph inventory service (no trailing slash)."
+  default     = ""
+}
+
 variable "app_url" {
   type        = string
-  description = "Base URL of the deployed app — used by EventBridge Scheduler to invoke /api/workers/*"
+  description = "Public app URL. Used by Phase 5 workers for notification deep-links and by the Phase 6 EventBridge Scheduler module to invoke /api/workers/*. The scheduler module additionally requires https:// and will fail its precondition for http values."
+  default     = ""
 }
