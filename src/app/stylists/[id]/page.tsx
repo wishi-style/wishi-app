@@ -27,6 +27,12 @@ export default async function StylistProfilePage({ params }: Props) {
         orderBy: { createdAt: "desc" },
         take: 5,
       },
+      profileBoards: {
+        where: { isFeaturedOnProfile: true, sessionId: null },
+        include: { photos: { orderBy: { orderIndex: "asc" }, take: 1 } },
+        orderBy: { createdAt: "desc" },
+        take: 12,
+      },
     },
   });
 
@@ -89,6 +95,21 @@ export default async function StylistProfilePage({ params }: Props) {
                 <span className="text-sm text-stone-500">
                   ★ {stylist.averageRating.toFixed(1)}
                 </span>
+              )}
+              {!stylist.isAvailable && (
+                <span className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs text-amber-800">
+                  Waitlist only
+                </span>
+              )}
+              {stylist.instagramHandle && (
+                <a
+                  href={`https://instagram.com/${stylist.instagramHandle}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm text-stone-500 underline"
+                >
+                  @{stylist.instagramHandle}
+                </a>
               )}
             </div>
           </div>
@@ -154,6 +175,41 @@ export default async function StylistProfilePage({ params }: Props) {
             <WaitlistButton stylistProfileId={stylist.id} />
           )}
         </div>
+
+        {/* Profile boards carousel */}
+        {stylist.profileBoards.length > 0 && (
+          <div className="mb-12">
+            <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-stone-400">
+              Featured boards
+            </h2>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {stylist.profileBoards.map((b) => (
+                <div
+                  key={b.id}
+                  className="overflow-hidden rounded-xl border border-stone-200 bg-white"
+                >
+                  {b.photos[0]?.url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={b.photos[0].url}
+                      alt={b.profileStyle ?? "profile board"}
+                      className="aspect-square w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex aspect-square items-center justify-center text-xs text-stone-400">
+                      {b.profileStyle ?? ""}
+                    </div>
+                  )}
+                  {b.profileStyle && (
+                    <div className="p-2 text-center text-xs text-stone-600">
+                      {b.profileStyle}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Reviews */}
         {stylist.reviews.length > 0 && (

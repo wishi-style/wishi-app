@@ -88,6 +88,6 @@ variable "inventory_service_url" {
 
 variable "app_url" {
   type        = string
-  description = "Public app URL used to build notification deep-links. Defaults to the ALB DNS if unset."
+  description = "Public app URL. Used by Phase 5 workers for notification deep-links and by the Phase 6 EventBridge Scheduler module to invoke /api/workers/*. The scheduler module additionally requires https:// and will fail its precondition for http values."
   default     = ""
 }

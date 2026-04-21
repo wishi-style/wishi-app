@@ -21,6 +21,7 @@ locals {
     "web_push/vapid_public_key",
     "web_push/vapid_private_key",
     "app/cron_secret",
+    "app/worker_secret",
   ]
 }
 

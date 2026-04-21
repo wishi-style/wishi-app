@@ -23,11 +23,14 @@ cloudfront_price_class = "PriceClass_200"
 # Observability
 log_retention_days = 90
 
-# Phase 5 — workers
+# Phase 5 — workers / Phase 6 — scheduler
 # TODO(production): inventory_service_url + app_url are empty until (a) the
 # tastegraph inventory service URL is handed over and (b) DNS/HTTPS for
 # wishi.me is moved off the legacy AWS account into Route 53 here. Until
 # then workers run with empty env vars — inventory client degrades gracefully
 # and notification deep-links fall through to the notification's default URL.
+# The Phase 6 EventBridge Scheduler module also requires app_url to be
+# https://… — its terraform precondition will block `plan` until this is
+# set to the HTTPS production domain (expected: https://app.wishi.me).
 inventory_service_url = ""
 app_url               = ""
