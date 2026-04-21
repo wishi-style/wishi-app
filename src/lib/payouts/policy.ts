@@ -51,8 +51,17 @@ export function computePayoutAmount(input: PolicyInput): PayoutAmount {
     }
 
     case "LUX_FINAL": {
-      // Remainder of the 70% after the milestone, plus tip.
+      // Remainder of the 70% after the milestone, plus tip. Guard against a
+      // misconfiguration where milestone > stylist share — Stripe Transfers
+      // reject negative amounts, so fail loudly rather than silently pay $0.
       const milestone = plan.luxMilestoneAmountCents ?? 0;
+      if (milestone > stylistShare) {
+        throw new Error(
+          `LUX_FINAL misconfig: milestone ${milestone}¢ exceeds stylist share ${stylistShare}¢ ` +
+            `(plan price ${plan.priceInCents}¢ × ${stylist.payoutPercentage}%). ` +
+            `Check Plan.luxMilestoneAmountCents vs priceInCents × payoutPercentage.`,
+        );
+      }
       return { amountCents: stylistShare - milestone + tipCents, tipCents };
     }
   }

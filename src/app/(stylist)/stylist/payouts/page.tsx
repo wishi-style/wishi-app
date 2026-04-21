@@ -50,33 +50,48 @@ export default async function StylistPayoutsPage() {
   });
   if (!profile) return null;
 
-  const payouts = await prisma.payout.findMany({
-    where: { stylistProfileId: profile.id },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-    select: {
-      id: true,
-      trigger: true,
-      amountInCents: true,
-      tipInCents: true,
-      status: true,
-      skippedReason: true,
-      createdAt: true,
-      stripeTransferId: true,
-    },
-  });
-
   const monthStart = new Date();
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
 
-  const thisMonthTotal = payouts
-    .filter((p) => p.createdAt >= monthStart && (p.status === "COMPLETED" || p.status === "PROCESSING"))
-    .reduce((sum, p) => sum + p.amountInCents, 0);
+  // Totals are aggregated at the DB level so they stay correct once a stylist
+  // has >100 payouts; the `take: 100` below is for the display list only.
+  const earnedStatuses = ["COMPLETED", "PROCESSING"] as const;
+  const [payouts, thisMonthAgg, allTimeAgg] = await Promise.all([
+    prisma.payout.findMany({
+      where: { stylistProfileId: profile.id },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      select: {
+        id: true,
+        trigger: true,
+        amountInCents: true,
+        tipInCents: true,
+        status: true,
+        skippedReason: true,
+        createdAt: true,
+        stripeTransferId: true,
+      },
+    }),
+    prisma.payout.aggregate({
+      where: {
+        stylistProfileId: profile.id,
+        status: { in: [...earnedStatuses] },
+        createdAt: { gte: monthStart },
+      },
+      _sum: { amountInCents: true },
+    }),
+    prisma.payout.aggregate({
+      where: {
+        stylistProfileId: profile.id,
+        status: { in: [...earnedStatuses] },
+      },
+      _sum: { amountInCents: true },
+    }),
+  ]);
 
-  const allTimeTotal = payouts
-    .filter((p) => p.status === "COMPLETED" || p.status === "PROCESSING")
-    .reduce((sum, p) => sum + p.amountInCents, 0);
+  const thisMonthTotal = thisMonthAgg._sum.amountInCents ?? 0;
+  const allTimeTotal = allTimeAgg._sum.amountInCents ?? 0;
 
   const pendingConnect = profile.stylistType === "PLATFORM" && !profile.payoutsEnabled;
 
