@@ -78,3 +78,16 @@ variable "log_retention_days" {
   type    = number
   default = 30
 }
+
+# Phase 5 — workers
+variable "inventory_service_url" {
+  type        = string
+  description = "Base URL of the tastegraph inventory service (no trailing slash)."
+  default     = ""
+}
+
+variable "app_url" {
+  type        = string
+  description = "Public app URL used to build notification deep-links. Defaults to the ALB DNS if unset."
+  default     = ""
+}

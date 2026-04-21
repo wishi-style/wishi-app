@@ -100,6 +100,18 @@ enum PayoutTrigger {
   LUX_FINAL
 }
 
+enum OrderSource {
+  DIRECT_SALE
+  SELF_REPORTED
+  AFFILIATE_CONFIRMED
+}
+
+enum OrderStatus {
+  PENDING
+  ARRIVED
+  RETURNED
+}
+
 enum SubscriptionStatus {
   TRIALING
   ACTIVE
@@ -245,21 +257,21 @@ enum BoardItemSource {
 // ─── Domain 1: Auth & Users ───────────────────────────────
 
 model User {
-  id               String      @id @default(cuid())
-  clerkId          String?     @unique @map("clerk_id")
+  id               String       @id @default(cuid())
+  clerkId          String?      @unique @map("clerk_id")
   authProvider     AuthProvider @default(EMAIL) @map("auth_provider")
-  email            String      @unique
+  email            String       @unique
   phone            String?
-  firstName        String      @map("first_name")
-  lastName         String      @map("last_name")
-  role             UserRole    @default(CLIENT)
+  firstName        String       @map("first_name")
+  lastName         String       @map("last_name")
+  role             UserRole     @default(CLIENT)
   gender           Gender?
-  birthday         DateTime?   @db.Date
-  avatarUrl        String?     @map("avatar_url")
-  favoriteBrands   String[]    @map("favorite_brands")
-  loyaltyTier      LoyaltyTier @default(BRONZE) @map("loyalty_tier")
-  referralCode     String      @unique @map("referral_code")
-  referredByUserId String?     @map("referred_by_user_id")
+  birthday         DateTime?    @db.Date
+  avatarUrl        String?      @map("avatar_url")
+  favoriteBrands   String[]     @map("favorite_brands")
+  loyaltyTier      LoyaltyTier  @default(BRONZE) @map("loyalty_tier")
+  referralCode     String       @unique @map("referral_code")
+  referredByUserId String?      @map("referred_by_user_id")
 
   // Stripe
   stripeCustomerId String? @unique @map("stripe_customer_id")
@@ -297,9 +309,9 @@ model User {
   favoriteStylists      FavoriteStylist[]
 
   // Relations — Domain 4: Sessions
-  clientSessions        Session[]              @relation("ClientSessions")
-  stylistSessions       Session[]              @relation("StylistSessions")
-  matchedStylistHistory SessionMatchHistory[]  @relation("ClientMatchHistory")
+  clientSessions        Session[]             @relation("ClientSessions")
+  stylistSessions       Session[]             @relation("StylistSessions")
+  matchedStylistHistory SessionMatchHistory[] @relation("ClientMatchHistory")
 
   // Relations — Domain 5: Chat & Notifications
   messages          Message[]
@@ -311,8 +323,10 @@ model User {
   favoriteBoards FavoriteBoard[]
 
   // Relations — Domain 8: Commerce
-  payments      Payment[]
-  subscriptions Subscription[]
+  payments        Payment[]
+  subscriptions   Subscription[]
+  orders          Order[]
+  affiliateClicks AffiliateClick[]
 
   @@index([email])
   @@index([role])
@@ -385,16 +399,16 @@ model UserNote {
 // ─── Domain 2: Profiles, Preferences & Quizzes ───────────
 
 model MatchQuizResult {
-  id            String    @id @default(cuid())
-  userId        String?   @map("user_id")
-  guestToken    String?   @unique @map("guest_token")
-  genderToStyle Gender?   @map("gender_to_style")
-  styleDirection String[] @map("style_direction")
-  occasion      String?
-  budgetBracket String?   @map("budget_bracket")
-  rawAnswers    Json?     @map("raw_answers")
-  completedAt   DateTime  @default(now()) @map("completed_at")
-  claimedAt     DateTime? @map("claimed_at")
+  id             String    @id @default(cuid())
+  userId         String?   @map("user_id")
+  guestToken     String?   @unique @map("guest_token")
+  genderToStyle  Gender?   @map("gender_to_style")
+  styleDirection String[]  @map("style_direction")
+  occasion       String?
+  budgetBracket  String?   @map("budget_bracket")
+  rawAnswers     Json?     @map("raw_answers")
+  completedAt    DateTime  @default(now()) @map("completed_at")
+  claimedAt      DateTime? @map("claimed_at")
 
   user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -412,7 +426,7 @@ model StyleProfile {
   dressCode        String?   @map("dress_code")
   occupation       String?
   typicallyWears   String?   @map("typically_wears")
-  needsDescription String?   @db.Text @map("needs_description")
+  needsDescription String?   @map("needs_description") @db.Text
   quizAnswers      Json?     @map("quiz_answers")
   quizCompletedAt  DateTime? @map("quiz_completed_at")
   createdAt        DateTime  @default(now()) @map("created_at")
@@ -427,7 +441,7 @@ model BodyProfile {
   id             String         @id @default(cuid())
   userId         String         @unique @map("user_id")
   bodyType       String?        @map("body_type")
-  bodyIssues     String?        @db.Text @map("body_issues")
+  bodyIssues     String?        @map("body_issues") @db.Text
   highlightAreas String[]       @map("highlight_areas")
   height         String?
   topFit         FitPreference? @map("top_fit")
@@ -529,22 +543,22 @@ model BudgetByCategory {
 // ─── Domain 3: Stylist Profile ────────────────────────────
 
 model StylistProfile {
-  id                    String                  @id @default(cuid())
-  userId                String                  @unique @map("user_id")
-  stylistType           StylistType             @default(PLATFORM) @map("stylist_type")
-  bio                   String?                 @db.Text
-  philosophy            String?                 @db.Text
-  styleSpecialties      String[]                @map("style_specialties")
-  styleExpertiseLevels  Json?                   @map("style_expertise_levels")
-  bodySpecialties       String[]                @map("body_specialties")
-  genderPreference      Gender[]                @map("gender_preference")
-  budgetBrackets        String[]                @map("budget_brackets")
-  expertiseByGender     Json?                   @map("expertise_by_gender")
-  yearsExperience       Int?                    @map("years_experience")
-  isAvailable           Boolean                 @default(true) @map("is_available")
-  directorPick          String?                 @db.Text @map("director_pick")
-  profileMoodboardId    String?                 @unique @map("profile_moodboard_id")
-  instagramHandle       String?                 @map("instagram_handle")
+  id                   String      @id @default(cuid())
+  userId               String      @unique @map("user_id")
+  stylistType          StylistType @default(PLATFORM) @map("stylist_type")
+  bio                  String?     @db.Text
+  philosophy           String?     @db.Text
+  styleSpecialties     String[]    @map("style_specialties")
+  styleExpertiseLevels Json?       @map("style_expertise_levels")
+  bodySpecialties      String[]    @map("body_specialties")
+  genderPreference     Gender[]    @map("gender_preference")
+  budgetBrackets       String[]    @map("budget_brackets")
+  expertiseByGender    Json?       @map("expertise_by_gender")
+  yearsExperience      Int?        @map("years_experience")
+  isAvailable          Boolean     @default(true) @map("is_available")
+  directorPick         String?     @map("director_pick") @db.Text
+  profileMoodboardId   String?     @unique @map("profile_moodboard_id")
+  instagramHandle      String?     @map("instagram_handle")
 
   // Onboarding wizard
   onboardingStatus      StylistOnboardingStatus @default(NOT_STARTED) @map("onboarding_status")
@@ -557,8 +571,8 @@ model StylistProfile {
   matchEligibleSetBy String?   @map("match_eligible_set_by")
 
   // Stripe Connect (PLATFORM stylists only)
-  stripeConnectId    String? @unique @map("stripe_connect_id")
-  payoutPercentage   Int     @default(70) @map("payout_percentage")
+  stripeConnectId  String? @unique @map("stripe_connect_id")
+  payoutPercentage Int     @default(70) @map("payout_percentage")
 
   // Performance
   averageRating          Float? @map("average_rating")
@@ -610,7 +624,7 @@ model StylistReview {
   userId           String   @map("user_id")
   sessionId        String?  @map("session_id")
   rating           Int
-  reviewText       String   @db.Text @map("review_text")
+  reviewText       String   @map("review_text") @db.Text
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
@@ -640,14 +654,14 @@ model FavoriteStylist {
 // ─── Domain 4: Sessions ──────────────────────────────────
 
 model Session {
-  id                   String        @id @default(cuid())
-  clientId             String        @map("client_id")
-  stylistId            String?       @map("stylist_id")
-  planType             PlanType      @map("plan_type")
-  status               SessionStatus @default(BOOKED)
-  amountPaidInCents    Int           @map("amount_paid_in_cents")
-  tipInCents           Int           @default(0) @map("tip_in_cents")
-  currency             String        @default("usd")
+  id                String        @id @default(cuid())
+  clientId          String        @map("client_id")
+  stylistId         String?       @map("stylist_id")
+  planType          PlanType      @map("plan_type")
+  status            SessionStatus @default(BOOKED)
+  amountPaidInCents Int           @map("amount_paid_in_cents")
+  tipInCents        Int           @default(0) @map("tip_in_cents")
+  currency          String        @default("usd")
 
   // Plan limits
   moodboardsAllowed  Int @default(1) @map("moodboards_allowed")
@@ -662,8 +676,8 @@ model Session {
   singleItemsSent Int @default(0) @map("single_items_sent")
 
   // Promo & membership
-  promoCodeId  String?  @map("promo_code_id") // PromoCode relation deferred to Phase 9
-  isMembership Boolean  @default(false) @map("is_membership")
+  promoCodeId  String? @map("promo_code_id") // PromoCode relation deferred to Phase 9
+  isMembership Boolean @default(false) @map("is_membership")
 
   // Plan upgrades
   upgradedAt           DateTime? @map("upgraded_at")
@@ -673,7 +687,7 @@ model Session {
   twilioChannelSid String? @unique @map("twilio_channel_sid")
 
   // AI-generated match message
-  matchMessage String? @db.Text @map("match_message")
+  matchMessage String? @map("match_message") @db.Text
 
   // Timing & state-transition timestamps
   startedAt           DateTime? @map("started_at")
@@ -690,7 +704,7 @@ model Session {
 
   // Feedback
   rating     Int?
-  reviewText String?   @db.Text @map("review_text")
+  reviewText String?   @map("review_text") @db.Text
   ratedAt    DateTime? @map("rated_at")
 
   // Stripe
@@ -705,17 +719,18 @@ model Session {
   deletedAt DateTime? @map("deleted_at")
 
   // Relations
-  client         User          @relation("ClientSessions", fields: [clientId], references: [id])
-  stylist        User?         @relation("StylistSessions", fields: [stylistId], references: [id])
-  subscription   Subscription? @relation("SubscriptionSessions", fields: [subscriptionId], references: [id])
-  messages       Message[]
-  boards         Board[]
-  // cartItems, affiliateClicks — deferred to Phase 5
-  payments       Payment[]
-  matchHistory   SessionMatchHistory[]
-  pendingActions SessionPendingAction[]
-  payouts        Payout[]
-  reviews        StylistReview[]
+  client          User                   @relation("ClientSessions", fields: [clientId], references: [id])
+  stylist         User?                  @relation("StylistSessions", fields: [stylistId], references: [id])
+  subscription    Subscription?          @relation("SubscriptionSessions", fields: [subscriptionId], references: [id])
+  messages        Message[]
+  boards          Board[]
+  orders          Order[]
+  affiliateClicks AffiliateClick[]
+  payments        Payment[]
+  matchHistory    SessionMatchHistory[]
+  pendingActions  SessionPendingAction[]
+  payouts         Payout[]
+  reviews         StylistReview[]
 
   @@index([clientId])
   @@index([stylistId])
@@ -804,7 +819,7 @@ model Payment {
   currency              String        @default("usd")
   stripePaymentIntentId String?       @unique @map("stripe_payment_intent_id")
   stripeChargeId        String?       @map("stripe_charge_id")
-  giftCardId            String?       @map("gift_card_id")  // GiftCard relation deferred to Phase 9
+  giftCardId            String?       @map("gift_card_id") // GiftCard relation deferred to Phase 9
   promoCodeId           String?       @map("promo_code_id") // PromoCode relation deferred to Phase 9
   description           String?
   metadata              Json?
@@ -878,6 +893,95 @@ model Subscription {
   @@map("subscriptions")
 }
 
+model Order {
+  id                 String      @id @default(cuid())
+  userId             String      @map("user_id")
+  sessionId          String?     @map("session_id")
+  source             OrderSource
+  status             OrderStatus @default(PENDING)
+  retailer           String
+  totalInCents       Int         @default(0) @map("total_in_cents")
+  commissionInCents  Int?        @map("commission_in_cents")
+  orderReference     String?     @map("order_reference")
+  currency           String      @default("usd")
+  arrivedAt          DateTime?   @map("arrived_at")
+  createdAt          DateTime    @default(now()) @map("created_at")
+  updatedAt          DateTime    @updatedAt @map("updated_at")
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session         Session?         @relation(fields: [sessionId], references: [id])
+  items           OrderItem[]
+  affiliateClicks AffiliateClick[]
+
+  @@index([userId])
+  @@index([sessionId])
+  @@index([source])
+  @@index([status])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                 String   @id @default(cuid())
+  orderId            String   @map("order_id")
+  inventoryProductId String   @map("inventory_product_id")
+  inventoryListingId String?  @map("inventory_listing_id")
+  title              String
+  brand              String?
+  imageUrl           String?  @map("image_url")
+  priceInCents       Int      @default(0) @map("price_in_cents")
+  size               String?
+  color              String?
+  quantity           Int      @default(1)
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([inventoryProductId])
+  @@map("order_items")
+}
+
+model AffiliateClick {
+  id                 String    @id @default(cuid())
+  userId             String    @map("user_id")
+  inventoryProductId String    @map("inventory_product_id")
+  inventoryListingId String?   @map("inventory_listing_id")
+  retailer           String
+  url                String
+  sessionId          String?   @map("session_id")
+  boardId            String?   @map("board_id")
+  orderId            String?   @map("order_id")
+  clickedAt          DateTime  @default(now()) @map("clicked_at")
+  promptSentAt       DateTime? @map("prompt_sent_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session Session? @relation(fields: [sessionId], references: [id])
+  order   Order?   @relation(fields: [orderId], references: [id])
+
+  @@index([userId])
+  @@index([sessionId])
+  @@index([inventoryProductId])
+  @@index([retailer])
+  @@index([clickedAt])
+  @@index([promptSentAt])
+  @@index([orderId])
+  @@map("affiliate_clicks")
+}
+
+model MerchandisedProduct {
+  id                 String   @id @default(cuid())
+  inventoryProductId String   @unique @map("inventory_product_id")
+  isDirectSale       Boolean  @default(false) @map("is_direct_sale")
+  adminNotes         String?  @map("admin_notes") @db.Text
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@index([isDirectSale])
+  @@map("merchandised_products")
+}
+
 // ─── Domain 10: Notifications ─────────────────────────────
 
 model NotificationPreference {
@@ -916,7 +1020,7 @@ model QuizQuestion {
   id           String           @id @default(cuid())
   quizId       String           @map("quiz_id")
   prompt       String           @db.Text
-  helperText   String?          @db.Text @map("helper_text")
+  helperText   String?          @map("helper_text") @db.Text
   questionType QuizQuestionType @map("question_type")
   isRequired   Boolean          @default(false) @map("is_required")
   sortOrder    Int              @default(0) @map("sort_order")
@@ -990,10 +1094,10 @@ model Board {
   parentBoardId       String?      @map("parent_board_id")
   isRevision          Boolean      @default(false) @map("is_revision")
   title               String?
-  stylistNote         String?      @db.Text @map("stylist_note")
+  stylistNote         String?      @map("stylist_note") @db.Text
   sentAt              DateTime?    @map("sent_at")
   rating              BoardRating?
-  feedbackText        String?      @db.Text @map("feedback_text")
+  feedbackText        String?      @map("feedback_text") @db.Text
   ratedAt             DateTime?    @map("rated_at")
   createdAt           DateTime     @default(now()) @map("created_at")
   updatedAt           DateTime     @updatedAt @map("updated_at")
@@ -1015,23 +1119,23 @@ model Board {
 }
 
 model BoardItem {
-  id                   String          @id @default(cuid())
-  boardId              String          @map("board_id")
-  source               BoardItemSource
-  orderIndex           Int             @default(0) @map("order_index")
-  inventoryProductId   String?         @map("inventory_product_id")
-  closetItemId         String?         @map("closet_item_id")
-  inspirationPhotoId   String?         @map("inspiration_photo_id")
-  webItemUrl           String?         @map("web_item_url")
-  webItemTitle         String?         @map("web_item_title")
-  webItemBrand         String?         @map("web_item_brand")
-  webItemPriceInCents  Int?            @map("web_item_price_in_cents")
-  webItemImageUrl      String?         @map("web_item_image_url")
-  reaction             BoardRating?
-  feedbackText         String?         @db.Text @map("feedback_text")
-  suggestedFeedback    String[]        @map("suggested_feedback")
-  createdAt            DateTime        @default(now()) @map("created_at")
-  updatedAt            DateTime        @updatedAt @map("updated_at")
+  id                  String          @id @default(cuid())
+  boardId             String          @map("board_id")
+  source              BoardItemSource
+  orderIndex          Int             @default(0) @map("order_index")
+  inventoryProductId  String?         @map("inventory_product_id")
+  closetItemId        String?         @map("closet_item_id")
+  inspirationPhotoId  String?         @map("inspiration_photo_id")
+  webItemUrl          String?         @map("web_item_url")
+  webItemTitle        String?         @map("web_item_title")
+  webItemBrand        String?         @map("web_item_brand")
+  webItemPriceInCents Int?            @map("web_item_price_in_cents")
+  webItemImageUrl     String?         @map("web_item_image_url")
+  reaction            BoardRating?
+  feedbackText        String?         @map("feedback_text") @db.Text
+  suggestedFeedback   String[]        @map("suggested_feedback")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
 
   board            Board             @relation(fields: [boardId], references: [id], onDelete: Cascade)
   closetItem       ClosetItem?       @relation(fields: [closetItemId], references: [id], onDelete: SetNull)
@@ -1063,16 +1167,16 @@ model BoardPhoto {
 }
 
 model InspirationPhoto {
-  id          String   @id @default(cuid())
-  s3Key       String   @map("s3_key")
-  url         String
-  title       String?
-  category    String?
-  tags        String[]
-  createdBy   String?  @map("created_by")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  deletedAt   DateTime? @map("deleted_at")
+  id        String    @id @default(cuid())
+  s3Key     String    @map("s3_key")
+  url       String
+  title     String?
+  category  String?
+  tags      String[]
+  createdBy String?   @map("created_by")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
 
   boardPhotos BoardPhoto[]
   boardItems  BoardItem[]
@@ -1083,21 +1187,21 @@ model InspirationPhoto {
 }
 
 model ClosetItem {
-  id                 String   @id @default(cuid())
-  userId             String   @map("user_id")
-  s3Key              String   @map("s3_key")
-  url                String
-  name               String?
-  designer           String?
-  season             String?
-  category           String?
-  colors             String[]
-  size               String?
-  material           String?
-  sourceOrderItemId  String?  @map("source_order_item_id")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
-  deletedAt          DateTime? @map("deleted_at")
+  id                String    @id @default(cuid())
+  userId            String    @map("user_id")
+  s3Key             String    @map("s3_key")
+  url               String
+  name              String?
+  designer          String?
+  season            String?
+  category          String?
+  colors            String[]
+  size              String?
+  material          String?
+  sourceOrderItemId String?   @map("source_order_item_id")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  deletedAt         DateTime? @map("deleted_at")
 
   user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   boardItems BoardItem[]
@@ -1110,15 +1214,15 @@ model ClosetItem {
 }
 
 model FavoriteItem {
-  id                   String   @id @default(cuid())
-  userId               String   @map("user_id")
-  inventoryProductId   String?  @map("inventory_product_id")
-  webUrl               String?  @map("web_url")
-  webItemTitle         String?  @map("web_item_title")
-  webItemBrand         String?  @map("web_item_brand")
-  webItemImageUrl      String?  @map("web_item_image_url")
-  webItemPriceInCents  Int?     @map("web_item_price_in_cents")
-  createdAt            DateTime @default(now()) @map("created_at")
+  id                  String   @id @default(cuid())
+  userId              String   @map("user_id")
+  inventoryProductId  String?  @map("inventory_product_id")
+  webUrl              String?  @map("web_url")
+  webItemTitle        String?  @map("web_item_title")
+  webItemBrand        String?  @map("web_item_brand")
+  webItemImageUrl     String?  @map("web_item_image_url")
+  webItemPriceInCents Int?     @map("web_item_price_in_cents")
+  createdAt           DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

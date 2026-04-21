@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { sendPushNotification } from "@/lib/web-push";
 
 export type NotificationEvent =
+  | "affiliate.purchase_check"
   | "moodboard.sent"
   | "moodboard.feedback"
   | "styleboard.sent"
