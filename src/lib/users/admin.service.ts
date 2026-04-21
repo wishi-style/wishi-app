@@ -95,16 +95,17 @@ export async function setStylistType({
   stylistType: StylistType;
   actorUserId: string;
 }) {
-  await prisma.stylistProfile.update({
+  const profile = await prisma.stylistProfile.update({
     where: { userId },
     data: { stylistType },
+    select: { id: true },
   });
   await writeAudit({
     actorUserId,
     action: "user.set_stylist_type",
     entityType: "StylistProfile",
-    entityId: userId,
-    meta: { stylistType },
+    entityId: profile.id,
+    meta: { userId, stylistType },
   });
 }
 
@@ -117,16 +118,17 @@ export async function setDirectorPick({
   directorPick: string | null;
   actorUserId: string;
 }) {
-  await prisma.stylistProfile.update({
+  const profile = await prisma.stylistProfile.update({
     where: { userId },
     data: { directorPick },
+    select: { id: true },
   });
   await writeAudit({
     actorUserId,
     action: "user.set_director_pick",
     entityType: "StylistProfile",
-    entityId: userId,
-    meta: { directorPick },
+    entityId: profile.id,
+    meta: { userId, directorPick },
   });
 }
 
