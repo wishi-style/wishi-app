@@ -10,6 +10,25 @@ jobs:
   check:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: wishi
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: wishi_p5
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U wishi"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DATABASE_URL: postgresql://wishi:password@localhost:5432/wishi_p5?sslmode=disable
+      DIRECT_DATABASE_URL: postgresql://wishi:password@localhost:5432/wishi_p5?sslmode=disable
+
     steps:
       - uses: actions/checkout@v4
 
@@ -27,3 +46,14 @@ jobs:
       - run: npx tsc --noEmit
 
       - run: npm run build
+
+      - name: Apply migrations to test DB
+        run: |
+          npx prisma migrate deploy
+          psql "$DATABASE_URL" -f prisma/migrations/phase4_constraints.sql
+
+      - name: Seed test DB (plans + quizzes)
+        run: npx tsx prisma/seed.ts
+
+      - name: Run tests
+        run: npm run test

@@ -24,29 +24,35 @@ export async function startImpersonation({
   if (!target?.clerkId) {
     throw new Error("Target user has no Clerk identity");
   }
+  const targetClerkId = target.clerkId;
 
-  const record = await prisma.adminImpersonation.create({
-    data: { adminUserId, targetUserId, reason },
-  });
-
-  const client = await clerkClient();
-  const token = await client.actorTokens.create({
-    userId: target.clerkId,
-    actor: { sub: adminClerkId },
+  // Mint the Clerk actor token inside a Prisma $transaction so that the
+  // DB row and the token come into existence together — or not at all.
+  // If Clerk fails, the transaction rolls back and there's no orphan
+  // AdminImpersonation row to skew "currently impersonating" audits.
+  // The reverse edge (Clerk succeeds, Prisma commit fails) leaves a
+  // short-TTL actor token unused on Clerk's side, which is acceptable.
+  const { impersonationId, tokenUrl } = await prisma.$transaction(async (tx) => {
+    const record = await tx.adminImpersonation.create({
+      data: { adminUserId, targetUserId, reason },
+    });
+    const client = await clerkClient();
+    const token = await client.actorTokens.create({
+      userId: targetClerkId,
+      actor: { sub: adminClerkId },
+    });
+    return { impersonationId: record.id, tokenUrl: token.url };
   });
 
   await writeAudit({
     actorUserId: adminUserId,
     action: "impersonation.start",
     entityType: "AdminImpersonation",
-    entityId: record.id,
+    entityId: impersonationId,
     meta: { targetUserId, reason },
   });
 
-  return {
-    impersonationId: record.id,
-    url: token.url,
-  };
+  return { impersonationId, url: tokenUrl };
 }
 
 export async function endImpersonation({

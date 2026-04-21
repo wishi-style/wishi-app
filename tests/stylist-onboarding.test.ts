@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { stepSchemas, TOTAL_STEPS } from "@/lib/stylists/onboarding";
+import { computeNextState, stepSchemas, TOTAL_STEPS } from "@/lib/stylists/onboarding";
 
 test("step 1 requires at least one gender", () => {
   assert.equal(stepSchemas[1].safeParse({ genderPreference: [] }).success, false);
@@ -102,4 +102,57 @@ test("stepSchemas covers all 12 steps", () => {
   for (let i = 1; i <= 12; i++) {
     assert.ok(stepSchemas[i as keyof typeof stepSchemas], `step ${i} schema missing`);
   }
+});
+
+// ── computeNextState: wizard state-machine ───────────────────────────────
+// Locks in the PROFILE_CREATED / AWAITING_ELIGIBILITY transitions so a
+// future "cleanup" can't reintroduce the step-lag bug Copilot flagged.
+
+test("first advance (0 → 1) flips IN_PROGRESS", () => {
+  assert.deepEqual(
+    computeNextState({ onboardingStep: 0, onboardingStatus: "NOT_STARTED", isInHouse: false }),
+    { step: 1, status: "IN_PROGRESS" }
+  );
+});
+
+test("PLATFORM 9 → 10 flips PROFILE_CREATED the same call, not the next", () => {
+  assert.deepEqual(
+    computeNextState({ onboardingStep: 9, onboardingStatus: "IN_PROGRESS", isInHouse: false }),
+    { step: 10, status: "PROFILE_CREATED" }
+  );
+});
+
+test("PLATFORM 11 → 12 stays PROFILE_CREATED (Connect not done)", () => {
+  assert.deepEqual(
+    computeNextState({ onboardingStep: 11, onboardingStatus: "PROFILE_CREATED", isInHouse: false }),
+    { step: 12, status: "PROFILE_CREATED" }
+  );
+});
+
+test("PLATFORM 12 → 12 flips AWAITING_ELIGIBILITY (Connect return)", () => {
+  assert.deepEqual(
+    computeNextState({ onboardingStep: 12, onboardingStatus: "PROFILE_CREATED", isInHouse: false }),
+    { step: 12, status: "AWAITING_ELIGIBILITY" }
+  );
+});
+
+test("IN_HOUSE 10 → 11 flips PROFILE_CREATED, still needs one more advance", () => {
+  assert.deepEqual(
+    computeNextState({ onboardingStep: 10, onboardingStatus: "IN_PROGRESS", isInHouse: true }),
+    { step: 11, status: "PROFILE_CREATED" }
+  );
+});
+
+test("IN_HOUSE 11 → 11 flips AWAITING_ELIGIBILITY (skips Connect)", () => {
+  assert.deepEqual(
+    computeNextState({ onboardingStep: 11, onboardingStatus: "PROFILE_CREATED", isInHouse: true }),
+    { step: 11, status: "AWAITING_ELIGIBILITY" }
+  );
+});
+
+test("PLATFORM at intermediate steps does not flip status", () => {
+  assert.deepEqual(
+    computeNextState({ onboardingStep: 3, onboardingStatus: "IN_PROGRESS", isInHouse: false }),
+    { step: 4, status: "IN_PROGRESS" }
+  );
 });
