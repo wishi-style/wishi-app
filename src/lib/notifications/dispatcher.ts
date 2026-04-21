@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { sendPushNotification } from "@/lib/web-push";
 
 export type NotificationEvent =
+  | "affiliate.purchase_check"
   | "moodboard.sent"
   | "moodboard.feedback"
   | "styleboard.sent"
@@ -11,6 +12,10 @@ export type NotificationEvent =
   | "session.end_declined"
   | "session.overdue"
   | "session.auto_completed"
+  | "payout.queued"
+  | "payout.completed"
+  | "payout.failed"
+  | "stylist.available"
   | "stylist.waitlist_available";
 
 export interface DispatchInput {

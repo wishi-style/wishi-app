@@ -41,6 +41,17 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPO:latest
 
+      - name: Build and push worker image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -f docker/Dockerfile.worker \
+            -t $ECR_REGISTRY/wishi-worker:$IMAGE_TAG \
+            -t $ECR_REGISTRY/wishi-worker:latest .
+          docker push $ECR_REGISTRY/wishi-worker:$IMAGE_TAG
+          docker push $ECR_REGISTRY/wishi-worker:latest
+
       - name: Run database migration
         env:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}

@@ -135,6 +135,28 @@ export async function approveEnd(sessionId: string): Promise<Session> {
   });
 
   await sendSystemMessage(sessionId, SystemTemplate.END_SESSION_APPROVED, {});
+
+  // Dispatch the completion payout. Mini/Major fires SESSION_COMPLETED,
+  // Lux fires LUX_FINAL (LUX_THIRD_LOOK already fired from sendStyleboard).
+  // Swallow errors — payout failures should not undo the COMPLETED transition.
+  try {
+    const { dispatchPayout, completionTriggerFor } = await import(
+      "@/lib/payouts/dispatch.service"
+    );
+    const plan = await prisma.plan.findUnique({
+      where: { type: updated.planType },
+      select: { payoutTrigger: true },
+    });
+    if (plan) {
+      await dispatchPayout({ sessionId, trigger: completionTriggerFor(plan) });
+    }
+  } catch (error) {
+    console.error("[transitions] approveEnd payout dispatch failed", {
+      sessionId,
+      error,
+    });
+  }
+
   return updated;
 }
 
