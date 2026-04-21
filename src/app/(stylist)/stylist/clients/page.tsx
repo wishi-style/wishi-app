@@ -9,71 +9,59 @@ export const dynamic = "force-dynamic";
 // Session.clientId where stylistId = me (any status). Shows session count
 // + last-session-at, links to /stylist/clients/[id].
 
+const OPEN_STATUSES = ["ACTIVE", "PENDING_END", "PENDING_END_APPROVAL"] as const;
+
 export default async function StylistClientsPage() {
   await requireRole("STYLIST");
   const user = await getCurrentAuthUser();
   if (!user) return null;
 
-  const sessions = await prisma.session.findMany({
-    where: { stylistId: user.id },
-    select: {
-      id: true,
-      clientId: true,
-      status: true,
-      createdAt: true,
-      completedAt: true,
-      planType: true,
-      client: { select: { firstName: true, lastName: true, avatarUrl: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  // Aggregate at the DB level so query cost scales with clients, not with
+  // total sessions. Three queries: session counts per client, the latest
+  // session per client (distinct ON + order by createdAt desc), and the
+  // latest open session per client if one exists.
+  const [counts, latestSessions, latestOpenSessions] = await Promise.all([
+    prisma.session.groupBy({
+      by: ["clientId"],
+      where: { stylistId: user.id },
+      _count: { _all: true },
+    }),
+    prisma.session.findMany({
+      where: { stylistId: user.id },
+      distinct: ["clientId"],
+      orderBy: [{ clientId: "asc" }, { createdAt: "desc" }],
+      select: {
+        id: true,
+        clientId: true,
+        createdAt: true,
+        completedAt: true,
+        planType: true,
+        client: { select: { firstName: true, lastName: true, avatarUrl: true } },
+      },
+    }),
+    prisma.session.findMany({
+      where: { stylistId: user.id, status: { in: [...OPEN_STATUSES] } },
+      distinct: ["clientId"],
+      orderBy: [{ clientId: "asc" }, { createdAt: "desc" }],
+      select: { id: true, clientId: true },
+    }),
+  ]);
 
-  // Reduce to one row per client with aggregates.
-  const byClient = new Map<
-    string,
-    {
-      clientId: string;
-      firstName: string;
-      lastName: string;
-      avatarUrl: string | null;
-      sessionCount: number;
-      lastActivityAt: Date;
-      openSessionId: string | null;
-      latestPlan: string;
-    }
-  >();
-  for (const s of sessions) {
-    const existing = byClient.get(s.clientId);
-    const activity = s.completedAt ?? s.createdAt;
-    if (!existing) {
-      byClient.set(s.clientId, {
-        clientId: s.clientId,
-        firstName: s.client?.firstName ?? "",
-        lastName: s.client?.lastName ?? "",
-        avatarUrl: s.client?.avatarUrl ?? null,
-        sessionCount: 1,
-        lastActivityAt: activity,
-        openSessionId:
-          s.status === "ACTIVE" || s.status === "PENDING_END" || s.status === "PENDING_END_APPROVAL"
-            ? s.id
-            : null,
-        latestPlan: s.planType,
-      });
-    } else {
-      existing.sessionCount += 1;
-      if (activity > existing.lastActivityAt) existing.lastActivityAt = activity;
-      if (
-        !existing.openSessionId &&
-        (s.status === "ACTIVE" || s.status === "PENDING_END" || s.status === "PENDING_END_APPROVAL")
-      ) {
-        existing.openSessionId = s.id;
-      }
-    }
-  }
+  const countByClient = new Map(counts.map((c) => [c.clientId, c._count._all]));
+  const openByClient = new Map(latestOpenSessions.map((s) => [s.clientId, s.id]));
 
-  const clients = Array.from(byClient.values()).sort(
-    (a, b) => b.lastActivityAt.getTime() - a.lastActivityAt.getTime()
-  );
+  const clients = latestSessions
+    .map((s) => ({
+      clientId: s.clientId,
+      firstName: s.client?.firstName ?? "",
+      lastName: s.client?.lastName ?? "",
+      avatarUrl: s.client?.avatarUrl ?? null,
+      sessionCount: countByClient.get(s.clientId) ?? 1,
+      lastActivityAt: s.completedAt ?? s.createdAt,
+      openSessionId: openByClient.get(s.clientId) ?? null,
+      latestPlan: s.planType,
+    }))
+    .sort((a, b) => b.lastActivityAt.getTime() - a.lastActivityAt.getTime());
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
