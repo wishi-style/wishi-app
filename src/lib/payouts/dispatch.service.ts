@@ -12,7 +12,15 @@ import { prisma } from "@/lib/prisma";
 import { completionTriggerFor, computePayoutAmount, isLuxPlan } from "@/lib/payouts/policy";
 import { createTransfer } from "@/lib/stripe-connect";
 import { dispatchNotification } from "@/lib/notifications/dispatcher";
+import { Prisma } from "@/generated/prisma/client";
 import type { PayoutTrigger } from "@/generated/prisma/client";
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2002"
+  );
+}
 
 export type DispatchInput = {
   sessionId: string;
@@ -103,26 +111,45 @@ export async function dispatchPayout(input: DispatchInput): Promise<DispatchResu
   // IN_HOUSE: write the row with status=SKIPPED so bookkeeping is complete,
   // but never touch Stripe.
   if (stylistProfile.stylistType === "IN_HOUSE") {
-    const row = await prisma.payout.create({
-      data: { ...baseData, status: "SKIPPED", skippedReason: "in_house_stylist" },
-    });
-    return { status: "CREATED", payoutId: row.id };
+    try {
+      const row = await prisma.payout.create({
+        data: { ...baseData, status: "SKIPPED", skippedReason: "in_house_stylist" },
+      });
+      return { status: "CREATED", payoutId: row.id };
+    } catch (err) {
+      if (isUniqueViolation(err)) return IDEMPOTENT_SKIP;
+      throw err;
+    }
   }
 
   // PLATFORM but Connect not finished — persist a PENDING row so the CRM can
   // flag it, but don't call Stripe. The `account.updated` webhook flips
   // payoutsEnabled later; a nudge job (Phase 7+) retries these.
   if (!stylistProfile.stripeConnectId || !stylistProfile.payoutsEnabled) {
-    const row = await prisma.payout.create({
-      data: { ...baseData, status: "PENDING", skippedReason: "connect_not_ready" },
-    });
-    return { status: "CREATED", payoutId: row.id };
+    try {
+      const row = await prisma.payout.create({
+        data: { ...baseData, status: "PENDING", skippedReason: "connect_not_ready" },
+      });
+      return { status: "CREATED", payoutId: row.id };
+    } catch (err) {
+      if (isUniqueViolation(err)) return IDEMPOTENT_SKIP;
+      throw err;
+    }
   }
 
-  // Happy path: PLATFORM stylist with Connect enabled.
-  const row = await prisma.payout.create({
-    data: { ...baseData, status: "PENDING" },
-  });
+  // Happy path: PLATFORM stylist with Connect enabled. The findUnique guard
+  // above is a fast path; under concurrent callers (approveEnd re-entry,
+  // double-fired milestone hook) two workers can both pass it, so we also
+  // treat a P2002 on create as idempotent SKIPPED.
+  let row;
+  try {
+    row = await prisma.payout.create({
+      data: { ...baseData, status: "PENDING" },
+    });
+  } catch (err) {
+    if (isUniqueViolation(err)) return IDEMPOTENT_SKIP;
+    throw err;
+  }
 
   try {
     const transfer = await transferImpl({
