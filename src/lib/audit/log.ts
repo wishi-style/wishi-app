@@ -33,7 +33,10 @@ export type AuditAction =
   | "order.notes_updated"
   | "order.refund_issued"
   | "order.refund_approved"
-  | "order.return_initiated";
+  | "order.return_initiated"
+  | "promo_code.create"
+  | "promo_code.update"
+  | "promo_code.deactivate";
 
 type WriteAuditArgs = {
   actorUserId: string | null;
