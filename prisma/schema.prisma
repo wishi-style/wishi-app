@@ -1125,12 +1125,12 @@ model CartItem {
   id                 String   @id @default(cuid())
   userId             String   @map("user_id")
   inventoryProductId String   @map("inventory_product_id")
-  sessionId          String?  @map("session_id")
+  sessionId          String   @map("session_id")
   quantity           Int      @default(1)
   addedAt            DateTime @default(now()) @map("added_at")
 
-  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  session Session? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@unique([userId, inventoryProductId, sessionId])
   @@index([userId])
