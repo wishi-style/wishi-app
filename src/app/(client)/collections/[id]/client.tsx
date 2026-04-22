@@ -33,7 +33,11 @@ export function CollectionDetailClient({ collection: initial }: Props) {
         setError(body.error ?? "Failed to rename");
         return;
       }
-      setCollection({ ...collection, name });
+      // Use the server's normalized name (trim + validation) so what we
+      // display matches what was actually persisted.
+      const updated = (await res.json()) as { name: string; updatedAt: string };
+      setCollection({ ...collection, name: updated.name });
+      setName(updated.name);
       setEditing(false);
     } finally {
       setBusy(false);

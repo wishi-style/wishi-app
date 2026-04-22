@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { DomainError, NotFoundError } from "@/lib/errors/domain-error";
-import type { StylistReview } from "@/generated/prisma/client";
+import type { Prisma, StylistReview } from "@/generated/prisma/client";
 
 export interface ReviewListItem {
   id: string;
@@ -21,13 +21,19 @@ export interface ListReviewsOptions {
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
+// Defensive cap on raw rows pulled per source. Aggregating both sources +
+// sorting + slicing in memory is fine for the stylist review volumes we
+// expect (low hundreds at most); this cap bounds the worst case so a single
+// outlier stylist with thousands of historical reviews can't OOM the page.
+// If/when a stylist approaches this cap we'll switch to cursor pagination.
+const MAX_AGGREGATE_ROWS_PER_SOURCE = 500;
 
 /**
  * List reviews for a stylist, aggregating explicit `StylistReview` rows with
- * `Session.reviewText` written at end-session time. Returns one entry per
- * source row so the UI can paginate uniformly. Each user can have at most one
- * `StylistReview` per stylist (DB unique), so end-session reviews and explicit
- * reviews live as separate entries by design.
+ * `Session.reviewText` written at end-session time. Each user has at most one
+ * explicit review (DB unique); when both an explicit review and a session
+ * rating exist for the same user, the explicit one wins so the row count
+ * reflects what the user actually sees.
  */
 export async function listStylistReviews(
   stylistProfileId: string,
@@ -43,48 +49,39 @@ export async function listStylistReviews(
   });
   if (!profile) throw new NotFoundError("Stylist not found");
 
-  // Query both sources in parallel, then merge sorted by createdAt desc.
-  const [explicitReviews, sessionReviews, explicitCount, sessionCount] =
-    await Promise.all([
-      prisma.stylistReview.findMany({
-        where: { stylistProfileId },
-        include: {
-          user: { select: { firstName: true, lastName: true } },
-        },
-        orderBy: { createdAt: "desc" },
-      }),
-      prisma.session.findMany({
-        where: {
-          stylistId: profile.userId,
-          status: "COMPLETED",
-          rating: { not: null },
-          reviewText: { not: null },
-        },
-        select: {
-          id: true,
-          rating: true,
-          reviewText: true,
-          ratedAt: true,
-          completedAt: true,
-          createdAt: true,
-          client: { select: { firstName: true, lastName: true, id: true } },
-        },
-        orderBy: { ratedAt: "desc" },
-      }),
-      prisma.stylistReview.count({ where: { stylistProfileId } }),
-      prisma.session.count({
-        where: {
-          stylistId: profile.userId,
-          status: "COMPLETED",
-          rating: { not: null },
-          reviewText: { not: null },
-        },
-      }),
-    ]);
+  // Pull both sources in parallel, capped per source.
+  const [explicitReviews, sessionReviews] = await Promise.all([
+    prisma.stylistReview.findMany({
+      where: { stylistProfileId },
+      include: {
+        user: { select: { firstName: true, lastName: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: MAX_AGGREGATE_ROWS_PER_SOURCE,
+    }),
+    prisma.session.findMany({
+      where: {
+        stylistId: profile.userId,
+        status: "COMPLETED",
+        rating: { not: null },
+        reviewText: { not: null },
+      },
+      select: {
+        id: true,
+        rating: true,
+        reviewText: true,
+        ratedAt: true,
+        completedAt: true,
+        createdAt: true,
+        client: { select: { firstName: true, lastName: true, id: true } },
+      },
+      orderBy: { ratedAt: "desc" },
+      take: MAX_AGGREGATE_ROWS_PER_SOURCE,
+    }),
+  ]);
 
-  // Avoid double-counting: if a user has both an explicit review and a
-  // session review, prefer the explicit one (it's user-authored after the
-  // fact, the session one is the rating chip).
+  // De-dup: if a user has both an explicit review and a session rating,
+  // prefer the explicit one (user-authored after the fact).
   const reviewedUserIds = new Set(explicitReviews.map((r) => r.userId));
 
   const explicitItems: ReviewListItem[] = explicitReviews.map((r) => ({
@@ -117,11 +114,9 @@ export async function listStylistReviews(
     (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
   );
 
-  // Total reflects raw row counts, not the de-duped UI list, so the UI knows
-  // when more pages exist server-side.
-  const total = explicitCount + sessionCount;
-
-  return { reviews: all.slice(offset, offset + limit), total };
+  // total mirrors the de-duped list so the "Reviews (N)" chip in the UI
+  // never disagrees with the entries the user can actually page through.
+  return { reviews: all.slice(offset, offset + limit), total: all.length };
 }
 
 export interface CreateReviewInput {
@@ -220,8 +215,6 @@ export async function createStylistReview(
   });
 }
 
-type PrismaTx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
-
 /**
  * Recompute `StylistProfile.averageRating` from BOTH explicit reviews and
  * session ratings (de-duped per user — explicit wins). Defensive worker
@@ -229,7 +222,7 @@ type PrismaTx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
  */
 export async function recomputeAverageRating(
   stylistProfileId: string,
-  tx: PrismaTx | typeof prisma = prisma,
+  tx: Prisma.TransactionClient | typeof prisma = prisma,
 ): Promise<number | null> {
   const profile = await tx.stylistProfile.findUnique({
     where: { id: stylistProfileId },

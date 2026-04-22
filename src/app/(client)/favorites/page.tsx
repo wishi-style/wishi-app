@@ -23,28 +23,34 @@ export default async function FavoritesPage() {
     listFavoriteItems(user.id),
   ]);
 
+  // Profile boards (no session) and moodboards aren't user-facing "Looks";
+  // keep this tab limited to session styleboards so the link target is real.
+  const looks = boards.filter(
+    (fav) => fav.board.type === "STYLEBOARD" && fav.board.sessionId,
+  );
+
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
       <h1 className="mb-8 font-serif text-3xl text-stone-900">Favorites</h1>
       <Tabs defaultValue="looks" className="w-full">
         <TabsList className="mb-8">
-          <TabsTrigger value="looks">Looks ({boards.length})</TabsTrigger>
+          <TabsTrigger value="looks">Looks ({looks.length})</TabsTrigger>
           <TabsTrigger value="items">Items ({items.length})</TabsTrigger>
           <TabsTrigger value="stylists">Stylists ({stylists.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="looks">
-          {boards.length === 0 ? (
+          {looks.length === 0 ? (
             <EmptyState
               title="No favorite looks yet"
               body="Save styleboards from your styling sessions to see them here."
             />
           ) : (
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-              {boards.map((fav) => (
+              {looks.map((fav) => (
                 <Link
                   key={fav.id}
-                  href={`/sessions/${fav.board.sessionId ?? ""}`}
+                  href={`/sessions/${fav.board.sessionId}`}
                   className="group block overflow-hidden rounded-xl border border-stone-200"
                 >
                   <div className="aspect-[3/4] bg-stone-100" />

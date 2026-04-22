@@ -111,13 +111,16 @@ export function ClosetPageClient({
     setAddOpen(false);
   }
 
-  async function createCollection(name: string) {
+  async function createCollection(name: string): Promise<void> {
     const res = await fetch("/api/collections", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name }),
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? "Couldn't create collection");
+    }
     const created = (await res.json()) as { id: string; name: string };
     setCollections((p) => [
       {
@@ -568,14 +571,20 @@ function CreateCollectionButton({
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function submit() {
     if (!name.trim()) return;
     setBusy(true);
+    setError(null);
     try {
       await onCreate(name.trim());
       setOpen(false);
       setName("");
+    } catch (e) {
+      // Keep the dialog open so the user can correct + retry instead of
+      // having state silently reset on a failed POST.
+      setError(e instanceof Error ? e.message : "Couldn't create collection");
     } finally {
       setBusy(false);
     }
@@ -605,6 +614,7 @@ function CreateCollectionButton({
             maxLength={80}
             autoFocus
           />
+          {error && <p className="text-sm text-red-600">{error}</p>}
           <Button
             className="w-full"
             onClick={submit}

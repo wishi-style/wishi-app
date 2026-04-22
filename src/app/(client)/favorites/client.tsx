@@ -17,26 +17,52 @@ interface Props {
 export function FavoritesTabsClient({ stylists: initial }: Props) {
   const [stylists, setStylists] = useState(initial);
   const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function remove(stylistProfileId: string) {
     setPending(stylistProfileId);
+    setError(null);
+
+    // Snapshot the row + position so we can restore on failure.
+    const index = stylists.findIndex(
+      (s) => s.stylistProfileId === stylistProfileId,
+    );
+    const removed = index >= 0 ? stylists[index] : null;
+
     setStylists((prev) =>
       prev.filter((s) => s.stylistProfileId !== stylistProfileId),
     );
+
     try {
-      await fetch(`/api/favorites/stylists/${stylistProfileId}`, {
+      const res = await fetch(`/api/favorites/stylists/${stylistProfileId}`, {
         method: "DELETE",
       });
+      if (!res.ok) throw new Error("delete failed");
     } catch {
-      // Re-add on failure — the network might recover, but the user explicitly
-      // asked to remove, so we leave it removed and just clear the spinner.
+      if (removed) {
+        setStylists((prev) => {
+          const next = [...prev];
+          next.splice(index, 0, removed);
+          return next;
+        });
+      }
+      setError("Couldn't remove this stylist. Please try again.");
     } finally {
       setPending(null);
     }
   }
 
   return (
-    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3">
+    <>
+      {error && (
+        <p
+          role="alert"
+          className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
+        >
+          {error}
+        </p>
+      )}
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3">
       {stylists.map((s) => (
         <div
           key={s.id}
@@ -81,6 +107,7 @@ export function FavoritesTabsClient({ stylists: initial }: Props) {
           </div>
         </div>
       ))}
-    </div>
+      </div>
+    </>
   );
 }

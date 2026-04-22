@@ -48,11 +48,23 @@ export async function createCollection(
         where: { id: { in: closetItemIds }, userId, deletedAt: null },
         select: { id: true },
       });
-      if (owned.length > 0) {
+      const ownedIds = new Set(owned.map((r) => r.id));
+      // Preserve the caller's order — Prisma's findMany doesn't guarantee
+      // input-list order, so derive sortOrder from the original array (and
+      // collapse any duplicates).
+      const seen = new Set<string>();
+      const ordered: string[] = [];
+      for (const id of closetItemIds) {
+        if (ownedIds.has(id) && !seen.has(id)) {
+          seen.add(id);
+          ordered.push(id);
+        }
+      }
+      if (ordered.length > 0) {
         await tx.collectionItem.createMany({
-          data: owned.map((row, i) => ({
+          data: ordered.map((closetItemId, i) => ({
             collectionId: collection.id,
-            closetItemId: row.id,
+            closetItemId,
             sortOrder: i,
           })),
         });
@@ -212,7 +224,21 @@ export async function addItemsToCollection(
     select: { closetItemId: true },
   });
   const existingSet = new Set(existingPairs.map((p) => p.closetItemId));
-  const toCreate = [...ownedIds].filter((id) => !existingSet.has(id));
+  // Walk the original closetItemIds order so sortOrder reflects the caller's
+  // intent (Set iteration order is insertion-time and we built it from a
+  // findMany result, not the request body).
+  const seen = new Set<string>();
+  const toCreate: string[] = [];
+  for (const id of closetItemIds) {
+    if (
+      ownedIds.has(id) &&
+      !existingSet.has(id) &&
+      !seen.has(id)
+    ) {
+      seen.add(id);
+      toCreate.push(id);
+    }
+  }
 
   if (toCreate.length === 0) return { added: [], skipped };
 
