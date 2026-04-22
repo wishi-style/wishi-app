@@ -149,9 +149,6 @@ CREATE UNIQUE INDEX "promo_codes_code_key" ON "promo_codes"("code");
 CREATE UNIQUE INDEX "promo_codes_stripe_coupon_id_key" ON "promo_codes"("stripe_coupon_id");
 
 -- CreateIndex
-CREATE INDEX "promo_codes_code_idx" ON "promo_codes"("code");
-
--- CreateIndex
 CREATE INDEX "promo_codes_credit_type_is_active_idx" ON "promo_codes"("credit_type", "is_active");
 
 -- CreateIndex
