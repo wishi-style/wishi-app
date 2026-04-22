@@ -1,6 +1,6 @@
 "use client";
 
-import * as React from "react";
+import type { ReactNode } from "react";
 import { ExternalLinkIcon } from "lucide-react";
 
 interface Props {
@@ -8,15 +8,23 @@ interface Props {
   retailer: string;
   url: string;
   className?: string;
-  children?: React.ReactNode;
+  children?: ReactNode;
 }
 
 /**
- * Retailer checkout button for the cart's "Purchase at retailer" track.
- * Fires a best-effort AffiliateClick write before redirecting — the write
- * is gated on the existing POST /api/affiliate/click semantics. When the
- * click fails for any reason we still open the retailer link so the user
- * never gets stuck behind an analytics blocker.
+ * Retailer button for the cart's "Purchase at retailer" track.
+ *
+ * Uses `navigator.sendBeacon` so the AffiliateClick write survives the
+ * concurrent navigation — a plain `fetch(...).then(open)` dance would
+ * either (a) let popup blockers eat the window.open since it's no longer
+ * in a direct user-gesture context, or (b) lose the request when the
+ * browser tears down the page. sendBeacon is queued by the browser
+ * exactly for this "fire-and-forget before unload" case.
+ *
+ * The underlying `<a target="_blank" rel="noopener noreferrer">` still
+ * carries the hard URL so the link works without JS and without any
+ * tracking if beacon is blocked. Worst case we lose the click write; the
+ * user never loses the navigation.
  */
 export function RetailerClickButton({
   inventoryProductId,
@@ -25,23 +33,28 @@ export function RetailerClickButton({
   className,
   children,
 }: Props) {
-  const onClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
-    e.preventDefault();
+  const onClick = () => {
+    if (typeof navigator === "undefined") return;
+    const body = JSON.stringify({
+      inventoryProductId: inventoryProductId ?? undefined,
+      retailer,
+      url,
+    });
     try {
-      await fetch("/api/affiliate/click", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          inventoryProductId: inventoryProductId ?? undefined,
-          retailer,
-          url,
-        }),
-      });
+      if (typeof navigator.sendBeacon === "function") {
+        const blob = new Blob([body], { type: "application/json" });
+        navigator.sendBeacon("/api/affiliate/click", blob);
+      } else {
+        // Best-effort fallback — keepalive lets the request outlive nav.
+        void fetch("/api/affiliate/click", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          keepalive: true,
+        });
+      }
     } catch {
-      // Best-effort tracking — don't block the redirect.
-    }
-    if (typeof window !== "undefined") {
-      window.open(url, "_blank", "noopener,noreferrer");
+      // Click tracking is strictly best-effort.
     }
   };
 
