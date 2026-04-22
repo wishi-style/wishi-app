@@ -31,6 +31,8 @@ test("guest match quiz is claimed when the user signs up", async ({ page }) => {
   await page.getByRole("button", { name: "See My Matches" }).click();
 
   await expect(page).toHaveURL(/\/sign-up/);
+  // /sign-up defaults to Clerk's real form; tests opt into the E2E form via ?e2e=1.
+  await page.goto("/sign-up?e2e=1");
   await page.getByLabel("First name").fill("Guest");
   await page.getByLabel("Last name").fill("Claim");
   await page.getByLabel("Email").fill(email);
