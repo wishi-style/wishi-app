@@ -41,7 +41,7 @@ const statusTone: Record<string, string> = {
 export function SessionCard({ session }: { session: SessionData }) {
   const stylistName = session.stylist
     ? `${session.stylist.firstName} ${session.stylist.lastName}`.trim()
-    : "Finding stylist…";
+    : "Finding stylist...";
 
   return (
     <Link
