@@ -6,6 +6,114 @@
 
 Wishi is a styling marketplace. This repo is the Next.js 16 monolith (client, stylist, and admin route groups) deployed on AWS ECS Fargate.
 
+## How we work — read this before anything else
+
+This section is the orientation for a fresh agent. It exists because agents keep rediscovering things we already solved, or claiming they "can't" do something they can. Before doing research or declaring a limitation, check this block.
+
+### You CAN verify your work. Don't deflect.
+
+Tasks like "manual browser QA", "confirm visual fidelity", "test prefers-reduced-motion", "check a price renders correctly", "scrape the rendered DOM", "verify a flow works authed" are all automatable in this repo. Playwright + the systems below already cover them. If you're about to say "I can't drive a browser" or "I can't do manual QA", stop — you almost certainly can, with one of the tools below.
+
+**Verification stack, ordered by cost:**
+
+1. **`npm run typecheck`** — `tsc --noEmit`. Runs in seconds. Run before every commit.
+2. **`npm run lint`** — ESLint. Runs in seconds.
+3. **`npm test`** — unit + Prisma-integration suite via `node --test`. ~25s. Existing target: 248+ passing, 0 failing, 31 intentionally skipped (live-Stripe + CI-harness deferrals).
+4. **`npm run test:visual`** — Playwright visual regression against committed baselines. Config: `playwright.visual.config.ts`. Two projects: `desktop-chrome` (1280×800) + `mobile-chrome` (Pixel 7). Baselines under `tests/visual/marketing.spec.ts-snapshots/` with per-platform suffix (`-darwin`, `-linux`). `npm run test:visual:update` regenerates. 0.5% delta budget.
+5. **`npm run e2e`** — Playwright against `npm run start:e2e` on port 3001 with `E2E_AUTH_MODE=true`. Uses `tests/e2e/global-setup.js` to seed Plans + Quiz tables first. Some tests fail in local environments that lack Twilio / S3 / fresh Clerk rate-limit headroom; CI (nightly) runs it with full env. These failures are NOT blockers for PR merge — the PR CI runs only 1–3 above.
+6. **Dev-server probe** — `npm run dev` boots the app. `curl http://localhost:3000/<route>` checks HTTP status. Useful when you've made a route-level change and want a fast "does it still boot" check before running visual tests.
+
+### Playwright capabilities you likely have
+
+These are first-class and already work. Don't write them off as "requires manual":
+
+- **Viewport emulation** — `await browser.newContext({ viewport: { width, height } })`. Already covered at 1280×800 + 375×812 in the visual-regression projects.
+- **`prefers-reduced-motion`** — `await browser.newContext({ reducedMotion: "reduce" })`. Used by `tests/visual/phase10-verify.spec.ts` to confirm the `Reveal` primitive skips animations.
+- **Dark mode / colour schemes** — `colorScheme: "dark"` on the same context.
+- **Geolocation / timezone / locale** — all on the context.
+- **Console-error capture** — `page.on("pageerror", ...)` + `page.on("console", ...)` to surface JS errors that visual diffs miss.
+- **DOM scraping** — `page.locator("body").innerText()` + string asserts are the right move for "does this price render?" style questions. Don't try to set up a fixture unless the DOM check is insufficient.
+- **Network interception / stubbing** — `page.route("**/api/...", ...)` when you want to test UI without hitting real services.
+
+### Running tests as an authed user — `E2E_AUTH_MODE`
+
+The app has a built-in e2e auth backdoor. **Do not try to automate Clerk's OAuth flow** (it won't work headlessly, and you'll rate-limit the dev tenant).
+
+- **Enable:** `npm run dev:e2e` or `npm run start:e2e` sets `E2E_AUTH_MODE=true` and port `3001`.
+- **Sign-in:** The `/sign-in` page renders a plain email form when the flag is on. POST the form with any `@e2e.wishi.test` email — the server-side action `signInForE2E` looks up the user by email and sets an `E2E_CLERK_ID_COOKIE`. No password. See `src/app/sign-in/[[...sign-in]]/actions.ts`.
+- **Seed users inline from specs:** `tests/e2e/db.ts` exports `ensureClientUser`, `ensureStylistUser`, `createSessionForClient`, `cleanupE2EUserByEmail`, `getPool`. For anything not already covered, raw `pg` queries are the expected path — see `tests/e2e/phase10-authed.spec.ts` for the subscription-seed pattern.
+- **Email domain gate:** only `@e2e.wishi.test` emails can sign in via the backdoor (enforced by the server action). Use `` `phase10-<thing>-${Date.now()}@e2e.wishi.test` `` to avoid collisions.
+- **Cleanup:** always wrap fixture creation in `try/finally` with `cleanupE2EUserByEmail(email)` — the helper deletes cross-entity rows in FK-safe order.
+- **Proxy onboarding gate:** stylists mid-onboarding get redirected away from `/stylist/*`. The gate short-circuits when `E2E_CLERK_ID_COOKIE` is set, so e2e specs aren't trapped in the wizard.
+
+### Price correctness — single source of truth
+
+Never hardcode plan prices (Mini, Major, Lux, additional looks) in JSX. They live in the `Plan` table, surfaced to UI via `src/lib/plans.ts#getPlanPricesForUi()`. Marketing-copy bullet lists (no prices) live in `src/lib/ui/plan-copy.ts`.
+
+**Grep gate** (run before any price-touching PR):
+```bash
+rg -n '"\$60|"\$130|"\$550|"\$20|6000|13000|55000|2000' src/ \
+  -g '!lib/plans.ts' -g '!lib/ui/plan-copy.ts' \
+  -g '!**/*.test.*' -g '!**/*.md'
+```
+The Loveable port had three hardcoded-price bugs (`$70` Major, `$490` Lux, `$54` Mini). Any new port must pass this grep.
+
+### Definition of done for a PR
+
+Before pushing, every PR should have:
+
+- [x] Typecheck clean
+- [x] Lint clean
+- [x] Unit tests pass with no new failures
+- [x] Visual regression passes (or baselines intentionally updated + committed)
+- [x] At least one targeted spec for any new user-facing behaviour — inline DOM scrape, not "I'll verify manually"
+- [x] Price grep gate passes (if JSX changed)
+- [x] Docs updated (see "Docs to keep in sync" below)
+- [x] Copilot (or any) PR review comments addressed before requesting merge
+
+### Docs to keep in sync after each phase
+
+A phase PR is not done until every doc below reflects the new reality. The auto-memory rule tracks some of this too, but CLAUDE.md is the canonical in-repo reference.
+
+- `CLAUDE.md` — conventions block + `## Build phase progress` (flip `[~]` → `[x]` with merge SHA on merge)
+- `README.md` — new env vars, new npm scripts, new dev commands
+- `WISHI-REBUILD-PLAN.md` (in `wishi-style/` parent dir) — verification checkboxes updated with evidence per item
+- `.env.example` — new env vars, with sane defaults
+- `project_wishi_phase_progress.md` auto-memory — move completed phase from "in progress" to "done", capture deferred items
+- Notion Roadmap — user-owned (we don't have write access; flag it so the user can update)
+
+### Branch + PR workflow
+
+- **Branches:** no phase prefixes. Use standard production-style names (`client-frontend-port`, not `phase-10-client-port`).
+- **"Vamos":** when Matt says "vamos", commit + push + open a PR. No questions.
+- **Phase PRs are one branch, one PR.** Land foundation commits first, then pages, then dialogs. PR stays open while incremental work lands — don't split a phase into multiple PRs unless instructed.
+- **Parallel phases need worktrees:** `git worktree add ../wishi-app-phaseN -b <branch>`. Symlink `node_modules` + `.env` from the root checkout. Prisma generate is per-worktree.
+- **Commit messages:** subject-line scope prefix (`feat(frontend)`, `fix(cart)`, `docs`, `test`, etc.) + imperative mood. Body explains *why*, not *what*. Every commit co-authored with the model.
+
+### Common pitfalls that have burned us
+
+Things that have blocked work in the past. If you hit one, the fix is usually in this list.
+
+- **Route-group collision** — Route groups like `(client)` and `(stylist)` don't add to the URL. `/(client)/stylists/page.tsx` and `/stylists/page.tsx` both resolve to `/stylists`. Next 16 refuses to boot with a parallel-pages error. Rename one of them (e.g. `/matches`).
+- **Prisma regen per worktree** — A fresh worktree doesn't have `src/generated/prisma/` until you run `npx prisma generate`. Without it you'll see 200+ TS errors like "Cannot find module '@/generated/prisma/client'". Run prisma generate first, always.
+- **Visual baseline platform suffix** — Baselines are per-OS (`-darwin`, `-linux`). When you update a baseline on macOS it doesn't cover Linux CI. If a visual test passes locally but fails in CI, the baseline is missing for the CI platform — either run in Docker with `-linux` or update both.
+- **Lucide 1.x icon renames** — Every icon requires the `*Icon` suffix (`PlusIcon`, not `Plus`). Brand glyphs (Instagram, Facebook, Twitter) were dropped — inline SVGs.
+- **Clerk v7 breaking changes** — `SignedIn` / `SignedOut` components are gone. Use `auth()` from `@clerk/nextjs/server` in Server Components with conditional rendering. `UserButton` from `@clerk/nextjs` still works for authed avatar UI.
+- **Base-UI accordion** — `type="single" collapsible` are Radix-only props. Base-UI accordion is single-open by default; drop those props.
+- **Tailwind v4 tokens** — Colours in `globals.css` sit under `@theme inline` as `hsl(...)` values. No `tailwind.config.ts` file. Extended palette names (`cream`, `warm-beige`, `taupe`, `dark-taupe`, `teal`, `burgundy`) are already wired.
+- **shadcn `base-nova` registry gaps** — Some components (notably `form`) ship an empty JSON stub in the base-nova preset. `shadcn add form` will hang at "Checking registry" because the resolve returns nothing. Either write the component by hand from the `default` preset source, or skip if no page needs it.
+- **Stripe / Twilio / S3 in local e2e** — Some existing e2e tests (`chat.spec.ts`, `boards.spec.ts`, `end-session.spec.ts`) fail locally because they need live Twilio / S3 / Stripe CLI. They run green in the nightly workflow. Don't treat them as regressions unless your change actually touched those code paths.
+- **Clerk dev rate limits** — Tests that create many users in quick succession can hit `too_many_requests` on the shared Clerk dev tenant. Space them out or use `Date.now()` + a random suffix.
+- **`unused-vars` on React event handlers** — ESLint flags `(_e: MouseEvent) => ...`. Drop the param if unused.
+
+### When building a new user-facing surface, do this
+
+1. Start the dev server (`npm run dev` — DO NOT add sleep/delay before starting; just run it).
+2. Hit the route with `curl -sI http://localhost:3000/<route>` to confirm it returns 200.
+3. Screenshot it via `page.screenshot()` in a throwaway Playwright test if you want to see what actually rendered.
+4. If you changed a price or copy string, grep for it after — don't assume it rendered as you wrote it.
+5. Write a targeted verify spec before calling the task done. Test plans with "[ ] manual QA" items are a code smell — replace each with an automated check.
+
 ## Stack
 
 - **Framework:** Next.js 16 (App Router, TypeScript strict, Turbopack)
@@ -105,7 +213,7 @@ wishi-app/
 - [ ] Phase 7: AI Features
 - [x] Phase 8: Admin Panel
 - [x] Phase 9: Commerce Extras (9a billing PR#23, 9b loyalty/promo PR#27, 9c direct-sale PR#26, 9d closet/social PR#25, 9e end-session/match-score PR#24)
-- [~] Phase 10: Client App Frontend Port — `client-frontend-port` (PR#30), code-complete. Foundation + all public marketing pages (`/`, `/pricing`, `/how-it-works`, `/lux`, `/stylists`, `/stylists/[id]`, `/feed`, `not-found.tsx`) + all authed pages (`(client)/sessions`, `settings`, `favorites`, `cart` with two-track Wishi + retailer UI, `matches`, `orders`, `closet`, `sessions/[id]/end-session`, `sessions/[id]/chat` = StylingRoom) + all shared dialogs (UpgradePlanDialog, CancelMembershipDialog, BuyLooksDialog, RestyleWizard, MoodBoardWizard, MoodBoardDialog, StyleBoardDialog, ProductDetailDialog, ClosetItemDialog) + Motion library `Reveal` + Playwright visual-regression harness (`npm run test:visual`) landed. StylingRoom ships Cart tab filtered to session CartItems, right-rail SessionSidebar (plan-progress, BuyLooks CTA, Upgrade deep-link), and Phase-7-forward Suggested Replies chip row gated on `NEXT_PUBLIC_FEATURE_AI_SUGGESTED_REPLIES`. Verified: dev server boots clean, all 6 marketing routes return 200, full repo `npx tsc --noEmit` is 0 errors, `npm test` is 248/279 passing / 31 intentionally skipped / 0 failing, 12 visual-regression baselines captured (6 routes × 2 viewports) and replay-stable. The authed "top matches" view lives at `/matches` since `/(client)/stylists` collided with the public `/stylists` directory. `shadcn add form` deferred — base-nova registry does not ship a form component and no Phase 10 page uses one.
+- [x] Phase 10: Client App Frontend Port — PR#30 merged 2026-04-22 (`bf022e7`). Foundation + all public marketing pages (`/`, `/pricing`, `/how-it-works`, `/lux`, `/stylists`, `/stylists/[id]`, `/feed`, `not-found.tsx`) + all authed pages (`(client)/sessions`, `settings`, `favorites`, `cart` with two-track Wishi + retailer UI, `matches`, `orders`, `closet`, `sessions/[id]/end-session`, `sessions/[id]/chat` = StylingRoom) + all shared dialogs (UpgradePlanDialog, CancelMembershipDialog, BuyLooksDialog, RestyleWizard, MoodBoardWizard, MoodBoardDialog, StyleBoardDialog, ProductDetailDialog, ClosetItemDialog) + Motion library `Reveal` + Playwright visual-regression harness (`npm run test:visual`) landed. StylingRoom ships Cart tab filtered to session CartItems, right-rail SessionSidebar (plan-progress, BuyLooks CTA, Upgrade deep-link), and Phase-7-forward Suggested Replies chip row gated on `NEXT_PUBLIC_FEATURE_AI_SUGGESTED_REPLIES`. Verified: dev server boots clean, all 6 marketing routes return 200, full repo `npx tsc --noEmit` is 0 errors, `npm test` is 248/279 passing / 31 intentionally skipped / 0 failing, 12 visual-regression baselines captured (6 routes × 2 viewports) and replay-stable. The authed "top matches" view lives at `/matches` since `/(client)/stylists` collided with the public `/stylists` directory. `shadcn add form` deferred — base-nova registry does not ship a form component and no Phase 10 page uses one.
 - [ ] Phase 11: Polish & Launch
 
 ## Staging
