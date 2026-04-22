@@ -106,6 +106,27 @@ Things that have blocked work in the past. If you hit one, the fix is usually in
 - **Clerk dev rate limits** — Tests that create many users in quick succession can hit `too_many_requests` on the shared Clerk dev tenant. Space them out or use `Date.now()` + a random suffix.
 - **`unused-vars` on React event handlers** — ESLint flags `(_e: MouseEvent) => ...`. Drop the param if unused.
 
+### Post-merge cleanup is yours, not the user's
+
+When a phase/feature PR lands on `main`, the cleanup below is the agent's responsibility. Do **not** list these as "user-owned TODOs" — you have the tools, just do them. Coming off a worktree to do cleanup in the main checkout is a normal move, not a blocker.
+
+- **Merge PRs yourself** — `gh pr merge <num> --repo wishi-style/wishi-app --squash --delete-branch`. If the user says "merge it" (or a PR is already approved + green), drive the rest of the cleanup too.
+- **Come off the worktree** — `cd /Users/matthewcardozo/Wishi/wishi-style/wishi-app`. Bash cwd persists across Bash calls in this runtime, so one `cd` covers the rest of the session.
+- **Fast-forward main** — `git fetch origin --prune && git checkout main && git pull --ff-only origin main`.
+- **Remove the phase worktree** — `git worktree remove <name>` from the main worktree (you can't remove a worktree from inside it).
+- **Delete stale local branches** — `git branch -D <phase-branch> <any-child-branches>`. Remote deletion happens automatically with `--delete-branch` on merge + `delete_branch_on_merge=true` on the repo.
+- **Regenerate Prisma client** — `npx prisma generate` in the main worktree after a long-lived branch lands (schema may have shifted).
+- **Toggle repo settings via `gh api`** — e.g. `gh api --method PATCH /repos/wishi-style/wishi-app -f delete_branch_on_merge=true`. Anything exposed in GitHub's Settings UI is reachable this way; don't ask the user to click through.
+- **Docs follow-up PR** — after cleanup, update every doc in "Docs to keep in sync" on a small branch (`docs/<topic>`) + PR. Flip status markers, capture merge SHAs, update auto-memory. Don't leave this dangling.
+
+**What's actually user-owned and why:**
+
+- **Notion Roadmap** — no MCP / API access from the agent sandbox today. Flag the specific entry + desired status and the user will update.
+- **Paths outside the repo tree** — the sandbox blocks `ls` / `rm` / `cat` outside `wishi-style/`. Stray typos or system-level dirs (e.g. an accidental `~/the-wishi-style`) must be deleted by the user.
+- **Anything the user has explicitly claimed** — e.g. a Stripe product migration they said they'd run, an AWS console action, a domain DNS change.
+
+If you're about to write "still requires your action" for something above that user-owned line, stop — you almost certainly have the tool for it. Check `gh --help`, `git worktree --help`, and this doc before deferring.
+
 ### When building a new user-facing surface, do this
 
 1. Start the dev server (`npm run dev` — DO NOT add sleep/delay before starting; just run it).
