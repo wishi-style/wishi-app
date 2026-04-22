@@ -15,6 +15,7 @@ import {
   Shirt,
   ListChecks,
   ScrollText,
+  Ticket,
 } from "lucide-react";
 
 const sections: Array<{
@@ -46,6 +47,12 @@ const sections: Array<{
       { href: "/admin/inspiration-photos", label: "Inspiration", icon: ImageIcon },
       { href: "/admin/looks", label: "Looks", icon: Shirt },
       { href: "/admin/quiz-builder", label: "Quiz Builder", icon: ListChecks },
+    ],
+  },
+  {
+    heading: "Promotions",
+    links: [
+      { href: "/admin/promo-codes", label: "Promo codes", icon: Ticket },
     ],
   },
   {

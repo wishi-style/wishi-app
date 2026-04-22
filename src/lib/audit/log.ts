@@ -27,7 +27,10 @@ export type AuditAction =
   | "quiz.question_remove"
   | "quiz.publish"
   | "impersonation.start"
-  | "impersonation.end";
+  | "impersonation.end"
+  | "promo_code.create"
+  | "promo_code.update"
+  | "promo_code.deactivate";
 
 type WriteAuditArgs = {
   actorUserId: string | null;

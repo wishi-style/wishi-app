@@ -1,8 +1,9 @@
 // EventBridge Scheduler module for Wishi internal workers.
 //
-// Two schedules:
+// Three schedules:
 //   - waitlist-notify        — hourly
 //   - payout-reconcile       — Mondays 06:00 UTC
+//   - loyalty-recalc         — 1st of month 00:00 UTC
 //
 // Each schedule fires an HTTPS API destination pointing at the ALB-backed
 // /api/workers/<name> endpoint, signed with `x-worker-secret` from
@@ -81,6 +82,14 @@ resource "aws_cloudwatch_event_api_destination" "payout_reconcile" {
   invocation_rate_limit_per_second = 10
 }
 
+resource "aws_cloudwatch_event_api_destination" "loyalty_recalc" {
+  name                             = "${local.name_prefix}-loyalty-recalc"
+  invocation_endpoint              = "${var.app_url}/api/workers/loyalty-recalc"
+  http_method                      = "POST"
+  connection_arn                   = aws_cloudwatch_event_connection.workers.arn
+  invocation_rate_limit_per_second = 10
+}
+
 # ── IAM role for Scheduler → EventBridge API destination ───────────────────
 resource "aws_iam_role" "scheduler" {
   name = "${local.name_prefix}-scheduler"
@@ -106,6 +115,7 @@ resource "aws_iam_role_policy" "scheduler" {
         Resource = [
           aws_cloudwatch_event_api_destination.waitlist_notify.arn,
           aws_cloudwatch_event_api_destination.payout_reconcile.arn,
+          aws_cloudwatch_event_api_destination.loyalty_recalc.arn,
         ]
       },
       # Scheduler does not need secretsmanager:GetSecretValue at invocation
@@ -146,6 +156,24 @@ resource "aws_scheduler_schedule" "payout_reconcile" {
 
   target {
     arn      = aws_cloudwatch_event_api_destination.payout_reconcile.arn
+    role_arn = aws_iam_role.scheduler.arn
+  }
+}
+
+resource "aws_scheduler_schedule" "loyalty_recalc" {
+  name       = "${local.name_prefix}-loyalty-recalc"
+  group_name = "default"
+
+  # 1st of each month at 00:00 UTC. Defensive recompute for loyalty tiers
+  # and stylist averageRating — the synchronous hooks keep these correct
+  # in real time; this worker catches drift.
+  schedule_expression          = "cron(0 0 1 * ? *)"
+  schedule_expression_timezone = "UTC"
+
+  flexible_time_window { mode = "OFF" }
+
+  target {
+    arn      = aws_cloudwatch_event_api_destination.loyalty_recalc.arn
     role_arn = aws_iam_role.scheduler.arn
   }
 }

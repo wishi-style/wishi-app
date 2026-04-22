@@ -56,6 +56,16 @@ export async function cleanupE2EUserById(userId: string): Promise<void> {
     [userId],
   );
   await p.query(`DELETE FROM session_match_history WHERE client_id = $1 OR stylist_id = $1`, [userId]);
+  // Phase 9b: promotions + loyalty must be cleared before payments/users
+  await p.query(
+    `DELETE FROM referral_credits WHERE referrer_user_id = $1 OR referred_user_id = $1`,
+    [userId],
+  );
+  await p.query(`DELETE FROM loyalty_accounts WHERE user_id = $1`, [userId]);
+  await p.query(
+    `DELETE FROM gift_cards WHERE purchaser_user_id = $1`,
+    [userId],
+  );
   await p.query(`DELETE FROM payments WHERE user_id = $1`, [userId]);
   // Phase 6: Payout rows must be cleared before stylist_profiles can cascade-delete.
   await p.query(

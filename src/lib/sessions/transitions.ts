@@ -7,6 +7,8 @@ import {
 } from "@/lib/chat/send-message";
 import { SystemTemplate } from "@/lib/chat/system-templates";
 import { notifyClient, notifyStylist } from "@/lib/notifications/dispatcher";
+import { onSessionCompleted as loyaltyOnSessionCompleted } from "@/lib/loyalty/service";
+import { issueReferralCreditIfFirstCompletion } from "@/lib/promotions/referral.service";
 import { isReadyForPendingEnd } from "./pending-end";
 import type { Session, SessionStatus } from "@/generated/prisma/client";
 
@@ -131,6 +133,8 @@ export async function approveEnd(sessionId: string): Promise<Session> {
       data: { status: "COMPLETED", completedAt: new Date() },
     });
     await resolveAction(sessionId, "PENDING_END_APPROVAL", { tx });
+    await loyaltyOnSessionCompleted(s.clientId, tx);
+    await issueReferralCreditIfFirstCompletion(s.clientId, s.id, tx);
     return s;
   });
 
