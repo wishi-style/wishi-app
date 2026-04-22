@@ -8,6 +8,7 @@ import type {
   ClosetItem,
   InspirationPhoto,
 } from "@/generated/prisma/client";
+import { PendingActionChip } from "@/components/boards/pending-action-chip";
 
 interface Props {
   boardId: string;
@@ -16,6 +17,7 @@ interface Props {
   canRate: boolean;
   closetItems: ClosetItem[];
   inspiration: InspirationPhoto[];
+  pendingDueAt: Date | string | null;
 }
 
 const SUGGESTED_FEEDBACK = [
@@ -35,6 +37,7 @@ export function StyleboardViewer({
   canRate,
   closetItems,
   inspiration,
+  pendingDueAt,
 }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -109,6 +112,12 @@ export function StyleboardViewer({
 
   return (
     <>
+      {canRate && pendingDueAt && (
+        <div className="mb-4">
+          <PendingActionChip dueAt={pendingDueAt} />
+        </div>
+      )}
+
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3">
         {items.map((it) => (
           <StyleboardItemCard
