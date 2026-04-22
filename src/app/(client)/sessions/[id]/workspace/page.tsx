@@ -42,7 +42,10 @@ export default async function ClientWorkspacePage({
   const stylistName = session.stylist
     ? `${session.stylist.firstName} ${session.stylist.lastName}`
     : "Your Stylist";
-  const { boards, curated } = await getWorkspaceData(session.id);
+  const { boards, curated, cart, progress } = await getWorkspaceData(
+    session.id,
+    user.id,
+  );
 
   return (
     <>
@@ -55,6 +58,8 @@ export default async function ClientWorkspacePage({
         viewerRole="CLIENT"
         boards={boards}
         curated={curated}
+        cart={cart}
+        progress={progress}
       />
       <PushPermission />
     </>
