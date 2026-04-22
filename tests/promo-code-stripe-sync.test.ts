@@ -2,11 +2,20 @@
 // valid STRIPE_SECRET_KEY in .env (sk_test_…). Creates a SESSION promo
 // code, retrieves the Coupon from Stripe, asserts the fields round-trip,
 // then cleans up (deactivatePromoCode deletes the Stripe Coupon).
+//
+// Skipped automatically when STRIPE_SECRET_KEY is missing or looks like
+// the .env.example placeholder, so CI (which doesn't inject live Stripe
+// creds) passes without running this. Run locally with a real sk_test_…
+// key to verify the coupon round-trip.
 
 import assert from "node:assert/strict";
 import test, { afterEach } from "node:test";
 import { randomUUID } from "node:crypto";
 import "dotenv/config";
+
+const stripeKey = process.env.STRIPE_SECRET_KEY;
+const hasLiveStripeTestKey =
+  !!stripeKey && stripeKey.startsWith("sk_test_") && stripeKey !== "sk_test_xxx";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import {
@@ -42,7 +51,11 @@ afterEach(async () => {
   }
 });
 
-test("createPromoCode with SESSION type creates a matching Stripe Coupon", async () => {
+const skipReason = !hasLiveStripeTestKey
+  ? "STRIPE_SECRET_KEY missing — run locally with a real sk_test_ key"
+  : undefined;
+
+test("createPromoCode with SESSION type creates a matching Stripe Coupon", { skip: skipReason }, async () => {
   const suffix = randomUUID().slice(0, 8).toUpperCase();
   const admin = await ensureAdminUser({
     clerkId: `pc_${suffix}`,
@@ -80,7 +93,7 @@ test("createPromoCode with SESSION type creates a matching Stripe Coupon", async
   );
 });
 
-test("createPromoCode with SHOPPING type does NOT touch Stripe", async () => {
+test("createPromoCode with SHOPPING type does NOT touch Stripe", { skip: skipReason }, async () => {
   const suffix = randomUUID().slice(0, 8).toUpperCase();
   const admin = await ensureAdminUser({
     clerkId: `pcs_${suffix}`,
