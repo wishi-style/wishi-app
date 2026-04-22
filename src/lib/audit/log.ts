@@ -27,7 +27,13 @@ export type AuditAction =
   | "quiz.question_remove"
   | "quiz.publish"
   | "impersonation.start"
-  | "impersonation.end";
+  | "impersonation.end"
+  | "order.tracking_set"
+  | "order.status_changed"
+  | "order.notes_updated"
+  | "order.refund_issued"
+  | "order.refund_approved"
+  | "order.return_initiated";
 
 type WriteAuditArgs = {
   actorUserId: string | null;
