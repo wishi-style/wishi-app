@@ -56,17 +56,19 @@ export async function cleanupE2EUserById(userId: string): Promise<void> {
     [userId],
   );
   await p.query(`DELETE FROM session_match_history WHERE client_id = $1 OR stylist_id = $1`, [userId]);
-  // Phase 9b: promotions + loyalty must be cleared before payments/users
+  // Phase 9b: loyalty/referral have no FK into payments, drop first.
   await p.query(
     `DELETE FROM referral_credits WHERE referrer_user_id = $1 OR referred_user_id = $1`,
     [userId],
   );
   await p.query(`DELETE FROM loyalty_accounts WHERE user_id = $1`, [userId]);
+  // payments.gift_card_id FK references gift_cards.id — delete payments
+  // first, then gift_cards, so gift-card-purchase payments don't trip the FK.
+  await p.query(`DELETE FROM payments WHERE user_id = $1`, [userId]);
   await p.query(
     `DELETE FROM gift_cards WHERE purchaser_user_id = $1`,
     [userId],
   );
-  await p.query(`DELETE FROM payments WHERE user_id = $1`, [userId]);
   // Phase 6: Payout rows must be cleared before stylist_profiles can cascade-delete.
   await p.query(
     `DELETE FROM payouts WHERE session_id IN (SELECT id FROM sessions WHERE client_id = $1 OR stylist_id = $1)

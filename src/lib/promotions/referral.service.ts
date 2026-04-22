@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import type { Prisma, ReferralCredit } from "@/generated/prisma/client";
+import { Prisma, type ReferralCredit } from "@/generated/prisma/client";
 
 /**
  * $20 credit to the referrer when the referred user completes their first
@@ -40,23 +40,29 @@ export async function issueReferralCreditIfFirstCompletion(
   });
   if (completedCount !== 1) return null;
 
-  // Race-safe via ReferralCredit.referredUserId @unique — if two transitions
-  // for the same user collide, the second INSERT hits the unique and we
-  // skip cleanly.
-  const existing = await tx.referralCredit.findUnique({
-    where: { referredUserId },
-    select: { id: true },
-  });
-  if (existing) return null;
-
-  return tx.referralCredit.create({
-    data: {
-      referrerUserId: user.referredByUserId,
-      referredUserId,
-      creditAmountInCents: REFERRAL_CREDIT_IN_CENTS,
-      sessionId,
-    },
-  });
+  // Race-safe via ReferralCredit.referredUserId @unique. The find-then-create
+  // pattern isn't atomic (two concurrent approveEnd calls for the same
+  // referred user can both pass the read), so catch P2002 on the create and
+  // treat it as "already issued" rather than letting the error bubble and
+  // abort the surrounding approveEnd transaction.
+  try {
+    return await tx.referralCredit.create({
+      data: {
+        referrerUserId: user.referredByUserId,
+        referredUserId,
+        creditAmountInCents: REFERRAL_CREDIT_IN_CENTS,
+        sessionId,
+      },
+    });
+  } catch (err) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      return null;
+    }
+    throw err;
+  }
 }
 
 /**
@@ -76,11 +82,16 @@ export async function getUnredeemedCreditBalance(
 }
 
 /**
- * Atomically claim up to `maxCents` of unredeemed credit for a user and
- * return the claimed amount. Marks the consumed ReferralCredit rows as
- * redeemed so a later call can't double-spend. Call from within a Stripe
- * Checkout session builder: decrement the total by the returned amount,
- * stash the claim in metadata for the webhook to finalize.
+ * Claim up to `maxCents` of unredeemed credit for a user, marking the
+ * consumed ReferralCredit rows as `redeemedAt = now()` in the same tx so
+ * a parallel caller can't double-spend.
+ *
+ * This is ONE-PHASE: credits are consumed when claimed, not on later
+ * webhook confirmation. That means if the caller's checkout is abandoned
+ * or fails, the credit is gone. The tradeoff is acceptable for $20
+ * uniform credits that support can re-issue manually; a proper
+ * reserve→finalize would need a `reservedAt` column + a webhook finalize
+ * path. Revisit when credits grow past the support-recoverable range.
  */
 export async function claimCredit(
   userId: string,

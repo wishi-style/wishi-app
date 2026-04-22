@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { getOrCreateStripeCustomer } from "@/lib/payments/stripe-customer";
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 
 export const GIFT_CARD_MIN_CENTS = 2500; // $25 floor
 export const GIFT_CARD_MAX_CENTS = 50000; // $500 ceiling
@@ -110,11 +110,14 @@ export async function applyGiftCardPurchaseFromCheckout(
     return;
   }
 
+  // Fast-path idempotency: a matching Payment already exists. The
+  // authoritative guard is the unique constraint catch below — this read
+  // just avoids the write-path work when the happy case is a replay.
   const existingPayment = await prisma.payment.findUnique({
     where: { stripePaymentIntentId: paymentIntentId },
     select: { id: true },
   });
-  if (existingPayment) return; // idempotent
+  if (existingPayment) return;
 
   const amountPaid = checkoutSession.amount_total ?? 0;
   if (!Number.isFinite(expectedTotal) || expectedTotal !== amountPaid) {
@@ -127,7 +130,8 @@ export async function applyGiftCardPurchaseFromCheckout(
 
   const currency = checkoutSession.currency ?? "usd";
 
-  await prisma.$transaction(async (tx) => {
+  try {
+    await prisma.$transaction(async (tx) => {
     const sessionCode = await tx.promoCode.create({
       data: {
         code: giftPromoCode("S"),
@@ -171,7 +175,20 @@ export async function applyGiftCardPurchaseFromCheckout(
         description: `Gift card for ${recipientEmail}`,
       },
     });
-  });
+    });
+  } catch (err) {
+    // P2002 on Payment.stripePaymentIntentId means a concurrent webhook
+    // for this same PaymentIntent landed first — the transaction rolled
+    // back cleanly and there's nothing for us to do. Any other error
+    // (schema/connection/etc) bubbles so the webhook can retry.
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      return;
+    }
+    throw err;
+  }
 }
 
 /**

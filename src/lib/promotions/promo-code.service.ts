@@ -67,7 +67,14 @@ export async function createPromoCode(
   }
 
   const stripeCouponId =
-    input.creditType === "SESSION" ? await createStripeCoupon(rawCode, input.amountInCents) : null;
+    input.creditType === "SESSION"
+      ? await createStripeCoupon({
+          code: rawCode,
+          amountInCents: input.amountInCents,
+          usageLimit: input.usageLimit ?? null,
+          expiresAt: input.expiresAt ?? null,
+        })
+      : null;
 
   try {
     const promo = await prisma.promoCode.create({
@@ -137,13 +144,26 @@ export async function deactivatePromoCode(
   return promo;
 }
 
-async function createStripeCoupon(code: string, amountInCents: number): Promise<string> {
+async function createStripeCoupon(input: {
+  code: string;
+  amountInCents: number;
+  usageLimit: number | null;
+  expiresAt: Date | null;
+}): Promise<string> {
+  // Mirror the Wishi-side limits into Stripe so a code that's expired or
+  // exhausted locally can't still be redeemed on the Stripe Checkout page.
   const coupon = await stripe.coupons.create({
-    id: code,
-    amount_off: amountInCents,
+    id: input.code,
+    amount_off: input.amountInCents,
     currency: "usd",
     duration: "once",
-    name: code,
+    name: input.code,
+    ...(input.usageLimit !== null && input.usageLimit > 0
+      ? { max_redemptions: input.usageLimit }
+      : {}),
+    ...(input.expiresAt
+      ? { redeem_by: Math.floor(input.expiresAt.getTime() / 1000) }
+      : {}),
   });
   return coupon.id;
 }
