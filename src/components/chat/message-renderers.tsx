@@ -253,8 +253,10 @@ function EndSessionCard({
 
 function SystemMessage({ message }: { message: ChatMessage }) {
   return (
-    <div className="mx-auto max-w-[85%] py-1 text-center">
-      <p className="text-xs leading-relaxed text-stone-400">{message.body}</p>
+    <div className="mx-auto flex w-full max-w-[85%] justify-center py-1">
+      <span className="inline-block rounded-full border border-stone-200 bg-stone-100/80 px-3 py-1 text-center text-xs italic leading-relaxed text-stone-500">
+        {message.body}
+      </span>
     </div>
   );
 }
