@@ -5,6 +5,13 @@ import type { Order, OrderItem, OrderSource, OrderStatus } from "@/generated/pri
 
 export const REFUND_SOFT_CAP_CENTS = 20_000; // $200 — surfaces a manager-approval warning
 
+/** Pure helper: returns the soft-cap warning string when over threshold, else null. */
+export function refundSoftCapWarning(amountInCents: number): string | null {
+  return amountInCents > REFUND_SOFT_CAP_CENTS
+    ? `Refund exceeds soft cap of $${(REFUND_SOFT_CAP_CENTS / 100).toFixed(0)} — manager approval recommended.`
+    : null;
+}
+
 export type AdminOrderRow = {
   id: string;
   source: OrderSource;
@@ -211,10 +218,7 @@ export async function refundOrder(
     );
   }
 
-  const warning =
-    amountInCents > REFUND_SOFT_CAP_CENTS
-      ? `Refund exceeds soft cap of $${(REFUND_SOFT_CAP_CENTS / 100).toFixed(0)} — manager approval recommended.`
-      : null;
+  const warning = refundSoftCapWarning(amountInCents);
 
   const refund = await stripe.refunds.create(
     {

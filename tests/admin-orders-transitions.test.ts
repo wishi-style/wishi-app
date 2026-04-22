@@ -3,7 +3,11 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nextAllowedStatuses, REFUND_SOFT_CAP_CENTS } from "@/lib/orders/admin-orders.service";
+import {
+  nextAllowedStatuses,
+  REFUND_SOFT_CAP_CENTS,
+  refundSoftCapWarning,
+} from "@/lib/orders/admin-orders.service";
 
 test("nextAllowedStatuses: ORDERED can only go to SHIPPED", () => {
   assert.deepEqual(nextAllowedStatuses("ORDERED"), ["SHIPPED"]);
@@ -31,4 +35,16 @@ test("nextAllowedStatuses: PENDING advances to ORDERED (affiliate→direct-sale 
 
 test("REFUND_SOFT_CAP_CENTS is $200", () => {
   assert.equal(REFUND_SOFT_CAP_CENTS, 20_000);
+});
+
+test("refundSoftCapWarning: below cap returns null", () => {
+  assert.equal(refundSoftCapWarning(19_900), null);
+  assert.equal(refundSoftCapWarning(20_000), null); // at cap is OK
+});
+
+test("refundSoftCapWarning: above cap returns a warning mentioning $200", () => {
+  const warn = refundSoftCapWarning(20_001);
+  assert.ok(warn);
+  assert.ok(warn.includes("$200"));
+  assert.ok(warn.toLowerCase().includes("manager"));
 });
