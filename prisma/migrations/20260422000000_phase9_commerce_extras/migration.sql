@@ -182,6 +182,9 @@ CREATE INDEX "cart_items_user_id_session_id_idx" ON "cart_items"("user_id", "ses
 CREATE UNIQUE INDEX "cart_items_user_id_inventory_product_id_session_id_key" ON "cart_items"("user_id", "inventory_product_id", "session_id");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "cart_items_user_id_inventory_product_id_null_session_key" ON "cart_items"("user_id", "inventory_product_id") WHERE "session_id" IS NULL;
+
+-- CreateIndex
 CREATE INDEX "collections_user_id_created_at_idx" ON "collections"("user_id", "created_at");
 
 -- CreateIndex
