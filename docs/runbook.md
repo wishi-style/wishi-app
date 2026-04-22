@@ -181,6 +181,22 @@ orders aren't advancing SHIPPED → ARRIVED:
    - Drain old platform traffic over 72h
    - Retire old infra
 
+## Mixpanel funnels (launch-day tracking)
+
+Configure these funnels in the Mixpanel UI (Reports → Funnels). Pin the
+funnel URLs to the runbook after creation.
+
+| Funnel | Events (in order) |
+|---|---|
+| **Client acquisition** | `page:/` → `quiz:start` → `quiz:complete` → `match:created` → `booking:completed` |
+| **Stylist onboarding** | `stylist:signup` → `onboarding:step_completed` (any) → `onboarding:submitted` → `match_eligible:set` |
+| **Session lifecycle** | `session:booked` → `session:activated` → `styleboard:sent` → `styleboard:reviewed` → `session:ended` |
+| **Revenue — direct sale** | `cart:item_added` → `checkout:started` → `checkout:succeeded` → `order:arrived` |
+
+Baseline conversion rates captured during Phase 10 staging smoke are in
+the cutover ticket — use as the "within 15%" yardstick for the soft
+launch success criteria.
+
 ## Rollback the cutover
 
 If the cohort reports blocking issues:
