@@ -40,25 +40,29 @@ export async function getWorkspaceData(sessionId: string, userId?: string) {
     prisma.session.findUnique({
       where: { id: sessionId },
       select: {
+        planType: true,
+        styleboardsAllowed: true,
+        bonusBoardsGranted: true,
         styleboardsSent: true,
         revisionsSent: true,
         itemsSent: true,
-        plan: {
-          select: {
-            type: true,
-            boardCount: true,
-            additionalLookPriceCents: true,
-          },
-        },
       },
     }),
     userId
       ? prisma.cartItem.findMany({
           where: { userId, sessionId },
-          orderBy: { createdAt: "desc" },
+          orderBy: { addedAt: "desc" },
         })
       : Promise.resolve([]),
   ]);
+
+  // Plan table holds `additionalLookPriceCents`; Session carries planType.
+  const plan = session?.planType
+    ? await prisma.plan.findUnique({
+        where: { type: session.planType },
+        select: { additionalLookPriceCents: true },
+      })
+    : null;
 
   const boardSummaries: WorkspaceBoard[] = boards.map((b: (typeof boards)[number]) => {
     let thumbnailUrl: string | null = null;
@@ -150,12 +154,13 @@ export async function getWorkspaceData(sessionId: string, userId?: string) {
   );
 
   const progress: WorkspaceProgress = {
-    planType: session?.plan?.type ?? "MAJOR",
-    boardCount: session?.plan?.boardCount ?? 4,
+    planType: session?.planType ?? "MAJOR",
+    boardCount:
+      (session?.styleboardsAllowed ?? 4) + (session?.bonusBoardsGranted ?? 0),
     styleboardsSent: session?.styleboardsSent ?? 0,
     revisionsSent: session?.revisionsSent ?? 0,
     itemsSent: session?.itemsSent ?? 0,
-    additionalLookPriceCents: session?.plan?.additionalLookPriceCents ?? 2000,
+    additionalLookPriceCents: plan?.additionalLookPriceCents ?? 2000,
   };
 
   return { boards: boardSummaries, curated, cart, progress };
