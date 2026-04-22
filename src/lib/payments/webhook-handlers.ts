@@ -9,6 +9,7 @@ import {
 } from "./webhook-recovery";
 import { applyUpgradeFromCheckout } from "./session-upgrade.service";
 import { applyBuyMoreLooksFromCheckout } from "./buy-more-looks.service";
+import { applyDirectSaleFromCheckout } from "./direct-sale.service";
 
 export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const purpose = session.metadata?.purpose;
@@ -18,6 +19,10 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
   }
   if (purpose === "BUY_MORE_LOOKS") {
     await applyBuyMoreLooksFromCheckout(session);
+    return;
+  }
+  if (purpose === "DIRECT_SALE") {
+    await applyDirectSaleFromCheckout(session);
     return;
   }
 
