@@ -105,7 +105,7 @@ wishi-app/
 - [ ] Phase 7: AI Features
 - [x] Phase 8: Admin Panel
 - [x] Phase 9: Commerce Extras (9a billing PR#23, 9b loyalty/promo PR#27, 9c direct-sale PR#26, 9d closet/social PR#25, 9e end-session/match-score PR#24)
-- [~] Phase 10: Client App Frontend Port — in progress on `client-frontend-port` (PR#30). Foundation + all public marketing pages (`/`, `/pricing`, `/how-it-works`, `/lux`, `/stylists`, `/stylists/[id]`, `/feed`, `not-found.tsx`) + 5 authed pages (`(client)/sessions`, `settings`, `favorites`, `cart`, `stylists`) + dialog price-bug + copy fixes landed. Still to land: StylingRoom (`sessions/[id]/chat`), remaining dialog ports (MoodBoardWizard, RestyleWizard, StyleBoard/MoodBoard/ProductDetail/ClosetItem dialogs, SessionCard refinements), Motion library upgrade, Playwright visual-regression harness, docs sweep.
+- [~] Phase 10: Client App Frontend Port — in progress on `client-frontend-port` (PR#30). Foundation + all public marketing pages (`/`, `/pricing`, `/how-it-works`, `/lux`, `/stylists`, `/stylists/[id]`, `/feed`, `not-found.tsx`) + 5 authed pages (`(client)/sessions`, `settings`, `favorites`, `cart`, `stylists`, `orders`, `closet`, `sessions/[id]/end-session`) + dialog price-bug + copy fixes (UpgradePlanDialog, CancelMembershipDialog, BuyLooksDialog) + RestyleWizard (AI stub-wired) + Motion library `Reveal` upgrade + Playwright visual-regression harness (`npm run test:visual`) landed. Still to land: StylingRoom (`sessions/[id]/chat`), remaining dialog ports (MoodBoardWizard, StyleBoard/MoodBoard/ProductDetail/ClosetItem dialogs, SessionCard refinements), Cart two-track UI, `shadcn add form` retry, visual baseline generation (`npm run test:visual:update` first run).
 - [ ] Phase 11: Polish & Launch
 
 ## Staging
