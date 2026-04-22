@@ -1072,7 +1072,6 @@ model PromoCode {
   giftCardSessionCodes GiftCard[] @relation("GiftCardSessionCode")
   giftCardShoppingCodes GiftCard[] @relation("GiftCardShoppingCode")
 
-  @@index([code])
   @@index([creditType, isActive])
   @@map("promo_codes")
 }
