@@ -14,6 +14,9 @@ export type PlanCopy = {
   tier: PlanTier;
   name: string;
   tagline: string;
+  /** Short abbreviated bullets for landing-page teasers (3 items). */
+  bulletsShort: string[];
+  /** Full bullets for /pricing and upgrade dialogs. */
   bullets: string[];
   ctaLabel: string;
   trialLabel?: string;
@@ -24,6 +27,11 @@ export const planCopy: Record<PlanTier, PlanCopy> = {
     tier: "MINI",
     name: "Mini",
     tagline: "A quick style refresh for a single moment.",
+    bulletsShort: [
+      "1:1 chat with your stylist",
+      "2 Style boards",
+      "2 Revisions",
+    ],
     bullets: [
       "1 moodboard to align on your taste",
       "2 curated styleboards",
@@ -37,6 +45,11 @@ export const planCopy: Record<PlanTier, PlanCopy> = {
     tier: "MAJOR",
     name: "Major",
     tagline: "A full wardrobe reset with ongoing styling.",
+    bulletsShort: [
+      "1:1 chat with your stylist",
+      "5 Style boards",
+      "5 Revisions",
+    ],
     bullets: [
       "1 moodboard to align on your taste",
       "5 curated styleboards",
@@ -50,6 +63,11 @@ export const planCopy: Record<PlanTier, PlanCopy> = {
     tier: "LUX",
     name: "Lux",
     tagline: "The ultimate styling experience, end to end.",
+    bulletsShort: [
+      "Dedicated stylist",
+      "8 Style boards",
+      "Video call included",
+    ],
     bullets: [
       "1 moodboard to align on your taste",
       "8 curated styleboards",
