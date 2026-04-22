@@ -1,6 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import type { ClosetItem } from "@/generated/prisma/client";
 
+// Orders/Closet split invariant: only `closet/auto-create.ts` (delivery hook)
+// or admin tooling may set `ClosetItem.sourceOrderItemId`. The manual upload
+// path here MUST NOT accept it — listing it on this input would let a client
+// claim a closet item came from an order it didn't.
 export interface CreateClosetItemInput {
   userId: string;
   s3Key: string;

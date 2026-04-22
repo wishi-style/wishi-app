@@ -9,6 +9,7 @@ import {
 } from "./webhook-recovery";
 import { applyUpgradeFromCheckout } from "./session-upgrade.service";
 import { applyBuyMoreLooksFromCheckout } from "./buy-more-looks.service";
+import { applyDirectSaleFromCheckout } from "./direct-sale.service";
 import { applyGiftCardPurchaseFromCheckout } from "@/lib/promotions/gift-card.service";
 
 export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
@@ -19,6 +20,10 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
   }
   if (purpose === "BUY_MORE_LOOKS") {
     await applyBuyMoreLooksFromCheckout(session);
+    return;
+  }
+  if (purpose === "DIRECT_SALE") {
+    await applyDirectSaleFromCheckout(session);
     return;
   }
   if (purpose === "GIFT_CARD_PURCHASE") {
