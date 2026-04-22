@@ -3,6 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { createClosetItemsFromOrder } from "@/lib/closet/auto-create";
 import { dispatchNotification } from "@/lib/notifications/dispatcher";
+import {
+  getEasyPostClient,
+  type EasyPostClient,
+} from "@/lib/integrations/easypost";
 import type { Order, OrderItem, OrderSource, OrderStatus } from "@/generated/prisma/client";
 
 export const REFUND_SOFT_CAP_CENTS = 20_000; // $200 — surfaces a manager-approval warning
@@ -101,15 +105,26 @@ export function nextAllowedStatuses(current: OrderStatus): OrderStatus[] {
   return STATUS_TRANSITIONS[current] ?? [];
 }
 
+export interface SetOrderTrackingOptions {
+  /**
+   * Test seam + a kill-switch for environments that don't have an EasyPost
+   * key configured. When omitted, uses the lazy global client; pass a fake
+   * to unit-test the flow without network.
+   */
+  deps?: { easypost?: EasyPostClient | null };
+}
+
 export async function setOrderTracking(
   orderId: string,
   input: { trackingNumber: string; carrier: string; estimatedDeliveryAt?: Date | null },
+  options: SetOrderTrackingOptions = {},
 ): Promise<Order> {
   const trimmed = input.trackingNumber.trim();
   if (!trimmed) throw new Error("trackingNumber required");
   const carrier = input.carrier.trim();
   if (!carrier) throw new Error("carrier required");
-  return prisma.order.update({
+
+  const updated = await prisma.order.update({
     where: { id: orderId },
     data: {
       trackingNumber: trimmed,
@@ -117,6 +132,28 @@ export async function setOrderTracking(
       estimatedDeliveryAt: input.estimatedDeliveryAt ?? null,
     },
   });
+
+  // Register the tracker with EasyPost so webhooks flow. Non-fatal: admin
+  // already has a saved tracking number even if EasyPost is down, and the
+  // webhook handler idempotently replays status updates when service
+  // resumes. Skip entirely when `deps.easypost` is explicitly null (tests).
+  const easypost =
+    options.deps?.easypost === null
+      ? null
+      : (options.deps?.easypost ?? (process.env.EASYPOST_API_KEY ? getEasyPostClient() : null));
+
+  if (easypost) {
+    await easypost
+      .createTracker({ trackingCode: trimmed, carrier })
+      .catch((err) => {
+        console.warn(
+          `[orders] easypost createTracker failed for ${orderId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      });
+  }
+
+  return updated;
 }
 
 /**
