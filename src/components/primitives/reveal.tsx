@@ -1,70 +1,54 @@
 "use client";
 
 import * as React from "react";
+import { motion, useInView, useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
 
 type RevealProps = {
   children: React.ReactNode;
   className?: string;
+  /** Stagger delay in milliseconds. */
   delay?: number;
-  as?: "div" | "section" | "article" | "header" | "footer" | "li";
+  /** Override the once-only behaviour (fire on every enter) if needed. */
+  once?: boolean;
 };
 
 /**
- * CSS-only scroll reveal. Motion library integration lands in a follow-on
- * commit; until then this is an IntersectionObserver + transitions so pages
- * can already call `<Reveal>` without a dependency.
- * Respects `prefers-reduced-motion` — those users get no animation.
+ * Motion-backed scroll reveal. Fades + translates the element into place
+ * the first time it crosses 15% of the viewport, or fires immediately for
+ * visitors with `prefers-reduced-motion: reduce`.
  */
 export function Reveal({
   children,
   className,
   delay = 0,
-  as = "div",
+  once = true,
 }: RevealProps) {
-  const ref = React.useRef<HTMLElement | null>(null);
-  const [visible, setVisible] = React.useState(false);
+  const prefersReduced = useReducedMotion();
+  const ref = React.useRef<HTMLDivElement | null>(null);
+  const inView = useInView(ref, {
+    amount: 0.15,
+    margin: "0px 0px -10% 0px",
+    once,
+  });
 
-  React.useEffect(() => {
-    const node = ref.current;
-    if (!node) return;
-    const prefersReduced =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (prefersReduced) {
-      setVisible(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            setVisible(true);
-            observer.disconnect();
-            break;
-          }
-        }
-      },
-      { threshold: 0.15, rootMargin: "0px 0px -10% 0px" },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
+  if (prefersReduced) {
+    return <div className={cn(className)}>{children}</div>;
+  }
 
-  const Tag = as as React.ElementType;
   return (
-    <Tag
-      ref={ref as React.Ref<HTMLDivElement>}
-      style={{ transitionDelay: delay ? `${delay}ms` : undefined }}
-      className={cn(
-        "transition-[opacity,transform] duration-700 ease-out motion-reduce:transition-none",
-        visible
-          ? "opacity-100 translate-y-0"
-          : "opacity-0 translate-y-3",
-        className,
-      )}
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0, y: 12 }}
+      animate={inView ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
+      transition={{
+        duration: 0.7,
+        delay: delay / 1000,
+        ease: [0.22, 1, 0.36, 1],
+      }}
+      className={cn(className)}
     >
       {children}
-    </Tag>
+    </motion.div>
   );
 }
