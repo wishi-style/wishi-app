@@ -29,19 +29,21 @@ const integrationTest = isIntegrationEnv ? test : test.skip;
 
 let clientUserId = "";
 let sessionId = "";
+const suiteSuffix = randomUUID().slice(0, 8);
 
 before(async () => {
   if (!isIntegrationEnv) return;
-  await prisma.$executeRawUnsafe(
-    `TRUNCATE TABLE cart_items, order_items, orders, sessions, users RESTART IDENTITY CASCADE`,
-  );
+  // Don't TRUNCATE shared tables — other integration tests in this suite
+  // (lux-milestone, payout-dispatch, etc.) create their own users + sessions
+  // in the same wishi_p5 DB. We use a unique per-suite email + referral code
+  // so reruns don't collide.
   const client = await prisma.user.create({
     data: {
-      email: "direct-sale-test@test.local",
+      email: `direct-sale-test-${suiteSuffix}@test.local`,
       firstName: "DS",
       lastName: "Tester",
       role: "CLIENT",
-      referralCode: "DSTEST",
+      referralCode: `DS${suiteSuffix.toUpperCase()}`,
     },
   });
   clientUserId = client.id;
@@ -59,10 +61,11 @@ before(async () => {
 });
 
 beforeEach(async () => {
-  if (!isIntegrationEnv) return;
-  await prisma.$executeRawUnsafe(
-    `TRUNCATE TABLE cart_items, order_items, orders RESTART IDENTITY CASCADE`,
-  );
+  if (!isIntegrationEnv || !clientUserId) return;
+  // Scoped cleanup — only rows this suite owns. Cart items first (FK to user),
+  // then orders (cascades to order_items via FK onDelete=Cascade).
+  await prisma.cartItem.deleteMany({ where: { userId: clientUserId } });
+  await prisma.order.deleteMany({ where: { userId: clientUserId } });
 });
 
 function mockCheckoutSession(overrides: Partial<Stripe.Checkout.Session>): Stripe.Checkout.Session {
