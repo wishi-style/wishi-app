@@ -2,6 +2,7 @@ import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { seedPlans } from "./seeds/plans";
 import { seedQuizzes } from "./seeds/quizzes";
+import { seedDemoUsers } from "./seeds/demo-users";
 
 async function main() {
   const connectionString = process.env.DATABASE_URL;
@@ -14,6 +15,7 @@ async function main() {
   console.log("Seeding database...");
   await seedPlans(prisma);
   await seedQuizzes(prisma);
+  await seedDemoUsers(prisma);
   console.log("Done.");
 
   await prisma.$disconnect();

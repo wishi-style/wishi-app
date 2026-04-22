@@ -91,3 +91,12 @@ variable "app_url" {
   description = "Public app URL. Used by Phase 5 workers for notification deep-links and by the Phase 6 EventBridge Scheduler module to invoke /api/workers/*. The scheduler module additionally requires https:// and will fail its precondition for http values."
   default     = ""
 }
+
+# Demo environment — founder-clickable /demo page + seeded demo accounts +
+# nightly reset. Flip this in staging.tfvars only. Production MUST leave this
+# at the default so the E2E auth bypass stays physically unreachable there.
+variable "enable_demo_mode" {
+  type        = bool
+  description = "Staging-only: surfaces /demo login UI, seeds demo accounts, schedules nightly demo-reset worker. NEVER enable on production."
+  default     = false
+}

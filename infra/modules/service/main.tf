@@ -40,9 +40,33 @@ variable "max_count" {
   default = 3
 }
 variable "log_group_name" { type = string }
+variable "enable_demo_mode" {
+  type        = bool
+  default     = false
+  description = "Staging-only: emit E2E_AUTH_MODE + ENABLE_DEMO_SEED on the web task. Never set on production."
+}
 
 locals {
   name = "${var.project}-${var.env}"
+
+  # Base env vars always present on the web task.
+  base_environment = [
+    { name = "NODE_ENV", value = "production" },
+    { name = "PORT", value = "3000" },
+    { name = "S3_UPLOADS_BUCKET", value = "${var.project}-uploads-${var.env}" },
+    { name = "AWS_REGION", value = data.aws_region.current.name },
+    { name = "DEPLOYED_ENV", value = var.env },
+  ]
+
+  # Extra env vars that only get emitted on demo-enabled envs (staging).
+  # The second layer of prod-safety (DEPLOYED_ENV=production short-circuit)
+  # comes from DEPLOYED_ENV above — if someone ever accidentally sets
+  # enable_demo_mode=true on production, isE2EAuthModeEnabled() still
+  # returns false.
+  demo_environment = var.enable_demo_mode ? [
+    { name = "E2E_AUTH_MODE", value = "true" },
+    { name = "ENABLE_DEMO_SEED", value = "true" },
+  ] : []
 }
 
 data "aws_region" "current" {}
@@ -268,12 +292,7 @@ resource "aws_ecs_task_definition" "web" {
       protocol      = "tcp"
     }]
 
-    environment = [
-      { name = "NODE_ENV", value = "production" },
-      { name = "PORT", value = "3000" },
-      { name = "S3_UPLOADS_BUCKET", value = "${var.project}-uploads-${var.env}" },
-      { name = "AWS_REGION", value = data.aws_region.current.name },
-    ]
+    environment = concat(local.base_environment, local.demo_environment)
 
     secrets = [
       { name = "DATABASE_URL", valueFrom = var.db_url_secret_arn },

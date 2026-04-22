@@ -47,3 +47,9 @@ variable "log_group_name" {
   type        = string
   description = "CloudWatch log group — reuses the workers group already provisioned by the observability module."
 }
+
+variable "enable_demo_mode" {
+  type        = bool
+  default     = false
+  description = "Staging-only: schedule the demo-reset worker nightly and expose E2E_AUTH_MODE on the worker task. Never set on production."
+}
