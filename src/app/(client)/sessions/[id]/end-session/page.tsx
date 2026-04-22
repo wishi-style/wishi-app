@@ -28,21 +28,24 @@ export default async function EndSessionPage({
   });
   if (!session || session.clientId !== user.id) notFound();
 
-  // Already submitted — show the confirmation + skip the form.
   if (session.rating != null) {
     return (
-      <div className="mx-auto max-w-lg px-6 py-16 text-center">
-        <h1 className="mb-4 text-3xl font-semibold">Thanks for the feedback</h1>
-        <p className="mb-8 text-sm text-muted-foreground">
-          We&apos;ve recorded your rating for{" "}
-          {session.stylist?.firstName ?? "your stylist"}.
-        </p>
-        <Link
-          href="/sessions"
-          className="rounded-full bg-foreground px-6 py-2 text-sm text-background"
-        >
-          Back to Sessions
-        </Link>
+      <div className="min-h-screen bg-background">
+        <div className="mx-auto max-w-lg px-6 md:px-10 py-16 text-center">
+          <h1 className="mb-4 font-display text-3xl md:text-4xl">
+            Thanks for the feedback
+          </h1>
+          <p className="mb-8 text-sm text-muted-foreground">
+            We&apos;ve recorded your rating for{" "}
+            {session.stylist?.firstName ?? "your stylist"}.
+          </p>
+          <Link
+            href="/sessions"
+            className="inline-flex h-11 items-center rounded-full bg-foreground px-6 text-sm font-medium text-background hover:bg-foreground/90 transition-colors"
+          >
+            Back to sessions
+          </Link>
+        </div>
       </div>
     );
   }
@@ -54,18 +57,24 @@ export default async function EndSessionPage({
   if (!plan) notFound();
 
   return (
-    <div className="mx-auto max-w-lg px-6 py-16">
-      <h1 className="mb-2 text-3xl font-semibold">Wrap up your session</h1>
-      <p className="mb-8 text-sm text-muted-foreground">
-        A quick rating for {session.stylist?.firstName ?? "your stylist"} + an
-        optional tip. You can add a note too — reviews help other clients find
-        the right stylist.
-      </p>
-      <EndSessionForm
-        sessionId={session.id}
-        stylistFirstName={session.stylist?.firstName ?? "your stylist"}
-        planPriceCents={plan.priceInCents}
-      />
+    <div className="min-h-screen bg-background">
+      <div className="mx-auto max-w-lg px-6 md:px-10 py-16">
+        <header className="mb-8">
+          <h1 className="font-display text-3xl md:text-4xl mb-2">
+            Wrap up your session
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            A quick rating for {session.stylist?.firstName ?? "your stylist"} + an
+            optional tip. Add a note too — reviews help other clients find the
+            right stylist.
+          </p>
+        </header>
+        <EndSessionForm
+          sessionId={session.id}
+          stylistFirstName={session.stylist?.firstName ?? "your stylist"}
+          planPriceCents={plan.priceInCents}
+        />
+      </div>
     </div>
   );
 }
