@@ -16,6 +16,14 @@ export interface CreateDirectSaleCheckoutInput {
   cartItemIds: string[];
   successUrl: string;
   cancelUrl: string;
+  // Test seam: integration tests pass a fake so we can exercise pre-create +
+  // metadata plumbing without hitting Stripe. Production callers omit this.
+  deps?: {
+    createCheckoutSession?: (
+      params: Stripe.Checkout.SessionCreateParams,
+      options?: { idempotencyKey?: string },
+    ) => Promise<{ id: string; url: string | null }>;
+  };
 }
 
 interface ResolvedLineItem {
@@ -165,7 +173,17 @@ export async function createDirectSaleCheckout(input: CreateDirectSaleCheckoutIn
     .sort()
     .join(",")}`;
 
-  const checkout = await stripe.checkout.sessions.create(
+  const createCheckoutImpl =
+    input.deps?.createCheckoutSession ??
+    (async (
+      params: Stripe.Checkout.SessionCreateParams,
+      options?: { idempotencyKey?: string },
+    ) => {
+      const s = await stripe.checkout.sessions.create(params, options);
+      return { id: s.id, url: s.url };
+    });
+
+  const checkout = await createCheckoutImpl(
     {
       customer: customerId,
       mode: "payment",

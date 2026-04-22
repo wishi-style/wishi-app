@@ -1,3 +1,4 @@
+import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { createClosetItemsFromOrder } from "@/lib/closet/auto-create";
@@ -173,6 +174,18 @@ export interface RefundResult {
   warning: string | null;
 }
 
+// Test seam: integration tests pass a fake so we can exercise the full
+// DB-plus-refund path without hitting Stripe. Production callers omit this.
+export type CreateRefundFn = (
+  params: Stripe.RefundCreateParams,
+  options?: { idempotencyKey?: string },
+) => Promise<{ id: string }>;
+
+export interface RefundOrderOptions {
+  reason?: string;
+  deps?: { createRefund?: CreateRefundFn };
+}
+
 /**
  * Issue an incremental Stripe refund for the order's PaymentIntent.
  *
@@ -195,8 +208,20 @@ export interface RefundResult {
 export async function refundOrder(
   orderId: string,
   amountInCents: number,
-  reason?: string,
+  optionsOrReason?: RefundOrderOptions | string,
 ): Promise<RefundResult> {
+  const opts: RefundOrderOptions =
+    typeof optionsOrReason === "string"
+      ? { reason: optionsOrReason }
+      : optionsOrReason ?? {};
+  const reason = opts.reason;
+  const createRefundImpl: CreateRefundFn =
+    opts.deps?.createRefund ??
+    (async (params, options) => {
+      const r = await stripe.refunds.create(params, options);
+      return { id: r.id };
+    });
+
   const order = await prisma.order.findUnique({ where: { id: orderId } });
   if (!order) throw new Error("Order not found");
   if (order.source !== "DIRECT_SALE") {
@@ -220,7 +245,7 @@ export async function refundOrder(
 
   const warning = refundSoftCapWarning(amountInCents);
 
-  const refund = await stripe.refunds.create(
+  const refund = await createRefundImpl(
     {
       payment_intent: order.stripePaymentIntentId,
       amount: amountInCents,
