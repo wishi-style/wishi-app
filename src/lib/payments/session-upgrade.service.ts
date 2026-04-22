@@ -88,8 +88,9 @@ export async function createUpgradeCheckout(input: CreateUpgradeCheckoutInput) {
 export async function applyUpgradeFromCheckout(
   checkoutSession: Stripe.Checkout.Session
 ) {
-  const { sessionId, toPlanType, userId } = checkoutSession.metadata ?? {};
-  if (!sessionId || !toPlanType || !userId) {
+  const { sessionId, fromPlanType, toPlanType, userId } =
+    checkoutSession.metadata ?? {};
+  if (!sessionId || !fromPlanType || !toPlanType || !userId) {
     console.error(
       "[stripe] applyUpgradeFromCheckout: missing metadata",
       checkoutSession.id
@@ -136,17 +137,29 @@ export async function applyUpgradeFromCheckout(
     });
     if (!session) throw new Error(`Session ${sessionId} not found`);
 
-    await tx.session.update({
-      where: { id: sessionId },
-      data: {
-        planType: toPlanType as PlanType,
-        styleboardsAllowed: targetPlan.styleboards,
-        moodboardsAllowed: targetPlan.moodboards,
-        amountPaidInCents: session.amountPaidInCents + amountPaid,
-        upgradedAt: new Date(),
-        upgradedFromPlanType: session.planType,
-      },
-    });
+    // Guard against double-apply: the session must still be on the plan the
+    // upgrade was authorized from. If another upgrade has already landed,
+    // skip the session mutation — the Payment row is still written below so
+    // the money is recorded and admins can reconcile.
+    const alreadyUpgraded = session.planType !== fromPlanType;
+    if (alreadyUpgraded) {
+      console.warn(
+        "[stripe] applyUpgradeFromCheckout: session already upgraded",
+        { sessionId, expected: fromPlanType, actual: session.planType }
+      );
+    } else {
+      await tx.session.update({
+        where: { id: sessionId },
+        data: {
+          planType: toPlanType as PlanType,
+          styleboardsAllowed: targetPlan.styleboards,
+          moodboardsAllowed: targetPlan.moodboards,
+          amountPaidInCents: session.amountPaidInCents + amountPaid,
+          upgradedAt: new Date(),
+          upgradedFromPlanType: session.planType,
+        },
+      });
+    }
 
     await tx.payment.create({
       data: {
@@ -157,7 +170,9 @@ export async function applyUpgradeFromCheckout(
         amountInCents: amountPaid,
         currency: targetPlan.currency,
         stripePaymentIntentId: paymentIntentId,
-        description: `Upgrade to ${targetPlan.name}`,
+        description: alreadyUpgraded
+          ? `Upgrade payment received (session already on ${session.planType})`
+          : `Upgrade to ${targetPlan.name}`,
       },
     });
   });

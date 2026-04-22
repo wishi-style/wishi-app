@@ -93,7 +93,11 @@ export async function applyBuyMoreLooksFromCheckout(
   }
 
   const qty = Number(quantity);
-  if (!Number.isInteger(qty) || qty < 1) {
+  if (
+    !Number.isInteger(qty) ||
+    qty < 1 ||
+    qty > MAX_ADDITIONAL_LOOKS_PER_PURCHASE
+  ) {
     console.error(
       "[stripe] applyBuyMoreLooksFromCheckout: invalid quantity",
       quantity
@@ -121,6 +125,23 @@ export async function applyBuyMoreLooksFromCheckout(
 
   const amountPaid = checkoutSession.amount_total ?? 0;
 
+  // Defense in depth: Stripe-signed metadata carries an expected total;
+  // reject if the charged amount doesn't match, so tampered/replayed events
+  // can't grant entitlement at the wrong price.
+  const expectedTotal = Number(checkoutSession.metadata?.totalInCents);
+  if (
+    !Number.isFinite(expectedTotal) ||
+    expectedTotal !== amountPaid
+  ) {
+    console.error(
+      "[stripe] applyBuyMoreLooksFromCheckout: amount mismatch",
+      { checkoutSessionId: checkoutSession.id, expectedTotal, amountPaid }
+    );
+    return;
+  }
+
+  const currency = checkoutSession.currency ?? "usd";
+
   await prisma.$transaction(async (tx) => {
     await tx.session.update({
       where: { id: sessionId },
@@ -137,6 +158,7 @@ export async function applyBuyMoreLooksFromCheckout(
         type: "UPGRADE",
         status: "SUCCEEDED",
         amountInCents: amountPaid,
+        currency,
         stripePaymentIntentId: paymentIntentId,
         description: `Buy More Looks: ${qty} additional board${qty === 1 ? "" : "s"}`,
       },

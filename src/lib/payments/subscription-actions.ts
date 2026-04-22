@@ -79,10 +79,10 @@ export async function switchSubscriptionFrequency(
     return { alreadySet: true as const };
   }
 
-  // Stripe price swap for MONTHLY ↔ QUARTERLY requires both price IDs configured
-  // on the Plan row. Until quarterly Stripe prices are set up, we record intent
-  // locally — the subscription-cycle worker will pick up the change at next cycle
-  // once Plan.stripePriceIdSubscriptionQuarterly is populated.
+  // Stripe price swap for MONTHLY ↔ QUARTERLY requires a configured quarterly
+  // Stripe price (not yet modeled on Plan). Until quarterly pricing is set up,
+  // we record intent locally — the subscription-cycle worker will pick up the
+  // change at the next billing cycle.
   await prisma.subscription.update({
     where: { id: sub.id },
     data: { frequency: newFrequency },
@@ -126,8 +126,14 @@ export async function retrySubscriptionPayment(
           paymentRetryCount: 0,
         },
       });
+      // Only unfreeze sessions frozen by the payment-failure webhook —
+      // admin-initiated freezes must not auto-unfreeze on payment retry.
       await tx.session.updateMany({
-        where: { subscriptionId: sub.id, status: "FROZEN" },
+        where: {
+          subscriptionId: sub.id,
+          status: "FROZEN",
+          frozenReason: "subscription_payment_failed",
+        },
         data: { status: "ACTIVE", frozenAt: null, frozenReason: null },
       });
     });
