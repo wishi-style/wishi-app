@@ -21,7 +21,7 @@ Styling marketplace rebuilt as a single Next.js 16 monolith on AWS ECS Fargate.
 
 ```bash
 cp .env.example .env
-# Fill in DATABASE_URL, Clerk keys, Stripe keys, Twilio keys, VAPID keys, and S3 bucket
+# Fill in DATABASE_URL, Clerk, Stripe, Twilio, VAPID, S3, Klaviyo, EasyPost
 npm install
 npx prisma generate
 npx prisma migrate dev
@@ -31,17 +31,41 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-### Phase 10 feature flags
+### Test commands
+
+```bash
+npm run typecheck          # tsc --noEmit (strict)
+npm run lint               # eslint
+npm test                   # node --test on tests/**/*.test.ts
+npm run e2e                # Playwright e2e (needs DB + E2E_AUTH_MODE)
+npm run test:visual        # Playwright visual regression (12 baselines)
+npm run test:load          # k6 — marketing ramp (100 VUs) — needs BASE_URL
+npm run test:load:feed     # k6 — feed API burst
+npm run test:load:checkout # k6 — Stripe Checkout burst (needs E2E_CLERK_ID_COOKIE)
+```
+
+### Local webhooks via ngrok
+
+Twilio + EasyPost webhooks need a public URL. For local dev:
+
+```bash
+ngrok http 3000
+# Set TWILIO_WEBHOOK_URL to the ngrok URL in .env
+# Configure Twilio + EasyPost webhook endpoints to the ngrok URL
+```
+
+### Feature flags
 
 `NEXT_PUBLIC_FEATURE_AI_SUGGESTED_REPLIES` (default `false`) gates the
-stylist chat "Suggested Replies" chip row. Keep it off until Phase 7 ships
-real AI replies — the port renders the surface but hides it behind this
-flag so the chat window doesn't show a broken affordance.
+stylist chat "Suggested Replies" chip row. Kept off until Phase 7
+(post-launch) ships real AI. The port renders the surface but hides it
+behind this flag so the chat window doesn't show a broken affordance.
 
-The related stubs `/api/ai/suggested-feedback/[boardItemId]` and
-`/api/ai/similar-items` return canned / category-based responses so the
-RestyleWizard and ProductDetailDialog carousel render during Phase 10.
-Phase 7 replaces the handler bodies, not the consumers.
+Related stubs at `/api/ai/suggested-feedback/[boardItemId]`,
+`/api/ai/similar-items`, and `/api/ai/suggested-replies/[sessionId]`
+return canned / category-based responses so RestyleWizard and the PDP
+similar-items carousel render today. Phase 7 replaces the handler
+bodies, not the consumers.
 
 ## Docker
 
@@ -78,6 +102,15 @@ terraform apply -var-file=staging.tfvars
 Pushes to `main` auto-deploy to staging via GitHub Actions. Production deploys are manual (workflow dispatch with required reviewer).
 
 **Staging URL:** `http://wishi-staging-alb-823228000.us-east-1.elb.amazonaws.com`
+
+Full deploy + rollback + incident-response procedures: [`docs/runbook.md`](./docs/runbook.md).
+
+## Further reading
+
+- [`docs/architecture.md`](./docs/architecture.md) — system diagram, data model, integrations, worker topology
+- [`docs/runbook.md`](./docs/runbook.md) — on-call procedures
+- [`docs/adr/`](./docs/adr/) — architecture decision records (why we made key calls)
+- [`WISHI-REBUILD-PLAN.md`](../WISHI-REBUILD-PLAN.md) (in parent dir) — phase-by-phase build plan
 
 ## Project structure
 
