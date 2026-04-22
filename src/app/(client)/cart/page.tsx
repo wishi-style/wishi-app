@@ -9,6 +9,7 @@ import { getMerchandised } from "@/lib/products/merchandised-product.service";
 import { PillButton } from "@/components/primitives/pill-button";
 import { CartRemoveButton } from "./cart-remove-button";
 import { RetailerClickButton } from "./retailer-click";
+import { CheckoutButton } from "./checkout-button";
 
 export const dynamic = "force-dynamic";
 
@@ -96,8 +97,10 @@ export default async function CartPage() {
           const product = await getProduct(fav.inventoryProductId);
           if (!product) return null;
           const listing = product.listings?.[0];
-          const url =
-            listing?.affiliate_url ?? listing?.product_url ?? product.image_urls?.[0];
+          // Only show rows that link to a real product/retailer page —
+          // image URLs aren't shoppable, so we drop them rather than
+          // sending the user to a raw asset.
+          const url = listing?.affiliate_url ?? listing?.product_url;
           if (!url) return null;
           return {
             favoriteItemId: fav.id,
@@ -296,22 +299,9 @@ export default async function CartPage() {
                 Shipping and tax calculated at checkout.
               </p>
               {wishi.length > 0 ? (
-                <form action="/api/payments/checkout" method="post">
-                  {wishi.map((r) => (
-                    <input
-                      key={r.cartItemId}
-                      type="hidden"
-                      name="cartItemId"
-                      value={r.cartItemId}
-                    />
-                  ))}
-                  <button
-                    type="submit"
-                    className="w-full inline-flex items-center justify-center rounded-full bg-foreground text-background h-12 text-sm font-medium hover:bg-foreground/90 transition-colors"
-                  >
-                    Proceed to Checkout
-                  </button>
-                </form>
+                <CheckoutButton
+                  cartItemIds={wishi.map((r) => r.cartItemId)}
+                />
               ) : (
                 <p className="text-xs text-muted-foreground">
                   Add a Wishi-fulfilled item to your bag to check out here.

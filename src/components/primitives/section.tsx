@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 type Tone = "plain" | "muted" | "cream";
@@ -11,7 +12,7 @@ export function Section({
   tone?: Tone;
   id?: string;
   className?: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <section

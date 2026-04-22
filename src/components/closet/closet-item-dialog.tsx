@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   DownloadIcon,
@@ -27,6 +28,8 @@ export type ClosetItemPayload = {
 export type OutfitReference = {
   /** Board.id of a styleboard that used this closet item */
   boardId: string;
+  /** Session.id the styleboard belongs to — required to build the viewer URL */
+  sessionId: string;
   title?: string | null;
   heroImageUrl?: string | null;
   /** ISO timestamp — when the look was sent */
@@ -224,9 +227,9 @@ export function ClosetItemDialog({
                 </p>
                 <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
                   {outfits.map((o) => (
-                    <a
+                    <Link
                       key={o.boardId}
-                      href={`/sessions/*/styleboards/${o.boardId}`}
+                      href={`/sessions/${o.sessionId}/styleboards/${o.boardId}`}
                       className="block"
                     >
                       {o.heroImageUrl ? (
@@ -242,7 +245,7 @@ export function ClosetItemDialog({
                       {o.title ? (
                         <p className="mt-1.5 text-xs truncate">{o.title}</p>
                       ) : null}
-                    </a>
+                    </Link>
                   ))}
                 </div>
               </div>

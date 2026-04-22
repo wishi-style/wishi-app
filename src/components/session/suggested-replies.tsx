@@ -19,14 +19,13 @@ export function SuggestedReplies({ sessionId }: { sessionId: string }) {
 
   React.useEffect(() => {
     let cancelled = false;
-    // Stub endpoint — Phase 7 replaces with per-session LLM suggestions
-    // scoped to the last N messages. The `sessionId` path param is the
-    // forward-compat hook so only the handler body needs to change.
-    fetch(`/api/ai/suggested-feedback/${sessionId}`, { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : { pills: [] }))
-      .then((data: { pills?: string[] }) => {
+    // Session-scoped suggested-replies endpoint — stubbed in Phase 10,
+    // LLM-backed in Phase 7. The contract is `{ replies: string[] }`.
+    fetch(`/api/ai/suggested-replies/${sessionId}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { replies: [] }))
+      .then((data: { replies?: string[] }) => {
         if (cancelled) return;
-        setPills(data.pills ?? []);
+        setPills(data.replies ?? []);
       })
       .catch(() => {
         if (!cancelled) setPills([]);
