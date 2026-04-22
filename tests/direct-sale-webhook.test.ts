@@ -14,7 +14,7 @@
  */
 
 import assert from "node:assert/strict";
-import test, { before, beforeEach, after } from "node:test";
+import test, { before, beforeEach } from "node:test";
 import { randomUUID } from "node:crypto";
 import "dotenv/config";
 import type Stripe from "stripe";
@@ -62,11 +62,6 @@ beforeEach(async () => {
   await prisma.$executeRawUnsafe(
     `TRUNCATE TABLE cart_items, order_items, orders RESTART IDENTITY CASCADE`,
   );
-});
-
-after(async () => {
-  if (!isIntegrationEnv) return;
-  await prisma.$disconnect();
 });
 
 function mockCheckoutSession(overrides: Partial<Stripe.Checkout.Session>): Stripe.Checkout.Session {
