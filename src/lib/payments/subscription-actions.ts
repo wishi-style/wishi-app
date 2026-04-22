@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
-import type { PlanType } from "@/generated/prisma/client";
+import type { PlanType, SubscriptionFrequency } from "@/generated/prisma/client";
 
 export async function cancelSubscription(subscriptionId: string, userId: string) {
   const sub = await getOwnedSubscription(subscriptionId, userId);
@@ -62,6 +62,84 @@ export async function downgradeSubscription(
     where: { id: sub.id },
     data: { pendingPlanType: newPlanType },
   });
+}
+
+export async function switchSubscriptionFrequency(
+  subscriptionId: string,
+  userId: string,
+  newFrequency: SubscriptionFrequency
+) {
+  const sub = await getOwnedSubscription(subscriptionId, userId);
+
+  if (sub.status !== "ACTIVE" && sub.status !== "TRIALING") {
+    throw new Error("Subscription must be active or trialing to switch frequency");
+  }
+
+  if (sub.frequency === newFrequency) {
+    return { alreadySet: true as const };
+  }
+
+  // Stripe price swap for MONTHLY ↔ QUARTERLY requires a configured quarterly
+  // Stripe price (not yet modeled on Plan). Until quarterly pricing is set up,
+  // we record intent locally — the subscription-cycle worker will pick up the
+  // change at the next billing cycle.
+  await prisma.subscription.update({
+    where: { id: sub.id },
+    data: { frequency: newFrequency },
+  });
+
+  return { alreadySet: false as const };
+}
+
+export async function retrySubscriptionPayment(
+  subscriptionId: string,
+  userId: string
+) {
+  const sub = await getOwnedSubscription(subscriptionId, userId);
+
+  if (sub.status !== "PAST_DUE" && !sub.lastPaymentFailedAt) {
+    throw new Error("No failed payment to retry");
+  }
+
+  // Find the latest open invoice on the Stripe subscription and pay it.
+  const invoices = await stripe.invoices.list({
+    subscription: sub.stripeSubscriptionId,
+    status: "open",
+    limit: 1,
+  });
+  const openInvoice = invoices.data[0];
+  if (!openInvoice || !openInvoice.id) {
+    throw new Error("No open invoice to retry");
+  }
+
+  const paid = await stripe.invoices.pay(openInvoice.id);
+
+  // On successful pay, clear local failure state + unfreeze any linked frozen session.
+  // Stripe webhook (invoice.payment_succeeded) also writes durable state — this is optimistic.
+  if (paid.status === "paid") {
+    await prisma.$transaction(async (tx) => {
+      await tx.subscription.update({
+        where: { id: sub.id },
+        data: {
+          status: "ACTIVE",
+          lastPaymentFailedAt: null,
+          paymentRetryCount: 0,
+        },
+      });
+      // Only unfreeze sessions frozen by the payment-failure webhook —
+      // admin-initiated freezes must not auto-unfreeze on payment retry.
+      await tx.session.updateMany({
+        where: {
+          subscriptionId: sub.id,
+          status: "FROZEN",
+          frozenReason: "subscription_payment_failed",
+        },
+        data: { status: "ACTIVE", frozenAt: null, frozenReason: null },
+      });
+    });
+  }
+
+  return { status: paid.status };
 }
 
 export async function reactivateSubscription(subscriptionId: string, userId: string) {
