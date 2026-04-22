@@ -80,7 +80,7 @@ A phase PR is not done until every doc below reflects the new reality. The auto-
 - `WISHI-REBUILD-PLAN.md` (in `wishi-style/` parent dir) — verification checkboxes updated with evidence per item
 - `.env.example` — new env vars, with sane defaults
 - `project_wishi_phase_progress.md` auto-memory — move completed phase from "in progress" to "done", capture deferred items
-- Notion Roadmap — user-owned (we don't have write access; flag it so the user can update)
+- Notion Roadmap — flip each completed roadmap item to `Status=Done` via the `notion` CLI (see `reference_notion_roadmap.md` memory for the database ID + commands). This is agent-owned, not user-owned.
 
 ### Branch + PR workflow
 
@@ -117,15 +117,15 @@ When a phase/feature PR lands on `main`, the cleanup below is the agent's respon
 - **Delete stale local branches** — `git branch -D <phase-branch> <any-child-branches>`. Remote deletion happens automatically with `--delete-branch` on merge + `delete_branch_on_merge=true` on the repo.
 - **Regenerate Prisma client** — `npx prisma generate` in the main worktree after a long-lived branch lands (schema may have shifted).
 - **Toggle repo settings via `gh api`** — e.g. `gh api --method PATCH /repos/wishi-style/wishi-app -f delete_branch_on_merge=true`. Anything exposed in GitHub's Settings UI is reachable this way; don't ask the user to click through.
+- **Update the Notion Roadmap** — the `notion` CLI is installed (`/opt/homebrew/bin/notion`, token already configured). The roadmap DB ID + command patterns live in the `reference_notion_roadmap.md` auto-memory. Example: `notion db query <db-id> --filter-prop Category --filter-type equals --filter-value Frontend --filter-prop-type select --llm` to list items, then `notion page update <page-id> --prop "Status=Done"` per item. Don't flag Notion as user-owned.
 - **Docs follow-up PR** — after cleanup, update every doc in "Docs to keep in sync" on a small branch (`docs/<topic>`) + PR. Flip status markers, capture merge SHAs, update auto-memory. Don't leave this dangling.
 
 **What's actually user-owned and why:**
 
-- **Notion Roadmap** — no MCP / API access from the agent sandbox today. Flag the specific entry + desired status and the user will update.
 - **Paths outside the repo tree** — the sandbox blocks `ls` / `rm` / `cat` outside `wishi-style/`. Stray typos or system-level dirs (e.g. an accidental `~/the-wishi-style`) must be deleted by the user.
 - **Anything the user has explicitly claimed** — e.g. a Stripe product migration they said they'd run, an AWS console action, a domain DNS change.
 
-If you're about to write "still requires your action" for something above that user-owned line, stop — you almost certainly have the tool for it. Check `gh --help`, `git worktree --help`, and this doc before deferring.
+**Before flagging anything as user-owned, check your auto-memory.** If a `reference_*.md` file has the database ID / command / token for the thing you're about to defer, you have access. Past-me was wrong to flag Notion as user-owned even though `reference_notion_roadmap.md` literally contained the CLI commands. Check memory first, then defer.
 
 ### When building a new user-facing surface, do this
 
