@@ -90,15 +90,21 @@ resource "aws_ecs_task_definition" "workers" {
     image     = "${var.ecr_worker_url}:latest"
     essential = true
 
-    environment = [
-      { name = "NODE_ENV", value = "production" },
-      { name = "S3_UPLOADS_BUCKET", value = "${var.project}-uploads-${var.env}" },
-      { name = "AWS_REGION", value = data.aws_region.current.name },
-      { name = "INVENTORY_SERVICE_URL", value = var.inventory_service_url },
-      { name = "APP_URL", value = var.app_url },
-      # WORKER is overridden per-schedule via containerOverrides in the
-      # EventBridge scheduler target (see schedules below).
-    ]
+    environment = concat(
+      [
+        { name = "NODE_ENV", value = "production" },
+        { name = "S3_UPLOADS_BUCKET", value = "${var.project}-uploads-${var.env}" },
+        { name = "AWS_REGION", value = data.aws_region.current.name },
+        { name = "INVENTORY_SERVICE_URL", value = var.inventory_service_url },
+        { name = "APP_URL", value = var.app_url },
+        { name = "DEPLOYED_ENV", value = var.env },
+        # WORKER is overridden per-schedule via containerOverrides in the
+        # EventBridge scheduler target (see schedules below).
+      ],
+      var.enable_demo_mode ? [
+        { name = "E2E_AUTH_MODE", value = "true" },
+      ] : []
+    )
 
     secrets = [
       { name = "DATABASE_URL", valueFrom = var.db_url_secret_arn },
@@ -161,12 +167,20 @@ resource "aws_iam_role_policy" "scheduler" {
 locals {
   # Worker name → schedule expression. All times UTC. rate() requires hour
   # granularity; cron() lets us anchor specific times-of-day.
-  schedules = {
+  base_schedules = {
     "affiliate-ingest"      = "cron(0 5 * * ? *)" # daily 05:00 UTC
     "affiliate-prompt"      = "rate(15 minutes)"
     "pending-action-expiry" = "rate(15 minutes)"
     "stale-cleanup"         = "cron(0 3 * * ? *)" # daily 03:00 UTC
   }
+
+  demo_schedules = var.enable_demo_mode ? {
+    # Runs after stale-cleanup so demo-reset wipes sessions/boards/messages
+    # from the prior day right before founders show up in the morning.
+    "demo-reset" = "cron(0 4 * * ? *)" # daily 04:00 UTC
+  } : {}
+
+  schedules = merge(local.base_schedules, local.demo_schedules)
 }
 
 resource "aws_scheduler_schedule" "worker" {

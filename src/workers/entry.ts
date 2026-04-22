@@ -18,12 +18,14 @@ import { runAffiliateIngest } from "./affiliate-ingest";
 import { runAffiliatePrompt } from "./affiliate-prompt";
 import { runPendingActionExpiry } from "./pending-action-expiry";
 import { runStaleCleanup } from "./stale-cleanup";
+import { runDemoReset } from "./demo-reset";
 
 export const WORKER_NAMES = [
   "affiliate-ingest",
   "affiliate-prompt",
   "pending-action-expiry",
   "stale-cleanup",
+  "demo-reset",
 ] as const;
 
 export type WorkerName = (typeof WORKER_NAMES)[number];
@@ -38,5 +40,7 @@ export async function runWorker(name: WorkerName): Promise<Record<string, unknow
       return runPendingActionExpiry();
     case "stale-cleanup":
       return runStaleCleanup();
+    case "demo-reset":
+      return runDemoReset();
   }
 }
