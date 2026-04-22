@@ -36,16 +36,20 @@ export default async function MoodboardPage({
 
   const isClient = board.session.clientId === user.id;
 
-  // Surface the OPEN pending action (PENDING_CLIENT_FEEDBACK) on the client
-  // view so they see a "respond by" deadline while they rate the board.
+  // Surface the OPEN PENDING_CLIENT_FEEDBACK action on the client view so they
+  // see a "respond by" deadline while they rate the board. Filtering on type
+  // ensures the chip reflects the client's own response window and never
+  // leaks a stylist-facing action (e.g. PENDING_RESTYLE also carries boardId).
   const pendingAction =
     isClient && board.rating == null
       ? await prisma.sessionPendingAction.findFirst({
           where: {
             sessionId,
             boardId: board.id,
+            type: "PENDING_CLIENT_FEEDBACK",
             status: "OPEN",
           },
+          orderBy: { dueAt: "asc" },
           select: { dueAt: true },
         })
       : null;

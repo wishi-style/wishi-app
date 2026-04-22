@@ -11,9 +11,13 @@ export async function GET(
 ) {
   const { id } = await params;
 
+  // Scope to directory-eligible profiles only — matches /api/matches and the
+  // /stylists directory. A profile id is not a secret, so without this filter
+  // anyone could enumerate non-approved stylists via the public API.
   const stylist = await prisma.stylistProfile.findFirst({
     where: {
       id,
+      matchEligible: true,
       user: { deletedAt: null },
     },
     include: {
@@ -38,7 +42,8 @@ export async function GET(
       orderBy: { completedAt: "desc" },
     });
     // Only surface a match score when the viewer has actually taken the quiz.
-    // A neutral score for unquiet users would read as misleading signal in UI.
+    // A neutral score for users who haven't taken the quiz would read as a
+    // misleading signal in the UI.
     if (quizResult) {
       matchScore = cosmeticMatchScore(stylist, quizResult);
     }
