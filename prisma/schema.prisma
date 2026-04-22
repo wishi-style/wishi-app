@@ -333,17 +333,17 @@ model User {
   favoriteBoards FavoriteBoard[]
 
   // Relations — Domain 8: Commerce
-  payments                  Payment[]
-  subscriptions             Subscription[]
-  orders                    Order[]
-  affiliateClicks           AffiliateClick[]
-  cartItems                 CartItem[]
-  collections               Collection[]
-  loyaltyAccount            LoyaltyAccount?
-  giftCardsPurchased        GiftCard[]        @relation("GiftCardPurchaser")
-  promoCodesCreated         PromoCode[]       @relation("PromoCodeCreator")
-  referralCreditsEarned     ReferralCredit[]  @relation("ReferralCreditsEarned")
-  referralCreditsTriggered  ReferralCredit[]  @relation("ReferralCreditsTriggered")
+  payments                 Payment[]
+  subscriptions            Subscription[]
+  orders                   Order[]
+  affiliateClicks          AffiliateClick[]
+  cartItems                CartItem[]
+  collections              Collection[]
+  loyaltyAccount           LoyaltyAccount?
+  giftCardsPurchased       GiftCard[]       @relation("GiftCardPurchaser")
+  promoCodesCreated        PromoCode[]      @relation("PromoCodeCreator")
+  referralCreditsEarned    ReferralCredit[] @relation("ReferralCreditsEarned")
+  referralCreditsTriggered ReferralCredit[] @relation("ReferralCreditsTriggered")
 
   @@index([email])
   @@index([role])
@@ -737,21 +737,21 @@ model Session {
   deletedAt DateTime? @map("deleted_at")
 
   // Relations
-  client           User                   @relation("ClientSessions", fields: [clientId], references: [id])
-  stylist          User?                  @relation("StylistSessions", fields: [stylistId], references: [id])
-  subscription     Subscription?          @relation("SubscriptionSessions", fields: [subscriptionId], references: [id])
-  promoCode        PromoCode?             @relation(fields: [promoCodeId], references: [id])
-  messages         Message[]
-  boards           Board[]
-  orders           Order[]
-  affiliateClicks  AffiliateClick[]
-  payments         Payment[]
-  matchHistory     SessionMatchHistory[]
-  pendingActions   SessionPendingAction[]
-  payouts          Payout[]
-  reviews          StylistReview[]
-  cartItems        CartItem[]
-  referralCredits  ReferralCredit[]
+  client          User                   @relation("ClientSessions", fields: [clientId], references: [id])
+  stylist         User?                  @relation("StylistSessions", fields: [stylistId], references: [id])
+  subscription    Subscription?          @relation("SubscriptionSessions", fields: [subscriptionId], references: [id])
+  promoCode       PromoCode?             @relation(fields: [promoCodeId], references: [id])
+  messages        Message[]
+  boards          Board[]
+  orders          Order[]
+  affiliateClicks AffiliateClick[]
+  payments        Payment[]
+  matchHistory    SessionMatchHistory[]
+  pendingActions  SessionPendingAction[]
+  payouts         Payout[]
+  reviews         StylistReview[]
+  cartItems       CartItem[]
+  referralCredits ReferralCredit[]
 
   @@index([clientId])
   @@index([stylistId])
@@ -759,6 +759,9 @@ model Session {
   @@index([createdAt])
   @@index([deletedAt])
   @@index([subscriptionId])
+  // Phase 11: dashboard "my sessions filtered by status" hits these frequently
+  @@index([clientId, status])
+  @@index([stylistId, status])
   @@map("sessions")
 }
 
@@ -918,49 +921,49 @@ model Subscription {
 }
 
 model Order {
-  id                      String      @id @default(cuid())
-  userId                  String      @map("user_id")
-  sessionId               String?     @map("session_id")
-  source                  OrderSource
-  status                  OrderStatus @default(PENDING)
-  retailer                String
-  totalInCents            Int         @default(0) @map("total_in_cents")
-  taxInCents              Int         @default(0) @map("tax_in_cents")
-  shippingInCents         Int         @default(0) @map("shipping_in_cents")
-  isPriorityShipping      Boolean     @default(false) @map("is_priority_shipping")
-  commissionInCents       Int?        @map("commission_in_cents")
-  orderReference          String?     @map("order_reference")
-  currency                String      @default("usd")
+  id                 String      @id @default(cuid())
+  userId             String      @map("user_id")
+  sessionId          String?     @map("session_id")
+  source             OrderSource
+  status             OrderStatus @default(PENDING)
+  retailer           String
+  totalInCents       Int         @default(0) @map("total_in_cents")
+  taxInCents         Int         @default(0) @map("tax_in_cents")
+  shippingInCents    Int         @default(0) @map("shipping_in_cents")
+  isPriorityShipping Boolean     @default(false) @map("is_priority_shipping")
+  commissionInCents  Int?        @map("commission_in_cents")
+  orderReference     String?     @map("order_reference")
+  currency           String      @default("usd")
 
   // Shipping + tracking (direct-sale fulfillment)
-  trackingNumber          String?     @map("tracking_number")
-  carrier                 String?
-  estimatedDeliveryAt     DateTime?   @map("estimated_delivery_at")
-  shippedAt               DateTime?   @map("shipped_at")
-  arrivedAt               DateTime?   @map("arrived_at")
-  customerTeamNotes       String?     @map("customer_team_notes") @db.Text
+  trackingNumber      String?   @map("tracking_number")
+  carrier             String?
+  estimatedDeliveryAt DateTime? @map("estimated_delivery_at")
+  shippedAt           DateTime? @map("shipped_at")
+  arrivedAt           DateTime? @map("arrived_at")
+  customerTeamNotes   String?   @map("customer_team_notes") @db.Text
 
   // Returns + refunds
-  returnInitiatedAt       DateTime?   @map("return_initiated_at")
-  returnedAt              DateTime?   @map("returned_at")
-  refundedAt              DateTime?   @map("refunded_at")
-  refundedInCents         Int?        @map("refunded_in_cents")
+  returnInitiatedAt DateTime? @map("return_initiated_at")
+  returnedAt        DateTime? @map("returned_at")
+  refundedAt        DateTime? @map("refunded_at")
+  refundedInCents   Int?      @map("refunded_in_cents")
 
   // Stripe (direct-sale)
-  stripeCheckoutSessionId String?     @unique @map("stripe_checkout_session_id")
-  stripePaymentIntentId   String?     @unique @map("stripe_payment_intent_id")
+  stripeCheckoutSessionId String? @unique @map("stripe_checkout_session_id")
+  stripePaymentIntentId   String? @unique @map("stripe_payment_intent_id")
 
   // Shipping address snapshot (denormalized from Stripe Checkout response)
-  shippingName            String?     @map("shipping_name")
-  shippingLine1           String?     @map("shipping_line1")
-  shippingLine2           String?     @map("shipping_line2")
-  shippingCity            String?     @map("shipping_city")
-  shippingState           String?     @map("shipping_state")
-  shippingPostalCode      String?     @map("shipping_postal_code")
-  shippingCountry         String?     @map("shipping_country")
+  shippingName       String? @map("shipping_name")
+  shippingLine1      String? @map("shipping_line1")
+  shippingLine2      String? @map("shipping_line2")
+  shippingCity       String? @map("shipping_city")
+  shippingState      String? @map("shipping_state")
+  shippingPostalCode String? @map("shipping_postal_code")
+  shippingCountry    String? @map("shipping_country")
 
-  createdAt               DateTime    @default(now()) @map("created_at")
-  updatedAt               DateTime    @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   session         Session?         @relation(fields: [sessionId], references: [id])
@@ -974,6 +977,8 @@ model Order {
   @@index([createdAt])
   @@index([userId, status])
   @@index([orderReference])
+  // Phase 11: EasyPost webhook looks up orders by tracking number to auto-advance status
+  @@index([trackingNumber])
   @@map("orders")
 }
 
@@ -1053,23 +1058,23 @@ model LoyaltyAccount {
 }
 
 model PromoCode {
-  id                String              @id @default(cuid())
-  code              String              @unique
-  creditType        PromoCodeCreditType @map("credit_type")
-  amountInCents     Int                 @map("amount_in_cents")
-  expiresAt         DateTime?           @map("expires_at")
-  usageLimit        Int?                @map("usage_limit")
-  usedCount         Int                 @default(0) @map("used_count")
-  stripeCouponId    String?             @unique @map("stripe_coupon_id")
-  createdByAdminId  String?             @map("created_by_admin_id")
-  isActive          Boolean             @default(true) @map("is_active")
-  createdAt         DateTime            @default(now()) @map("created_at")
-  updatedAt         DateTime            @updatedAt @map("updated_at")
+  id               String              @id @default(cuid())
+  code             String              @unique
+  creditType       PromoCodeCreditType @map("credit_type")
+  amountInCents    Int                 @map("amount_in_cents")
+  expiresAt        DateTime?           @map("expires_at")
+  usageLimit       Int?                @map("usage_limit")
+  usedCount        Int                 @default(0) @map("used_count")
+  stripeCouponId   String?             @unique @map("stripe_coupon_id")
+  createdByAdminId String?             @map("created_by_admin_id")
+  isActive         Boolean             @default(true) @map("is_active")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
 
-  createdByAdmin       User?      @relation("PromoCodeCreator", fields: [createdByAdminId], references: [id])
-  sessions             Session[]
-  payments             Payment[]
-  giftCardSessionCodes GiftCard[] @relation("GiftCardSessionCode")
+  createdByAdmin        User?      @relation("PromoCodeCreator", fields: [createdByAdminId], references: [id])
+  sessions              Session[]
+  payments              Payment[]
+  giftCardSessionCodes  GiftCard[] @relation("GiftCardSessionCode")
   giftCardShoppingCodes GiftCard[] @relation("GiftCardShoppingCode")
 
   @@index([creditType, isActive])
@@ -1092,10 +1097,10 @@ model GiftCard {
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
 
-  purchaser        User      @relation("GiftCardPurchaser", fields: [purchaserUserId], references: [id])
-  sessionPromoCode PromoCode @relation("GiftCardSessionCode", fields: [sessionPromoCodeId], references: [id])
+  purchaser         User      @relation("GiftCardPurchaser", fields: [purchaserUserId], references: [id])
+  sessionPromoCode  PromoCode @relation("GiftCardSessionCode", fields: [sessionPromoCodeId], references: [id])
   shoppingPromoCode PromoCode @relation("GiftCardShoppingCode", fields: [shoppingPromoCodeId], references: [id])
-  payments         Payment[]
+  payments          Payment[]
 
   @@index([purchaserUserId])
   @@index([recipientEmail])
@@ -1270,6 +1275,8 @@ model Board {
   @@index([sessionId, type, sentAt])
   @@index([stylistProfileId, isFeaturedOnProfile, profileStyle])
   @@index([parentBoardId])
+  // Phase 11: public /feed query ranges across all stylists' featured styleboards ordered by createdAt desc
+  @@index([type, isFeaturedOnProfile, createdAt(sort: Desc)])
   @@map("boards")
 }
 
@@ -1435,13 +1442,13 @@ model CollectionItem {
 // ─── Domain 9: Admin ──────────────────────────────────────
 
 model AuditLog {
-  id           String   @id @default(cuid())
-  actorUserId  String?  @map("actor_user_id")
-  action       String
-  entityType   String   @map("entity_type")
-  entityId     String?  @map("entity_id")
-  meta         Json?
-  createdAt    DateTime @default(now()) @map("created_at")
+  id          String   @id @default(cuid())
+  actorUserId String?  @map("actor_user_id")
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String?  @map("entity_id")
+  meta        Json?
+  createdAt   DateTime @default(now()) @map("created_at")
 
   @@index([entityType, entityId])
   @@index([actorUserId, createdAt])
@@ -1450,12 +1457,12 @@ model AuditLog {
 }
 
 model AdminImpersonation {
-  id             String   @id @default(cuid())
-  adminUserId    String   @map("admin_user_id")
-  targetUserId   String   @map("target_user_id")
-  reason         String
-  startedAt      DateTime @default(now()) @map("started_at")
-  endedAt        DateTime? @map("ended_at")
+  id           String    @id @default(cuid())
+  adminUserId  String    @map("admin_user_id")
+  targetUserId String    @map("target_user_id")
+  reason       String
+  startedAt    DateTime  @default(now()) @map("started_at")
+  endedAt      DateTime? @map("ended_at")
 
   @@index([adminUserId, startedAt])
   @@index([targetUserId, startedAt])
