@@ -1,8 +1,10 @@
 "use server";
 
 import { getServerAuth } from "@/lib/auth/server-auth";
+import { isE2EAuthModeEnabled } from "@/lib/auth/e2e-auth";
 import { prisma } from "@/lib/prisma";
 import { createOneTimeCheckout, createSubscriptionCheckout } from "@/lib/payments/checkout";
+import { provisionSessionForE2E } from "@/lib/payments/e2e-provision-session";
 import { hasActiveSessionWithStylist } from "@/lib/sessions/queries";
 import type { PlanType } from "@/generated/prisma/client";
 import { resolveAppUrl } from "@/lib/app-url";
@@ -47,6 +49,16 @@ export async function createCheckout(formData: FormData) {
     if (hasActive) {
       redirect("/sessions");
     }
+  }
+
+  if (isE2EAuthModeEnabled()) {
+    await provisionSessionForE2E({
+      userId: user.id,
+      planType,
+      stylistUserId,
+      isSubscription,
+    });
+    redirect("/sessions");
   }
 
   const appUrl = resolveAppUrl({
