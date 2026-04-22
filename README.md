@@ -79,10 +79,10 @@ Pushes to `main` auto-deploy to staging via GitHub Actions. Production deploys a
 │   └── seeds/            Domain seeders (plans, quizzes)
 └── src/
     ├── app/
-    │   ├── (client)/     Client routes: /sessions, /sessions/[id]/workspace, /sessions/[id]/moodboards/*, /sessions/[id]/styleboards/*, /sessions/[id]/end-session, /closet, /settings
+    │   ├── (client)/     Client routes: /sessions, /sessions/[id]/workspace, /sessions/[id]/moodboards/*, /sessions/[id]/styleboards/*, /sessions/[id]/end-session, /sessions/[id]/buy-more-looks, /closet, /orders, /settings
     │   ├── (stylist)/    Stylist routes: /onboarding/[step], /stylist/dashboard, /stylist/sessions/*, /stylist/clients, /stylist/clients/[id], /stylist/profile/boards, /stylist/payouts
-    │   ├── (admin)/      Admin routes: /admin/inspiration-photos
-    │   ├── api/          health, webhooks/{clerk,stripe,twilio}, products, moodboards, styleboards, closet, favorites, inspiration-photos, sessions/[id]/end/{request,approve,decline}, stylist/onboarding/{save,advance,connect/{start,return}}, stylist/profile/boards, payments/payouts, workers/{waitlist-notify,payout-reconcile}, uploads, stylists, subscriptions, billing, chat, push
+    │   ├── (admin)/      Admin routes: /admin/inspiration-photos, /admin/orders
+    │   ├── api/          health, webhooks/{clerk,stripe,twilio}, products, moodboards, styleboards, closet, favorites, inspiration-photos, cart, orders, payments/checkout, sessions/[id]/end/{request,approve,decline}, sessions/[id]/upgrade, stylist/onboarding/{save,advance,connect/{start,return}}, stylist/profile/boards, payments/payouts, workers/{waitlist-notify,payout-reconcile}, admin/orders/[id]/{tracking,status,notes,refund,approve-refund}, uploads, stylists, subscriptions, billing, chat, push
     │   ├── match-quiz/   Public match quiz (guest + authenticated)
     │   ├── stylists/     Public stylist directory + profiles
     │   ├── sign-in/      Clerk sign-in
