@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { isE2EAuthModeEnabled } from "@/lib/auth/e2e-auth";
 
-// Renders a small signpost on the landing page when we're on a non-prod
-// deploy that has demo mode enabled (staging). Returns null everywhere
-// else, so production never sees it. The env gate is the same flag that
-// controls whether /demo itself is reachable — single source of truth.
+// Renders a small signpost across the app when we're on a non-prod deploy
+// that has demo mode enabled (staging). Mounted in the root layout so it
+// shows on every route — testers may land anywhere. Returns null otherwise,
+// so production never sees it. The env gate is the same flag that controls
+// whether /demo itself is reachable — single source of truth.
 export function StagingBanner() {
   if (!isE2EAuthModeEnabled()) return null;
 

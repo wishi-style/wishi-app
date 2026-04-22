@@ -62,21 +62,45 @@ const PLANS: PlanSpec[] = [
   },
 ];
 
-// Stripe lookup keys give us idempotent create-or-reuse semantics — same key
-// on every run resolves to the same Price without creating duplicates. We
-// never delete or rotate these in-band; Price objects on Stripe are
-// immutable, so changing the amount means creating a new Price (new key).
-function oneTimeLookupKey(type: string) {
-  return `wishi_${type.toLowerCase()}_one_time`;
+// Stripe lookup keys give us idempotent create-or-reuse semantics. We encode
+// the amount into the key (`wishi_mini_one_time_6000c`) so a price change
+// yields a new key → a new Price object, rather than silently reusing the
+// old-amount Price. Stripe Price objects are immutable, so bumping the key
+// is the only way to propagate a new amount.
+function oneTimeLookupKey(spec: PlanSpec) {
+  return `wishi_${spec.type.toLowerCase()}_one_time_${spec.priceInCents}c`;
 }
-function subscriptionLookupKey(type: string) {
-  return `wishi_${type.toLowerCase()}_subscription_monthly`;
+function subscriptionLookupKey(spec: PlanSpec) {
+  return `wishi_${spec.type.toLowerCase()}_subscription_monthly_${spec.priceInCents}c`;
+}
+
+// Pick a Price that matches spec (currency + amount + recurring mode). Stripe
+// technically allows multiple active Prices sharing a lookup_key, so we can't
+// blindly trust `limit: 1` — filter explicitly so the seed stays correct even
+// if someone created a duplicate out-of-band.
+function pickMatchingPrice(
+  prices: Stripe.Price[],
+  spec: PlanSpec,
+  mode: "one_time" | "subscription",
+  productId: string,
+): Stripe.Price | undefined {
+  return prices.find((p) => {
+    if (p.product !== productId) return false;
+    if (p.currency !== "usd") return false;
+    if (p.unit_amount !== spec.priceInCents) return false;
+    if (mode === "one_time") return p.recurring === null;
+    return p.recurring?.interval === "month";
+  });
 }
 
 async function ensureProductAndPrices(
   stripe: Stripe,
   spec: PlanSpec,
-): Promise<{ oneTimeId: string; subscriptionId: string | null }> {
+): Promise<{
+  productId: string;
+  oneTimeId: string;
+  subscriptionId: string | null;
+}> {
   // Product: one per plan type. Lookup by metadata since Stripe Products
   // don't have lookup_keys — only Prices do.
   const productsPage = await stripe.products.search({
@@ -91,15 +115,17 @@ async function ensureProductAndPrices(
       metadata: { wishi_plan_type: spec.type },
     }));
 
-  // One-time Price — resolve by lookup_key.
-  const oneTimeKey = oneTimeLookupKey(spec.type);
+  // One-time Price. List all Prices with the lookup_key (there should be at
+  // most one but we defend against duplicates), pick the one that matches
+  // spec, or create a new Price if none match.
+  const oneTimeKey = oneTimeLookupKey(spec);
   const oneTimeList = await stripe.prices.list({
     lookup_keys: [oneTimeKey],
     active: true,
-    limit: 1,
+    limit: 10,
   });
   const oneTime =
-    oneTimeList.data[0] ??
+    pickMatchingPrice(oneTimeList.data, spec, "one_time", product.id) ??
     (await stripe.prices.create({
       product: product.id,
       currency: "usd",
@@ -111,14 +137,14 @@ async function ensureProductAndPrices(
   // Subscription Price (monthly) — only for plans that support it.
   let subscriptionId: string | null = null;
   if (spec.subscriptionAvailable) {
-    const subKey = subscriptionLookupKey(spec.type);
+    const subKey = subscriptionLookupKey(spec);
     const subList = await stripe.prices.list({
       lookup_keys: [subKey],
       active: true,
-      limit: 1,
+      limit: 10,
     });
     const sub =
-      subList.data[0] ??
+      pickMatchingPrice(subList.data, spec, "subscription", product.id) ??
       (await stripe.prices.create({
         product: product.id,
         currency: "usd",
@@ -130,7 +156,7 @@ async function ensureProductAndPrices(
     subscriptionId = sub.id;
   }
 
-  return { oneTimeId: oneTime.id, subscriptionId };
+  return { productId: product.id, oneTimeId: oneTime.id, subscriptionId };
 }
 
 export async function seedPlans(prisma: PrismaClient) {
@@ -142,7 +168,7 @@ export async function seedPlans(prisma: PrismaClient) {
   for (const spec of PLANS) {
     const ids = stripe
       ? await ensureProductAndPrices(stripe, spec)
-      : { oneTimeId: null, subscriptionId: null };
+      : { productId: null, oneTimeId: null, subscriptionId: null };
 
     await prisma.plan.upsert({
       where: { type: spec.type },
@@ -162,23 +188,33 @@ export async function seedPlans(prisma: PrismaClient) {
         // Only overwrite Stripe IDs when the seeder actually resolved them —
         // running locally without STRIPE_SECRET_KEY must not wipe existing
         // IDs that a previous run (or staging) wrote.
+        ...(ids.productId !== null
+          ? { stripeProductId: ids.productId }
+          : {}),
         ...(ids.oneTimeId !== null
           ? { stripePriceIdOneTime: ids.oneTimeId }
           : {}),
-        ...(ids.subscriptionId !== null
-          ? { stripePriceIdSubscription: ids.subscriptionId }
-          : {}),
+        ...(stripe && !spec.subscriptionAvailable
+          ? // Plan flipped to subscription-ineligible: clear any stale ID so
+            // the DB stays consistent with spec.subscriptionAvailable.
+            { stripePriceIdSubscription: null }
+          : ids.subscriptionId !== null
+            ? { stripePriceIdSubscription: ids.subscriptionId }
+            : {}),
       },
       create: {
         ...spec,
         luxMilestoneAmountCents: spec.luxMilestoneAmountCents ?? null,
         luxMilestoneLookNumber: spec.luxMilestoneLookNumber ?? null,
+        stripeProductId: ids.productId,
         stripePriceIdOneTime: ids.oneTimeId,
         stripePriceIdSubscription: ids.subscriptionId,
       },
     });
   }
 
-  const resolved = stripe ? "with Stripe Price IDs" : "without Stripe IDs (STRIPE_SECRET_KEY not set — bookings will fail until backfilled)";
+  const resolved = stripe
+    ? "with Stripe Product + Price IDs"
+    : "without Stripe IDs (STRIPE_SECRET_KEY not set — bookings will fail until backfilled)";
   console.log(`  ✓ Plans seeded ${resolved} (Mini, Major, Lux)`);
 }
