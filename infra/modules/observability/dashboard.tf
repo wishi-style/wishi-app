@@ -12,7 +12,9 @@
 
 locals {
   alb_dim_value = replace(var.alb_arn, "/^.*:loadbalancer\\//", "")
-  region        = data.aws_region.current.region
+  # aws provider 5.x exposes `.name`; 6.x added `.region` and deprecated `.name`.
+  # Staying on `.name` keeps compatibility with the pinned 5.100 provider.
+  region = data.aws_region.current.name
 }
 
 resource "aws_cloudwatch_dashboard" "launch" {
