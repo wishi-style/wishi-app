@@ -38,6 +38,11 @@ COPY --from=builder /app/package.json ./package.json
 # typed client (it resolves `../src/generated/prisma/client`). Without
 # this, `npx tsx prisma/seed.ts` fails at module resolution.
 COPY --from=builder --chown=nextjs:nodejs /app/src/generated ./src/generated
+# Shared demo fixture identifiers — imported by prisma/seeds/demo-users.ts
+# as raw TS when the deploy workflow runs the seed outside the Next.js
+# standalone bundle. Same reasoning as src/generated above: seed-time code
+# needs source files that Next's build tracing doesn't pull in.
+COPY --from=builder --chown=nextjs:nodejs /app/src/lib/demo ./src/lib/demo
 # Copy full node_modules so the deployed image can run `npx prisma migrate
 # deploy` against the production DB during the deploy workflow. Next.js
 # standalone bundles only what the app code traces — it intentionally does
