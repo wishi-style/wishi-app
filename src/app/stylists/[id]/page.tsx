@@ -4,6 +4,10 @@ import { getServerAuth } from "@/lib/auth/server-auth";
 import { cosmeticMatchScore } from "@/lib/matching/score";
 import Link from "next/link";
 import { WaitlistButton } from "@/components/stylist/waitlist-button";
+import { FavoriteStylistButton } from "@/components/stylist/favorite-stylist-button";
+import { isStylistFavorited } from "@/lib/stylists/favorite-stylist.service";
+import { listStylistReviews } from "@/lib/stylists/review.service";
+import { WriteReviewDialog } from "@/components/stylist/write-review-dialog";
 
 export const dynamic = "force-dynamic";
 
@@ -20,13 +24,6 @@ export default async function StylistProfilePage({ params }: Props) {
       user: {
         select: { firstName: true, lastName: true, avatarUrl: true },
       },
-      reviews: {
-        include: {
-          user: { select: { firstName: true, lastName: true } },
-        },
-        orderBy: { createdAt: "desc" },
-        take: 5,
-      },
       profileBoards: {
         where: { isFeaturedOnProfile: true, sessionId: null },
         include: { photos: { orderBy: { orderIndex: "asc" }, take: 1 } },
@@ -39,9 +36,13 @@ export default async function StylistProfilePage({ params }: Props) {
   if (!stylist) notFound();
 
   const name = `${stylist.user.firstName} ${stylist.user.lastName}`;
+  const firstName = stylist.user.firstName;
 
-  // Get match score if user has quiz results
+  // Get match score, favorite state, and review eligibility for the
+  // currently signed-in user. Public visitors get the page without these.
   let matchScore: number | null = null;
+  let favorited = false;
+  let canReview = false;
   const { userId: clerkId } = await getServerAuth();
   if (clerkId) {
     const user = await prisma.user.findUnique({
@@ -49,15 +50,29 @@ export default async function StylistProfilePage({ params }: Props) {
       select: { id: true },
     });
     if (user) {
-      const quizResult = await prisma.matchQuizResult.findFirst({
-        where: { userId: user.id },
-        orderBy: { completedAt: "desc" },
-      });
-      if (quizResult) {
-        matchScore = cosmeticMatchScore(stylist, quizResult);
-      }
+      const [quizResult, isFav, completedCount] = await Promise.all([
+        prisma.matchQuizResult.findFirst({
+          where: { userId: user.id },
+          orderBy: { completedAt: "desc" },
+        }),
+        isStylistFavorited(user.id, stylist.id),
+        prisma.session.count({
+          where: {
+            clientId: user.id,
+            stylistId: stylist.userId,
+            status: "COMPLETED",
+          },
+        }),
+      ]);
+      if (quizResult) matchScore = cosmeticMatchScore(stylist, quizResult);
+      favorited = isFav;
+      canReview = completedCount > 0;
     }
   }
+
+  const { reviews, total: totalReviews } = await listStylistReviews(stylist.id, {
+    limit: 20,
+  });
 
   return (
     <main className="min-h-screen bg-[#FAF8F5]">
@@ -78,8 +93,16 @@ export default async function StylistProfilePage({ params }: Props) {
               </div>
             )}
           </div>
-          <div className="text-center sm:text-left">
-            <h1 className="font-serif text-3xl font-light text-stone-900">{name}</h1>
+          <div className="flex-1 text-center sm:text-left">
+            <div className="flex items-center justify-center gap-3 sm:justify-start">
+              <h1 className="font-serif text-3xl font-light text-stone-900">{name}</h1>
+              {clerkId && (
+                <FavoriteStylistButton
+                  stylistProfileId={stylist.id}
+                  initialFavorited={favorited}
+                />
+              )}
+            </div>
             <div className="mt-2 flex flex-wrap items-center gap-3">
               {matchScore && (
                 <span className="rounded-full bg-black px-3 py-1 text-xs font-medium text-white">
@@ -212,31 +235,47 @@ export default async function StylistProfilePage({ params }: Props) {
         )}
 
         {/* Reviews */}
-        {stylist.reviews.length > 0 && (
-          <div>
-            <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-stone-400">
-              Reviews
+        <div>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-sm font-medium uppercase tracking-wider text-stone-400">
+              Reviews {totalReviews > 0 && `(${totalReviews})`}
             </h2>
+            {canReview && (
+              <WriteReviewDialog
+                stylistProfileId={stylist.id}
+                stylistFirstName={firstName}
+              />
+            )}
+          </div>
+          {reviews.length > 0 ? (
             <div className="space-y-4">
-              {stylist.reviews.map((review) => (
+              {reviews.map((review) => (
                 <div
                   key={review.id}
                   className="rounded-xl border border-stone-200 bg-white p-4"
                 >
                   <div className="mb-2 flex items-center gap-2">
                     <span className="text-sm font-medium text-stone-800">
-                      {review.user.firstName} {review.user.lastName.charAt(0)}.
+                      {review.author.firstName} {review.author.lastNameInitial}.
                     </span>
                     <span className="text-sm text-stone-400">
                       {"★".repeat(review.rating)}
+                    </span>
+                    <span className="text-xs text-stone-400">
+                      {review.createdAt.toLocaleDateString()}
                     </span>
                   </div>
                   <p className="text-sm text-stone-600">{review.reviewText}</p>
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          ) : (
+            <p className="text-sm text-stone-500">
+              No reviews yet.
+              {canReview && " Be the first to share your experience."}
+            </p>
+          )}
+        </div>
       </div>
     </main>
   );
