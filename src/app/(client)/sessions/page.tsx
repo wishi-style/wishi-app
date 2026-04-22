@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { getSessionsByClient } from "@/lib/sessions/queries";
 import { SessionCard } from "@/components/session/session-card";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
+import { PillButton } from "@/components/primitives/pill-button";
 
 export const dynamic = "force-dynamic";
 
@@ -12,39 +12,55 @@ export default async function SessionsPage() {
 
   const sessions = await getSessionsByClient(user.id);
 
-  const active = sessions.filter((s) =>
-    ["BOOKED", "ACTIVE", "PENDING_END", "PENDING_END_APPROVAL", "END_DECLINED"].includes(s.status)
+  const active = sessions.filter((s: (typeof sessions)[number]) =>
+    ["BOOKED", "ACTIVE", "PENDING_END", "PENDING_END_APPROVAL", "END_DECLINED"].includes(
+      s.status,
+    ),
   );
-  const completed = sessions.filter((s) =>
-    ["COMPLETED", "CANCELLED", "FROZEN", "REASSIGNED"].includes(s.status)
+  const completed = sessions.filter((s: (typeof sessions)[number]) =>
+    ["COMPLETED", "CANCELLED", "FROZEN", "REASSIGNED"].includes(s.status),
   );
 
   return (
-    <main className="min-h-screen bg-[#FAF8F5]">
-      <div className="mx-auto max-w-4xl px-4 py-12">
-        <h1 className="mb-8 font-serif text-3xl font-light text-stone-900">
-          My Sessions
-        </h1>
+    <div className="min-h-screen bg-background">
+      <div className="mx-auto max-w-4xl px-6 md:px-10 py-12 md:py-16">
+        <div className="mb-8 flex items-end justify-between gap-4">
+          <div>
+            <h1 className="font-display text-3xl md:text-4xl">My Sessions</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {active.length > 0
+                ? `${active.length} active · ${completed.length} past`
+                : "Start a new session any time."}
+            </p>
+          </div>
+          <PillButton href="/stylists" variant="outline" size="md">
+            Find a stylist
+          </PillButton>
+        </div>
 
         {sessions.length === 0 && (
-          <div className="rounded-2xl border border-stone-200 bg-white p-12 text-center">
-            <p className="text-stone-500">No sessions yet.</p>
-            <Link
+          <div className="rounded-2xl border border-border bg-card p-12 text-center">
+            <p className="text-sm text-muted-foreground">
+              You don&apos;t have any sessions yet.
+            </p>
+            <PillButton
               href="/stylists"
-              className="mt-4 inline-block rounded-full bg-black px-6 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+              variant="solid"
+              size="md"
+              className="mt-5"
             >
-              Find a Stylist
-            </Link>
+              Find a stylist
+            </PillButton>
           </div>
         )}
 
         {active.length > 0 && (
           <section className="mb-10">
-            <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-stone-400">
+            <h2 className="mb-4 text-xs font-medium uppercase tracking-widest text-muted-foreground">
               Active
             </h2>
             <div className="space-y-4">
-              {active.map((s) => (
+              {active.map((s: (typeof sessions)[number]) => (
                 <SessionCard key={s.id} session={s} />
               ))}
             </div>
@@ -53,17 +69,38 @@ export default async function SessionsPage() {
 
         {completed.length > 0 && (
           <section>
-            <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-stone-400">
+            <h2 className="mb-4 text-xs font-medium uppercase tracking-widest text-muted-foreground">
               Past
             </h2>
             <div className="space-y-4">
-              {completed.map((s) => (
+              {completed.map((s: (typeof sessions)[number]) => (
                 <SessionCard key={s.id} session={s} />
               ))}
             </div>
           </section>
         )}
+
+        {/* Gift card cross-sell per Loveable */}
+        <aside className="mt-12 rounded-2xl bg-cream p-6 md:p-8">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-widest text-dark-taupe mb-1">
+                Give the gift of style
+              </p>
+              <h3 className="font-display text-xl md:text-2xl">
+                Wishi gift cards — the outfit-planner anyone will actually use.
+              </h3>
+            </div>
+            <PillButton
+              href="https://wishi.me/gift-cards"
+              variant="solid"
+              size="md"
+            >
+              Shop gift cards
+            </PillButton>
+          </div>
+        </aside>
       </div>
-    </main>
+    </div>
   );
 }
