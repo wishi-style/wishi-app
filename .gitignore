@@ -64,3 +64,6 @@ override.tf.json
 
 # aws
 .keys/
+
+# Phase 11 load-test results (local only)
+tests/load/results/
