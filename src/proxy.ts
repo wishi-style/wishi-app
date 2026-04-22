@@ -16,6 +16,11 @@ const isPublicRoute = createRouteMatcher([
   "/demo",
   "/api/health",
   "/api/webhooks/(.*)",
+  "/api/feed",
+  "/api/products/(.*)",
+  "/sitemap.xml",
+  "/robots.txt",
+  "/favicon.ico",
 ]);
 
 // Stylist routes that MUST stay accessible during onboarding — otherwise the

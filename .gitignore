@@ -67,3 +67,7 @@ override.tf.json
 
 # Phase 11 load-test results (local only)
 tests/load/results/
+
+# Lighthouse JSON reports (local snapshots, regenerate per audit)
+tests/lighthouse/reports/
+tests/lighthouse/reports-prod/
