@@ -27,6 +27,12 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { ClosetItem } from "@/generated/prisma/client";
 import type { CollectionWithPreview } from "@/lib/collections/collection.service";
+import {
+  computeClosetFacets,
+  filterClosetItems,
+  type ClosetFilterKey as FilterKey,
+  type ClosetFilters,
+} from "@/lib/closet/filter";
 
 interface Look {
   id: string;
@@ -40,8 +46,6 @@ interface Props {
   looks: Look[];
   collections: CollectionWithPreview[];
 }
-
-type FilterKey = "designer" | "season" | "color" | "category";
 
 const FILTER_LABELS: Record<FilterKey, string> = {
   designer: "Designer",
@@ -57,39 +61,15 @@ export function ClosetPageClient({
 }: Props) {
   const [items, setItems] = useState(initialItems);
   const [collections, setCollections] = useState(initialCollections);
-  const [filters, setFilters] = useState<Partial<Record<FilterKey, string>>>({});
+  const [filters, setFilters] = useState<ClosetFilters>({});
   const [openFilter, setOpenFilter] = useState<FilterKey | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
-  // Compute the filter facet lists from the items themselves so we don't show
-  // taxonomy values that don't exist in this user's closet.
-  const facets = useMemo(() => {
-    const collect = (key: keyof ClosetItem): string[] => {
-      const set = new Set<string>();
-      for (const it of items) {
-        const v = it[key];
-        if (typeof v === "string" && v) set.add(v);
-        if (Array.isArray(v)) for (const x of v) if (typeof x === "string") set.add(x);
-      }
-      return [...set].sort();
-    };
-    return {
-      designer: collect("designer"),
-      season: collect("season"),
-      color: collect("colors"),
-      category: collect("category"),
-    };
-  }, [items]);
-
-  const filteredItems = useMemo(() => {
-    return items.filter((it) => {
-      if (filters.designer && it.designer !== filters.designer) return false;
-      if (filters.season && it.season !== filters.season) return false;
-      if (filters.category && it.category !== filters.category) return false;
-      if (filters.color && !it.colors.includes(filters.color)) return false;
-      return true;
-    });
-  }, [items, filters]);
+  const facets = useMemo(() => computeClosetFacets(items), [items]);
+  const filteredItems = useMemo(
+    () => filterClosetItems(items, filters),
+    [items, filters],
+  );
 
   function setFilter(key: FilterKey, value: string | null) {
     setFilters((prev) => {
