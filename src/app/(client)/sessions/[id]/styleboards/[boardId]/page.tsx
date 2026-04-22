@@ -40,6 +40,18 @@ export default async function StyleboardPage({
 
   const isClient = board.session.clientId === user.id;
 
+  const pendingAction =
+    isClient && board.rating == null
+      ? await prisma.sessionPendingAction.findFirst({
+          where: {
+            sessionId,
+            boardId: board.id,
+            status: "OPEN",
+          },
+          select: { dueAt: true },
+        })
+      : null;
+
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
       <h1 className="mb-2 text-2xl font-semibold">
@@ -57,6 +69,7 @@ export default async function StyleboardPage({
         canRate={isClient && board.rating == null}
         closetItems={closetItems}
         inspiration={inspiration}
+        pendingDueAt={pendingAction?.dueAt ?? null}
       />
     </div>
   );

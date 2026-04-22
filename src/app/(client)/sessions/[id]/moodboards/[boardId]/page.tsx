@@ -36,6 +36,20 @@ export default async function MoodboardPage({
 
   const isClient = board.session.clientId === user.id;
 
+  // Surface the OPEN pending action (PENDING_CLIENT_FEEDBACK) on the client
+  // view so they see a "respond by" deadline while they rate the board.
+  const pendingAction =
+    isClient && board.rating == null
+      ? await prisma.sessionPendingAction.findFirst({
+          where: {
+            sessionId,
+            boardId: board.id,
+            status: "OPEN",
+          },
+          select: { dueAt: true },
+        })
+      : null;
+
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
       <h1 className="mb-2 text-2xl font-semibold">Your Moodboard</h1>
@@ -49,6 +63,7 @@ export default async function MoodboardPage({
         photos={board.photos}
         rating={board.rating}
         canRate={isClient && board.rating == null}
+        pendingDueAt={pendingAction?.dueAt ?? null}
       />
     </div>
   );

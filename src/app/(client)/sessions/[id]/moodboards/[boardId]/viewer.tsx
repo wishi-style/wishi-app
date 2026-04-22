@@ -3,15 +3,23 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { BoardPhoto, BoardRating } from "@/generated/prisma/client";
+import { PendingActionChip } from "@/components/boards/pending-action-chip";
 
 interface Props {
   boardId: string;
   photos: BoardPhoto[];
   rating: BoardRating | null;
   canRate: boolean;
+  pendingDueAt: Date | string | null;
 }
 
-export function MoodboardViewer({ boardId, photos, rating, canRate }: Props) {
+export function MoodboardViewer({
+  boardId,
+  photos,
+  rating,
+  canRate,
+  pendingDueAt,
+}: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +47,12 @@ export function MoodboardViewer({ boardId, photos, rating, canRate }: Props) {
 
   return (
     <>
+      {canRate && pendingDueAt && (
+        <div className="mb-4">
+          <PendingActionChip dueAt={pendingDueAt} />
+        </div>
+      )}
+
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3">
         {photos.map((p) => (
           <img
