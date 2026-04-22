@@ -14,6 +14,11 @@
 /coverage
 /playwright-report
 /test-results
+# visual regression diffs + per-run artifacts (baselines live in
+# tests/visual/__snapshots__/ and ARE committed)
+/tests/visual/**/*-actual.png
+/tests/visual/**/*-diff.png
+/test-results
 
 # next.js
 /.next/

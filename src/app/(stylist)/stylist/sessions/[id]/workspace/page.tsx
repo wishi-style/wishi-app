@@ -41,7 +41,7 @@ export default async function StylistWorkspacePage({
   if (!session.twilioChannelSid) redirect("/stylist/sessions");
 
   const clientName = `${session.client.firstName} ${session.client.lastName}`;
-  const { boards, curated } = await getWorkspaceData(session.id);
+  const { boards, curated, cart, progress } = await getWorkspaceData(session.id);
   const canRequestEnd =
     session.status === "ACTIVE" || session.status === "PENDING_END";
 
@@ -73,6 +73,8 @@ export default async function StylistWorkspacePage({
         viewerRole="STYLIST"
         boards={boards}
         curated={curated}
+        cart={cart}
+        progress={progress}
       />
     </>
   );

@@ -6,6 +6,7 @@ import { ProfileForm } from "@/components/profile/profile-form";
 import { MembershipCard } from "@/components/billing/membership-card";
 import { LoyaltyTierCard } from "@/components/billing/loyalty-tier-card";
 import { TrialBanner } from "@/components/billing/trial-banner";
+import { PaymentFailureBanner } from "@/components/billing/payment-failure-banner";
 
 export const dynamic = "force-dynamic";
 
@@ -48,55 +49,60 @@ export default async function SettingsPage() {
           planName={planName}
         />
       ) : null}
+      {subscription?.status === "PAST_DUE" ? (
+        <PaymentFailureBanner subscriptionId={subscription.id} />
+      ) : null}
 
-      <div className="mx-auto max-w-2xl px-6 py-12 space-y-8">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-          <p className="mt-2 text-muted-foreground">
-            Manage your profile, membership, and preferences.
-          </p>
-        </div>
+      <div className="min-h-screen bg-background">
+        <div className="mx-auto max-w-2xl px-6 md:px-10 py-12 md:py-16 space-y-10">
+          <header>
+            <h1 className="font-display text-3xl md:text-4xl">Settings</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Manage your profile, membership, and preferences.
+            </p>
+          </header>
 
-        <MembershipCard
-          subscription={
-            subscription
-              ? {
-                  id: subscription.id,
-                  planType: subscription.planType,
-                  status: subscription.status,
-                  frequency: subscription.frequency,
-                  currentPeriodEnd: subscription.currentPeriodEnd,
-                  pausedUntil: subscription.pausedUntil,
-                  cancelRequestedAt: subscription.cancelRequestedAt,
-                  pendingPlanType: subscription.pendingPlanType,
-                  lastPaymentFailedAt: subscription.lastPaymentFailedAt,
-                  activeSessionId: activeSession?.id ?? null,
-                }
-              : null
-          }
-          miniPriceDollars={prices.mini.displayDollars}
-          majorPriceDollars={prices.major.displayDollars}
-          luxPriceDollars={prices.lux.displayDollars}
-        />
-
-        <LoyaltyTierCard
-          tier={loyaltyAccount?.tier ?? user.loyaltyTier}
-          lifetimeBookingCount={loyaltyAccount?.lifetimeBookingCount ?? 0}
-        />
-
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight mb-4">
-            Personal info
-          </h2>
-          <ProfileForm
-            user={{
-              firstName: user.firstName,
-              lastName: user.lastName,
-              email: user.email,
-              phone: user.phone,
-              avatarUrl: user.avatarUrl,
-            }}
+          <MembershipCard
+            subscription={
+              subscription
+                ? {
+                    id: subscription.id,
+                    planType: subscription.planType,
+                    status: subscription.status,
+                    frequency: subscription.frequency,
+                    currentPeriodEnd: subscription.currentPeriodEnd,
+                    pausedUntil: subscription.pausedUntil,
+                    cancelRequestedAt: subscription.cancelRequestedAt,
+                    pendingPlanType: subscription.pendingPlanType,
+                    lastPaymentFailedAt: subscription.lastPaymentFailedAt,
+                    activeSessionId: activeSession?.id ?? null,
+                  }
+                : null
+            }
+            miniPriceDollars={prices.mini.displayDollars}
+            majorPriceDollars={prices.major.displayDollars}
+            luxPriceDollars={prices.lux.displayDollars}
           />
+
+          <LoyaltyTierCard
+            tier={loyaltyAccount?.tier ?? user.loyaltyTier}
+            lifetimeBookingCount={loyaltyAccount?.lifetimeBookingCount ?? 0}
+          />
+
+          <section>
+            <h2 className="font-display text-xl md:text-2xl mb-4">
+              Personal info
+            </h2>
+            <ProfileForm
+              user={{
+                firstName: user.firstName,
+                lastName: user.lastName,
+                email: user.email,
+                phone: user.phone,
+                avatarUrl: user.avatarUrl,
+              }}
+            />
+          </section>
         </div>
       </div>
     </>

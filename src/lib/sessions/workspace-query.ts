@@ -1,7 +1,10 @@
 import { prisma } from "@/lib/prisma";
+import { getProduct } from "@/lib/inventory/inventory-client";
 import type {
   WorkspaceBoard,
   WorkspaceItem,
+  WorkspaceCartItem,
+  WorkspaceProgress,
 } from "@/components/session/workspace";
 
 /**
@@ -10,9 +13,12 @@ import type {
  *    image as a thumbnail
  *  - curated pieces = union of all styleboard items + single-item chat
  *    messages, sorted newest first
+ *  - session-scoped cart (hydrated from the inventory service)
+ *  - progress card data (plan tier, styleboards sent vs plan.boardCount,
+ *    revisions sent) for the StylingRoom sidebar
  */
-export async function getWorkspaceData(sessionId: string) {
-  const [boards, singleItemMessages] = await Promise.all([
+export async function getWorkspaceData(sessionId: string, userId?: string) {
+  const [boards, singleItemMessages, session, cartItems] = await Promise.all([
     prisma.board.findMany({
       where: { sessionId },
       include: {
@@ -31,9 +37,34 @@ export async function getWorkspaceData(sessionId: string) {
       where: { sessionId, kind: "SINGLE_ITEM" },
       orderBy: { createdAt: "desc" },
     }),
+    prisma.session.findUnique({
+      where: { id: sessionId },
+      select: {
+        planType: true,
+        styleboardsAllowed: true,
+        bonusBoardsGranted: true,
+        styleboardsSent: true,
+        revisionsSent: true,
+        itemsSent: true,
+      },
+    }),
+    userId
+      ? prisma.cartItem.findMany({
+          where: { userId, sessionId },
+          orderBy: { addedAt: "desc" },
+        })
+      : Promise.resolve([]),
   ]);
 
-  const boardSummaries: WorkspaceBoard[] = boards.map((b) => {
+  // Plan table holds `additionalLookPriceCents`; Session carries planType.
+  const plan = session?.planType
+    ? await prisma.plan.findUnique({
+        where: { type: session.planType },
+        select: { additionalLookPriceCents: true },
+      })
+    : null;
+
+  const boardSummaries: WorkspaceBoard[] = boards.map((b: (typeof boards)[number]) => {
     let thumbnailUrl: string | null = null;
     if (b.type === "MOODBOARD") {
       thumbnailUrl = b.photos[0]?.url ?? null;
@@ -107,5 +138,30 @@ export async function getWorkspaceData(sessionId: string) {
     return tb - ta;
   });
 
-  return { boards: boardSummaries, curated };
+  const cart: WorkspaceCartItem[] = await Promise.all(
+    cartItems.map(async (row: (typeof cartItems)[number]) => {
+      const product = await getProduct(row.inventoryProductId);
+      return {
+        cartItemId: row.id,
+        inventoryProductId: row.inventoryProductId,
+        quantity: row.quantity,
+        name: product?.canonical_name ?? row.inventoryProductId,
+        brand: product?.brand_name ?? "",
+        imageUrl: product?.primary_image_url ?? null,
+        priceInCents: Math.round((product?.min_price ?? 0) * 100),
+      };
+    }),
+  );
+
+  const progress: WorkspaceProgress = {
+    planType: session?.planType ?? "MAJOR",
+    boardCount:
+      (session?.styleboardsAllowed ?? 4) + (session?.bonusBoardsGranted ?? 0),
+    styleboardsSent: session?.styleboardsSent ?? 0,
+    revisionsSent: session?.revisionsSent ?? 0,
+    itemsSent: session?.itemsSent ?? 0,
+    additionalLookPriceCents: plan?.additionalLookPriceCents ?? 2000,
+  };
+
+  return { boards: boardSummaries, curated, cart, progress };
 }

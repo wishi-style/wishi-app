@@ -29,12 +29,20 @@ export default async function ClosetPage() {
     }));
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10">
-      <ClosetPageClient
-        initialItems={items}
-        looks={looks}
-        collections={collections}
-      />
+    <div className="min-h-screen bg-background">
+      <div className="mx-auto max-w-6xl px-6 md:px-10 py-10 md:py-14">
+        <header className="mb-8">
+          <h1 className="font-display text-3xl md:text-4xl">Closet</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Everything you own, everything you love. Build collections and cross-reference looks.
+          </p>
+        </header>
+        <ClosetPageClient
+          initialItems={items}
+          looks={looks}
+          collections={collections}
+        />
+      </div>
     </div>
   );
 }

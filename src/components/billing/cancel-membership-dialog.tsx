@@ -9,7 +9,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { ArrowDownCircle, Pause, CalendarClock } from "lucide-react";
+import { ArrowDownCircleIcon, PauseIcon, CalendarClockIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Step = "options" | "confirm";
@@ -40,28 +40,28 @@ export function CancelMembershipDialog({
 
   const retentionOptions: Array<{
     action: Action;
-    icon: typeof ArrowDownCircle;
+    icon: typeof ArrowDownCircleIcon;
     title: string;
     description: string;
     visible: boolean;
   }> = [
     {
       action: "downgrade",
-      icon: ArrowDownCircle,
+      icon: ArrowDownCircleIcon,
       title: `Downgrade to Mini — $${miniPriceDollars}/mo`,
       description: "Keep your styling access at a lower price with fewer sessions.",
       visible: canDowngradeToMini,
     },
     {
       action: "pause",
-      icon: Pause,
+      icon: PauseIcon,
       title: "Pause for 1 month",
       description: "Take a break — your preferences and history stay saved.",
       visible: true,
     },
     {
       action: "quarterly",
-      icon: CalendarClock,
+      icon: CalendarClockIcon,
       title: "Switch to quarterly billing",
       description: "Pay every 3 months and save on your current plan.",
       visible: canSwitchToQuarterly,

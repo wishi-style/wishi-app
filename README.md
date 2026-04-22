@@ -31,6 +31,18 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+### Phase 10 feature flags
+
+`NEXT_PUBLIC_FEATURE_AI_SUGGESTED_REPLIES` (default `false`) gates the
+stylist chat "Suggested Replies" chip row. Keep it off until Phase 7 ships
+real AI replies — the port renders the surface but hides it behind this
+flag so the chat window doesn't show a broken affordance.
+
+The related stubs `/api/ai/suggested-feedback/[boardItemId]` and
+`/api/ai/similar-items` return canned / category-based responses so the
+RestyleWizard and ProductDetailDialog carousel render during Phase 10.
+Phase 7 replaces the handler bodies, not the consumers.
+
 ## Docker
 
 ```bash

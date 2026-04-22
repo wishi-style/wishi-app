@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { Minus, Plus } from "lucide-react";
+import { MinusIcon, PlusIcon } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
@@ -68,7 +68,7 @@ export function BuyLooksDialog({
             )}
             aria-label="Decrease quantity"
           >
-            <Minus className="h-5 w-5" />
+            <MinusIcon className="h-5 w-5" />
           </button>
 
           <span className="font-display text-5xl tabular-nums w-16">
@@ -86,7 +86,7 @@ export function BuyLooksDialog({
             )}
             aria-label="Increase quantity"
           >
-            <Plus className="h-5 w-5" />
+            <PlusIcon className="h-5 w-5" />
           </button>
         </div>
 
