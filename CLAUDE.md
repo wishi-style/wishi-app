@@ -104,7 +104,7 @@ wishi-app/
 - [x] Phase 6: Stylist Dashboard & Payouts
 - [ ] Phase 7: AI Features
 - [x] Phase 8: Admin Panel
-- [ ] Phase 9: Commerce Extras
+- [x] Phase 9: Commerce Extras (9a billing PR#23, 9b loyalty/promo PR#27, 9c direct-sale PR#26, 9d closet/social PR#25, 9e end-session/match-score PR#24)
 - [ ] Phase 10: Client App Frontend Port
 - [ ] Phase 11: Polish & Launch
 

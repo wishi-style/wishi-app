@@ -81,14 +81,14 @@ Pushes to `main` auto-deploy to staging via GitHub Actions. Production deploys a
     ├── app/
     │   ├── (client)/     Client routes: /sessions, /sessions/[id]/workspace, /sessions/[id]/moodboards/*, /sessions/[id]/styleboards/*, /sessions/[id]/end-session, /sessions/[id]/buy-more-looks, /closet, /collections/[id], /favorites, /orders, /settings
     │   ├── (stylist)/    Stylist routes: /onboarding/[step], /stylist/dashboard, /stylist/sessions/*, /stylist/clients, /stylist/clients/[id], /stylist/profile/boards, /stylist/payouts
-    │   ├── (admin)/      Admin routes: /admin/inspiration-photos, /admin/orders
+    │   ├── (admin)/      Admin routes: /admin/dashboard, /admin/users, /admin/sessions, /admin/subscriptions, /admin/stylists, /admin/looks, /admin/inspiration-photos, /admin/quiz-builder, /admin/orders, /admin/promo-codes, /admin/audit-log
     │   ├── api/          health, webhooks/{clerk,stripe,twilio}, products, moodboards, styleboards, closet, collections, favorites/{boards,items,stylists}, inspiration-photos, cart, orders, payments/checkout, sessions/[id]/end/{request,approve,decline}, sessions/[id]/upgrade, stylist/onboarding/{save,advance,connect/{start,return}}, stylist/profile/boards, stylists/[id]/{waitlist,reviews}, payments/payouts, workers/{waitlist-notify,payout-reconcile}, admin/orders/[id]/{tracking,status,notes,refund,approve-refund}, uploads, stylists, subscriptions, billing, chat, push
     │   ├── match-quiz/   Public match quiz (guest + authenticated)
     │   ├── stylists/     Public stylist directory + profiles
     │   ├── sign-in/      Clerk sign-in
     │   └── sign-up/      Clerk sign-up
     ├── components/       nav/, profile/, quiz/, stylist/, session/, booking/, chat/, board/, closet/, ui/
-    ├── lib/              prisma.ts, stripe.ts, stripe-connect.ts, twilio.ts, web-push.ts, auth/, payments/, payouts/, quiz/, matching/, sessions/, services/, chat/, boards/, inventory/, pending-actions/, notifications/, stylists/, workers/, s3.ts, plans.ts
-    ├── workers/          waitlist-notify.ts, payout-reconcile.ts (HTTP endpoints at /api/workers/*)
+    ├── lib/              prisma.ts, stripe.ts, stripe-connect.ts, twilio.ts, web-push.ts, auth/, payments/, payouts/, promotions/, loyalty/, orders/, cart/, collections/, closet/, quiz/, matching/, sessions/, services/, chat/, boards/, inventory/, pending-actions/, notifications/, stylists/, workers/, audit/, s3.ts, plans.ts
+    ├── workers/          waitlist-notify.ts, payout-reconcile.ts, loyalty-recalc.ts, demo-reset.ts (HTTP endpoints at /api/workers/*)
     └── generated/        Prisma client (gitignored)
 ```
