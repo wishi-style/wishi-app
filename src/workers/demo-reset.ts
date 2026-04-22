@@ -8,6 +8,18 @@
  * Guarded by E2E_AUTH_MODE (same flag that enables /demo) so this worker is a
  * no-op when the demo environment isn't active. Scheduled in
  * infra/modules/workers/main.tf only when enable_demo_mode = true.
+ *
+ * Delete order matters — several session-referencing FKs do NOT cascade:
+ *   - Order.sessionId             → Session  (no cascade)
+ *   - AffiliateClick.sessionId    → Session  (no cascade)
+ *   - AffiliateClick.orderId      → Order    (no cascade)
+ *   - StylistReview.sessionId     → Session  (no cascade)
+ *   - Payment.sessionId           → Session  (no cascade)
+ *   - Payout.sessionId            → Session  (no cascade)
+ *   - Board.sessionId             → Session  (SetNull — safe but would orphan)
+ * so every row referencing a demo session must be deleted BEFORE the session.
+ * Filters must also cover the crossover case (non-demo user's row pointing at
+ * a demo session, e.g. non-demo client books demo stylist).
  */
 import { prisma } from "@/lib/prisma";
 import { DEMO_CLERK_ID_LIST } from "@/lib/demo/constants";
@@ -80,52 +92,93 @@ export async function runDemoReset(): Promise<ResetSummary> {
   });
   const stylistProfileIds = stylistProfiles.map((p) => p.id);
 
-  // Payouts + payments do NOT cascade from Session, so clear them first.
-  const payoutsDeleted = await prisma.payout.deleteMany({
+  const orders = await prisma.order.findMany({
     where: {
       OR: [
-        stylistProfileIds.length > 0
-          ? { stylistProfileId: { in: stylistProfileIds } }
-          : { id: "__never__" },
-        sessionIds.length > 0
-          ? { sessionId: { in: sessionIds } }
-          : { id: "__never__" },
+        { userId: { in: userIds } },
+        ...(sessionIds.length > 0 ? [{ sessionId: { in: sessionIds } }] : []),
+      ],
+    },
+    select: { id: true },
+  });
+  const orderIds = orders.map((o) => o.id);
+
+  // 1. AffiliateClicks before Orders (FK: click.orderId → order).
+  //    Catch demo-user clicks + any click against a demo session or demo order
+  //    (crossover: non-demo user clicks through a demo session).
+  const affiliateClicksDeleted = await prisma.affiliateClick.deleteMany({
+    where: {
+      OR: [
+        { userId: { in: userIds } },
+        ...(sessionIds.length > 0 ? [{ sessionId: { in: sessionIds } }] : []),
+        ...(orderIds.length > 0 ? [{ orderId: { in: orderIds } }] : []),
       ],
     },
   });
 
+  // 2. Orders (cascades OrderItem). Covers crossover: non-demo client's order
+  //    tied to a demo session would otherwise block the session delete.
+  const ordersDeleted =
+    orderIds.length > 0
+      ? await prisma.order.deleteMany({ where: { id: { in: orderIds } } })
+      : { count: 0 };
+
+  // 3. StylistReviews — same crossover concern (non-demo client reviews demo
+  //    stylist's demo session).
+  const reviewsDeleted = await prisma.stylistReview.deleteMany({
+    where: {
+      OR: [
+        { userId: { in: userIds } },
+        ...(sessionIds.length > 0 ? [{ sessionId: { in: sessionIds } }] : []),
+      ],
+    },
+  });
+
+  // 4. Payouts (FK to both stylist_profile and session, neither cascade).
+  const payoutsDeleted =
+    stylistProfileIds.length > 0 || sessionIds.length > 0
+      ? await prisma.payout.deleteMany({
+          where: {
+            OR: [
+              ...(stylistProfileIds.length > 0
+                ? [{ stylistProfileId: { in: stylistProfileIds } }]
+                : []),
+              ...(sessionIds.length > 0
+                ? [{ sessionId: { in: sessionIds } }]
+                : []),
+            ],
+          },
+        })
+      : { count: 0 };
+
+  // 5. Payments (covers crossover via sessionId).
   const paymentsDeleted = await prisma.payment.deleteMany({
     where: {
       OR: [
         { userId: { in: userIds } },
-        sessionIds.length > 0
-          ? { sessionId: { in: sessionIds } }
-          : { id: "__never__" },
+        ...(sessionIds.length > 0 ? [{ sessionId: { in: sessionIds } }] : []),
       ],
     },
   });
 
-  // Session-scoped boards only (preserves any profile boards on stylist
-  // profiles, which have sessionId=null).
+  // 6. Session-scoped boards (Board.sessionId is SetNull, so deleting sessions
+  //    would just orphan them — explicit delete is cleaner). Preserves any
+  //    profile boards on stylist profiles (those have sessionId=null).
   const boardsDeleted =
     sessionIds.length > 0
-      ? await prisma.board.deleteMany({ where: { sessionId: { in: sessionIds } } })
+      ? await prisma.board.deleteMany({
+          where: { sessionId: { in: sessionIds } },
+        })
       : { count: 0 };
 
-  // Session delete cascades Message, SessionPendingAction, SessionMatchHistory.
+  // 7. Sessions (cascades Message, SessionPendingAction, SessionMatchHistory).
   const sessionsDeleted =
     sessionIds.length > 0
       ? await prisma.session.deleteMany({ where: { id: { in: sessionIds } } })
       : { count: 0 };
 
-  // User-scoped rows (all cascade from User but we keep the User itself).
+  // 8. User-scoped rows (cascade from User; we keep the User itself).
   const subscriptionsDeleted = await prisma.subscription.deleteMany({
-    where: { userId: { in: userIds } },
-  });
-  const ordersDeleted = await prisma.order.deleteMany({
-    where: { userId: { in: userIds } },
-  });
-  const affiliateClicksDeleted = await prisma.affiliateClick.deleteMany({
     where: { userId: { in: userIds } },
   });
   const closetItemsDeleted = await prisma.closetItem.deleteMany({
@@ -138,9 +191,6 @@ export async function runDemoReset(): Promise<ResetSummary> {
     where: { userId: { in: userIds } },
   });
   const favoriteStylistsDeleted = await prisma.favoriteStylist.deleteMany({
-    where: { userId: { in: userIds } },
-  });
-  const reviewsDeleted = await prisma.stylistReview.deleteMany({
     where: { userId: { in: userIds } },
   });
   const waitlistDeleted = await prisma.stylistWaitlistEntry.deleteMany({

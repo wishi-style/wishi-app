@@ -38,12 +38,12 @@ export async function signInAsDemo(formData: FormData) {
     throw new Error("Demo mode disabled");
   }
 
-  const which = formData.get("which") as DemoRole | null;
-  if (!which || !(which in DEMO_ROLE_MAP)) {
+  const rawWhich = formData.get("which");
+  if (typeof rawWhich !== "string" || !Object.hasOwn(DEMO_ROLE_MAP, rawWhich)) {
     throw new Error("Invalid demo role");
   }
 
-  const { clerkId, role, landing } = DEMO_ROLE_MAP[which];
+  const { clerkId, role, landing } = DEMO_ROLE_MAP[rawWhich as DemoRole];
   await setE2EAuthCookies({ clerkId, role });
   redirect(landing);
 }
