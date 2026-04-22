@@ -167,10 +167,23 @@ export interface RefundResult {
 }
 
 /**
- * Issue a Stripe refund for the order's PaymentIntent. Soft-enforces the
- * $200 cap by returning a warning string; admin UI surfaces it but does not
- * block. Idempotent: if `Order.refundedInCents` already covers `amountInCents`
- * or matches it, returns the existing refund without calling Stripe again.
+ * Issue an incremental Stripe refund for the order's PaymentIntent.
+ *
+ * `amountInCents` is the **new amount to refund this call**, on top of any
+ * prior partial refunds. The Stripe idempotency key is keyed on
+ * `(orderId, prevRefundedInCents, amountInCents)`, which gives the right
+ * behavior across two scenarios:
+ *
+ *   - Same admin click delivered twice (network retry, double-click before
+ *     the DB update lands): both calls see the same `prevRefundedInCents`
+ *     and produce the same key → Stripe dedupes and returns the same Refund.
+ *   - Two genuinely separate refunds of the same amount (admin intentionally
+ *     issues a second $50): the first updates `refundedInCents`, the second
+ *     reads the new value, the keys differ, and Stripe creates a second
+ *     Refund as intended.
+ *
+ * Soft-enforces a $200 cap by returning a warning string; the admin UI
+ * surfaces it but does not block.
  */
 export async function refundOrder(
   orderId: string,
@@ -212,11 +225,15 @@ export async function refundOrder(
         : undefined,
       metadata: { orderId, reason: reason ?? "" },
     },
-    { idempotencyKey: `refund:${orderId}:${alreadyRefunded + amountInCents}` },
+    { idempotencyKey: `refund:${orderId}:${alreadyRefunded}:${amountInCents}` },
   );
 
-  await prisma.order.update({
-    where: { id: orderId },
+  // Conditional update: only advance `refundedInCents` if it hasn't moved
+  // since we read it. A concurrent caller that wins this race makes our
+  // update a no-op — Stripe still returns the same Refund object thanks to
+  // the idempotency key, so the caller still gets a coherent result.
+  await prisma.order.updateMany({
+    where: { id: orderId, refundedInCents: alreadyRefunded === 0 ? null : alreadyRefunded },
     data: {
       refundedAt: new Date(),
       refundedInCents: alreadyRefunded + amountInCents,

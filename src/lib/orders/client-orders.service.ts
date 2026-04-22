@@ -76,15 +76,35 @@ export async function initiateReturn(
         ? "Only direct-sale orders can be returned through Wishi"
         : order.status !== "ARRIVED"
           ? `Order status ${order.status} is not eligible for return`
-          : `Return window of ${RETURN_WINDOW_DAYS} days has elapsed`;
+          : !order.arrivedAt
+            ? "Order has no recorded arrival date and is not eligible for return"
+            : `Return window of ${RETURN_WINDOW_DAYS} days has elapsed`;
     throw new Error(reason);
   }
 
-  return prisma.order.update({
-    where: { id: orderId },
+  // Conditional update: if an admin transitions the order between our read
+  // and our write (e.g. ARRIVED → RETURN_IN_PROCESS, or back-office cancel),
+  // updateMany matches zero rows and we throw rather than silently flipping
+  // a now-ineligible order. The arrivedAt window check is duplicated here
+  // because this path is finance-sensitive.
+  const cutoff = new Date(Date.now() - RETURN_WINDOW_MS);
+  const result = await prisma.order.updateMany({
+    where: {
+      id: orderId,
+      userId,
+      source: "DIRECT_SALE",
+      status: "ARRIVED",
+      arrivedAt: { gte: cutoff },
+    },
     data: {
       status: "RETURN_IN_PROCESS",
       returnInitiatedAt: new Date(),
     },
   });
+  if (result.count === 0) {
+    throw new Error("Order is no longer eligible for return");
+  }
+
+  const updated = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+  return updated;
 }

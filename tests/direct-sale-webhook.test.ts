@@ -1,14 +1,15 @@
 /**
  * Integration test for the direct-sale Stripe Checkout webhook path.
  *
- * Covers the money-sensitive bits:
- *   - `checkout.session.completed` with metadata.purpose=DIRECT_SALE creates
- *     an Order(source=DIRECT_SALE, status=ORDERED) with Stripe's authoritative
- *     tax + shipping totals.
+ * Direct-sale orders are pre-created at checkout-create time as
+ * `Order(status=PENDING)` carrying the cart snapshot. The webhook flips that
+ * row to `ORDERED` via a conditional `updateMany` and clears the matching
+ * cart items. These tests cover the money-sensitive bits:
+ *   - PENDING → ORDERED transition with Stripe's authoritative tax/shipping.
  *   - Cart items consumed by the checkout get deleted.
- *   - `Order.stripeCheckoutSessionId` unique keeps the handler idempotent
- *     when Stripe redelivers the event.
- *   - `applyDirectSaleFromCheckout` is a no-op when metadata is missing.
+ *   - Replay of the same `checkout.session.completed` is a no-op (the
+ *     conditional update matches zero rows on the second pass).
+ *   - Bails when the PENDING order is missing or metadata is missing.
  *
  * Runs against the shared wishi_p5 database (same as other integration tests).
  */
@@ -75,8 +76,6 @@ function mockCheckoutSession(overrides: Partial<Stripe.Checkout.Session>): Strip
       purpose: "DIRECT_SALE",
       userId: clientUserId,
       sessionId,
-      cartItemIds: "",
-      isPriorityShipping: "false",
     },
     total_details: {
       amount_discount: 0,
@@ -88,76 +87,92 @@ function mockCheckoutSession(overrides: Partial<Stripe.Checkout.Session>): Strip
   } as unknown as Stripe.Checkout.Session;
 }
 
-integrationTest("applyDirectSaleFromCheckout: creates Order + deletes CartItems", async () => {
+async function seedPendingOrder(checkoutSessionId: string, opts: {
+  inventoryProductId: string;
+  quantity?: number;
+  isPriorityShipping?: boolean;
+}) {
   const cartItem = await prisma.cartItem.create({
     data: {
       userId: clientUserId,
-      inventoryProductId: "inv_test_1",
+      inventoryProductId: opts.inventoryProductId,
       sessionId,
-      quantity: 2,
+      quantity: opts.quantity ?? 1,
     },
   });
-
-  const session = mockCheckoutSession({
-    metadata: {
-      purpose: "DIRECT_SALE",
+  await prisma.order.create({
+    data: {
       userId: clientUserId,
       sessionId,
-      cartItemIds: cartItem.id,
-      isPriorityShipping: "false",
+      source: "DIRECT_SALE",
+      status: "PENDING",
+      retailer: "test-merchant",
+      totalInCents: 0,
+      isPriorityShipping: opts.isPriorityShipping ?? false,
+      currency: "usd",
+      stripeCheckoutSessionId: checkoutSessionId,
+      items: {
+        create: [
+          {
+            inventoryProductId: opts.inventoryProductId,
+            title: "Test product",
+            priceInCents: 5000,
+            quantity: opts.quantity ?? 1,
+          },
+        ],
+      },
     },
   });
+  return cartItem;
+}
 
-  // Inventory service is unreachable in test env → resolveLineItems via
-  // getProduct returns null, so snapshots fall back to defaults. That's fine
-  // for the idempotency/wiring assertions below; item snapshot content is
-  // covered in separate tests with a mocked inventory client.
-  await applyDirectSaleFromCheckout(session);
+integrationTest(
+  "applyDirectSaleFromCheckout: flips PENDING → ORDERED + clears cart",
+  async () => {
+    const session = mockCheckoutSession({});
+    await seedPendingOrder(session.id, { inventoryProductId: "inv_test_1", quantity: 2 });
 
-  const orders = await prisma.order.findMany({ where: { userId: clientUserId } });
-  assert.equal(orders.length, 1);
-  assert.equal(orders[0].source, "DIRECT_SALE");
-  assert.equal(orders[0].status, "ORDERED");
-  assert.equal(orders[0].stripeCheckoutSessionId, session.id);
-  assert.equal(orders[0].totalInCents, 10000);
-  assert.equal(orders[0].taxInCents, 825);
-  assert.equal(orders[0].shippingInCents, 1000);
-  assert.equal(orders[0].isPriorityShipping, false);
+    await applyDirectSaleFromCheckout(session);
 
-  const remaining = await prisma.cartItem.findMany({ where: { userId: clientUserId } });
-  assert.equal(remaining.length, 0);
-});
+    const orders = await prisma.order.findMany({ where: { userId: clientUserId } });
+    assert.equal(orders.length, 1);
+    assert.equal(orders[0].status, "ORDERED");
+    assert.equal(orders[0].stripeCheckoutSessionId, session.id);
+    assert.equal(orders[0].totalInCents, 10000);
+    assert.equal(orders[0].taxInCents, 825);
+    assert.equal(orders[0].shippingInCents, 1000);
+
+    const remaining = await prisma.cartItem.findMany({ where: { userId: clientUserId } });
+    assert.equal(remaining.length, 0);
+  },
+);
 
 integrationTest("applyDirectSaleFromCheckout: idempotent on replay", async () => {
-  const cartItem = await prisma.cartItem.create({
-    data: {
-      userId: clientUserId,
-      inventoryProductId: "inv_test_2",
-      sessionId,
-      quantity: 1,
-    },
-  });
-
-  const session = mockCheckoutSession({
-    metadata: {
-      purpose: "DIRECT_SALE",
-      userId: clientUserId,
-      sessionId,
-      cartItemIds: cartItem.id,
-      isPriorityShipping: "false",
-    },
-  });
+  const session = mockCheckoutSession({});
+  await seedPendingOrder(session.id, { inventoryProductId: "inv_test_2" });
 
   await applyDirectSaleFromCheckout(session);
   await applyDirectSaleFromCheckout(session); // replay
 
-  const orders = await prisma.order.findMany({ where: { stripeCheckoutSessionId: session.id } });
+  const orders = await prisma.order.findMany({
+    where: { stripeCheckoutSessionId: session.id },
+  });
   assert.equal(orders.length, 1);
+  assert.equal(orders[0].status, "ORDERED");
+});
+
+integrationTest("applyDirectSaleFromCheckout: bails when no PENDING order exists", async () => {
+  const session = mockCheckoutSession({}); // no seedPendingOrder()
+  await applyDirectSaleFromCheckout(session);
+  const orders = await prisma.order.findMany({
+    where: { stripeCheckoutSessionId: session.id },
+  });
+  assert.equal(orders.length, 0);
 });
 
 integrationTest("applyDirectSaleFromCheckout: missing metadata is a no-op", async () => {
   const session = mockCheckoutSession({
-    metadata: { purpose: "DIRECT_SALE" }, // missing userId/sessionId/cartItemIds
+    metadata: { purpose: "DIRECT_SALE" }, // missing userId/sessionId
   });
   await applyDirectSaleFromCheckout(session);
   const orders = await prisma.order.findMany({
@@ -166,37 +181,28 @@ integrationTest("applyDirectSaleFromCheckout: missing metadata is a no-op", asyn
   assert.equal(orders.length, 0);
 });
 
-integrationTest("applyDirectSaleFromCheckout: isPriorityShipping=true for Lux carts", async () => {
-  const cartItem = await prisma.cartItem.create({
-    data: {
-      userId: clientUserId,
+integrationTest(
+  "applyDirectSaleFromCheckout: preserves isPriorityShipping=true for Lux orders",
+  async () => {
+    const session = mockCheckoutSession({
+      total_details: {
+        amount_discount: 0,
+        amount_shipping: 0,
+        amount_tax: 825,
+      },
+      amount_total: 9825,
+    });
+    await seedPendingOrder(session.id, {
       inventoryProductId: "inv_test_lux",
-      sessionId,
-      quantity: 1,
-    },
-  });
+      isPriorityShipping: true,
+    });
 
-  const session = mockCheckoutSession({
-    metadata: {
-      purpose: "DIRECT_SALE",
-      userId: clientUserId,
-      sessionId,
-      cartItemIds: cartItem.id,
-      isPriorityShipping: "true",
-    },
-    total_details: {
-      amount_discount: 0,
-      amount_shipping: 0,
-      amount_tax: 825,
-    },
-    amount_total: 9825,
-  });
+    await applyDirectSaleFromCheckout(session);
 
-  await applyDirectSaleFromCheckout(session);
-
-  const [order] = await prisma.order.findMany({
-    where: { stripeCheckoutSessionId: session.id },
-  });
-  assert.equal(order.isPriorityShipping, true);
-  assert.equal(order.shippingInCents, 0);
-});
+    const [order] = await prisma.order.findMany({
+      where: { stripeCheckoutSessionId: session.id },
+    });
+    assert.equal(order.isPriorityShipping, true);
+    assert.equal(order.shippingInCents, 0);
+  },
+);

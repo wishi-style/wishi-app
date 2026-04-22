@@ -1,10 +1,12 @@
 import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
+import { Prisma } from "@/generated/prisma/client";
 import { getOrCreateStripeCustomer } from "./stripe-customer";
 import { getProduct } from "@/lib/inventory/inventory-client";
 import { getMerchandised } from "@/lib/products/merchandised-product.service";
 import { getCartItemsByIds } from "@/lib/cart/cart.service";
+import type { SessionStatus } from "@/generated/prisma/client";
 
 export const LUX_PRIORITY_SHIPPING_CENTS = 0;
 export const STANDARD_SHIPPING_CENTS = 1000; // $10 flat — Stripe Tax computes tax on top
@@ -25,14 +27,26 @@ interface ResolvedLineItem {
   unitAmountInCents: number;
   quantity: number;
   taxCode: string;
+  merchant: string | null;
 }
 
 const DEFAULT_TAX_CODE = "txcd_99999999"; // generic taxable goods
 
+// Lux concierge shipping is offered only while the session is actively in flight.
+// Once the client has approved end-of-session, completed it, or never started,
+// they pay standard shipping like any other customer.
+const LUX_SHIPPING_ELIGIBLE_STATUSES: ReadonlySet<SessionStatus> = new Set<SessionStatus>([
+  "ACTIVE",
+  "PENDING_END",
+  "PENDING_END_APPROVAL",
+  "END_DECLINED",
+]);
+
 /**
  * Resolve cart items into line items via the inventory service. Throws if any
- * item is no longer direct-sale (admin may have unflagged it) or the product
- * has gone missing — direct-sale checkout is finance-sensitive, fail loud.
+ * item is no longer direct-sale (admin may have unflagged it), missing from
+ * inventory, or out of stock — direct-sale checkout is finance-sensitive, so
+ * we fail loud rather than silently fall back to a stale/wrong listing.
  */
 async function resolveLineItems(
   userId: string,
@@ -66,14 +80,16 @@ async function resolveLineItems(
     if (!product) {
       throw new Error(`Product ${cartItem.inventoryProductId} not found`);
     }
-    const listing = product.listings.find((l) => l.in_stock) ?? product.listings[0];
-    if (!listing) {
-      throw new Error(`Product ${cartItem.inventoryProductId} has no listings`);
+    const inStockListing = product.listings.find((l) => l.in_stock);
+    if (!inStockListing) {
+      throw new Error(
+        `Product ${cartItem.inventoryProductId} is out of stock`,
+      );
     }
     const unitAmount = Math.round(
-      (listing.sale_price && listing.sale_price > 0
-        ? listing.sale_price
-        : listing.base_price) * 100,
+      (inStockListing.sale_price && inStockListing.sale_price > 0
+        ? inStockListing.sale_price
+        : inStockListing.base_price) * 100,
     );
     if (!Number.isFinite(unitAmount) || unitAmount <= 0) {
       throw new Error(`Invalid price for ${cartItem.inventoryProductId}`);
@@ -81,12 +97,13 @@ async function resolveLineItems(
     items.push({
       cartItemId: cartItem.id,
       inventoryProductId: cartItem.inventoryProductId,
-      title: listing.title || product.canonical_name,
+      title: inStockListing.title || product.canonical_name,
       brand: product.brand_name ?? null,
-      imageUrl: listing.primary_image_url || product.primary_image_url || null,
+      imageUrl: inStockListing.primary_image_url || product.primary_image_url || null,
       unitAmountInCents: unitAmount,
       quantity: cartItem.quantity,
       taxCode: DEFAULT_TAX_CODE,
+      merchant: inStockListing.merchant_name ?? null,
     });
   }
   return { items, sessionId };
@@ -96,25 +113,33 @@ async function resolveLineItems(
  * Lux session entitles the client to free priority shipping on direct-sale
  * orders placed during that session's lifecycle (Phase 9 product decision).
  */
-async function isLuxSession(sessionId: string): Promise<boolean> {
+async function isLuxShippingEligible(sessionId: string): Promise<boolean> {
   const session = await prisma.session.findUnique({
     where: { id: sessionId },
     select: { planType: true, status: true },
   });
   if (!session) return false;
   if (session.planType !== "LUX") return false;
-  // Active or just-completed — once the session is fully closed and the user
-  // browses back later, treat as standard shipping.
-  return session.status !== "CANCELLED";
+  return LUX_SHIPPING_ELIGIBLE_STATUSES.has(session.status);
 }
 
+/**
+ * Create a Stripe Checkout for direct-sale items, AND atomically pre-create
+ * an `Order(status=PENDING)` capturing the cart snapshot. The webhook later
+ * flips PENDING → ORDERED conditionally — this avoids:
+ *   - Stripe's 500-char metadata limit (50 cuids of cartItemIds blow it).
+ *   - findUnique→create races where two concurrent webhook deliveries both
+ *     pass the existence check and one fails on the unique index.
+ *   - Drift between the cart at checkout-create time vs at webhook time.
+ */
 export async function createDirectSaleCheckout(input: CreateDirectSaleCheckoutInput) {
   const { items, sessionId } = await resolveLineItems(input.userId, input.cartItemIds);
-  const lux = await isLuxSession(sessionId);
+  const lux = await isLuxShippingEligible(sessionId);
   const shippingInCents = lux ? LUX_PRIORITY_SHIPPING_CENTS : STANDARD_SHIPPING_CENTS;
   const isPriorityShipping = lux;
 
   const customerId = await getOrCreateStripeCustomer(input.userId);
+  const retailer = items.find((i) => i.merchant)?.merchant ?? "wishi";
 
   const lineItems = items.map((it) => ({
     price_data: {
@@ -132,7 +157,15 @@ export async function createDirectSaleCheckout(input: CreateDirectSaleCheckoutIn
     adjustable_quantity: { enabled: false },
   }));
 
-  return stripe.checkout.sessions.create(
+  // Idempotency on the Stripe API call: if the user retries the same checkout
+  // creation (refresh, double-click) we get back the same Stripe session
+  // rather than a fresh one. The cart-id-based key is intentional because
+  // changing the cart should produce a new checkout.
+  const stripeIdempotencyKey = `direct-sale:${input.userId}:${[...input.cartItemIds]
+    .sort()
+    .join(",")}`;
+
+  const checkout = await stripe.checkout.sessions.create(
     {
       customer: customerId,
       mode: "payment",
@@ -151,24 +184,65 @@ export async function createDirectSaleCheckout(input: CreateDirectSaleCheckoutIn
       ],
       success_url: input.successUrl,
       cancel_url: input.cancelUrl,
+      // Metadata stays small — enough to identify the order on the webhook side.
       metadata: {
         purpose: "DIRECT_SALE",
         userId: input.userId,
         sessionId,
-        cartItemIds: input.cartItemIds.join(","),
-        isPriorityShipping: String(isPriorityShipping),
       },
     },
-    { idempotencyKey: `direct-sale:${input.userId}:${[...input.cartItemIds].sort().join(",")}` },
+    { idempotencyKey: stripeIdempotencyKey },
   );
+
+  // Pre-create the PENDING Order. The unique on stripeCheckoutSessionId means
+  // a retry of this same checkout (Stripe returned the same session id) is a
+  // no-op — we look up the existing Order and return.
+  try {
+    await prisma.order.create({
+      data: {
+        userId: input.userId,
+        sessionId,
+        source: "DIRECT_SALE",
+        status: "PENDING",
+        retailer,
+        totalInCents: 0, // filled in by webhook from Stripe authoritative totals
+        isPriorityShipping,
+        currency: "usd",
+        stripeCheckoutSessionId: checkout.id,
+        items: {
+          create: items.map((it) => ({
+            inventoryProductId: it.inventoryProductId,
+            title: it.title,
+            brand: it.brand,
+            imageUrl: it.imageUrl,
+            priceInCents: it.unitAmountInCents,
+            quantity: it.quantity,
+          })),
+        },
+      },
+    });
+  } catch (err) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      // Duplicate stripeCheckoutSessionId — the user retried; nothing to do.
+    } else {
+      throw err;
+    }
+  }
+
+  return checkout;
 }
 
 /**
- * Webhook handler — idempotent on `Order.stripeCheckoutSessionId`. Creates
- * `Order(source=DIRECT_SALE, status=ORDERED)` plus snapshotted `OrderItem`
- * rows from the cart, then deletes the consumed CartItem rows. Tax + shipping
- * come from Stripe's authoritative totals (`amount_total`, `total_details`,
- * `shipping_details`); we never recompute on our side post-checkout.
+ * Webhook handler — finds the PENDING Order pre-created at checkout time and
+ * flips it to ORDERED, filling in Stripe's authoritative tax/shipping/total
+ * and the customer's shipping address. Idempotent in two ways:
+ *   - `updateMany` with `status: "PENDING"` predicate: a redelivered event
+ *     after the first transition matches zero rows and is a safe no-op.
+ *   - The pre-created Order owns the cart snapshot, so this handler doesn't
+ *     reach back into the (now-mutable) cart for line items.
  */
 export async function applyDirectSaleFromCheckout(
   checkoutSession: Stripe.Checkout.Session,
@@ -176,62 +250,30 @@ export async function applyDirectSaleFromCheckout(
   const meta = checkoutSession.metadata ?? {};
   const userId = meta.userId;
   const sessionId = meta.sessionId;
-  const cartItemIdsRaw = meta.cartItemIds;
-  const isPriorityShipping = meta.isPriorityShipping === "true";
 
-  if (!userId || !sessionId || !cartItemIdsRaw) {
+  if (!userId || !sessionId) {
     console.error(
       "[stripe] applyDirectSaleFromCheckout: missing metadata",
       checkoutSession.id,
     );
     return;
   }
-  const cartItemIds = cartItemIdsRaw.split(",").filter(Boolean);
-  if (cartItemIds.length === 0) {
-    console.error("[stripe] applyDirectSaleFromCheckout: empty cart", checkoutSession.id);
-    return;
-  }
 
-  const existing = await prisma.order.findUnique({
+  const order = await prisma.order.findUnique({
     where: { stripeCheckoutSessionId: checkoutSession.id },
-    select: { id: true },
+    include: { items: true },
   });
-  if (existing) return; // idempotent
-
-  // Re-resolve line items from the cart so the snapshot is authoritative
-  // even if cart was mutated since checkout creation. (Stripe holds the cart
-  // open for ~24h; the webhook fires on completion.)
-  const cartItems = await prisma.cartItem.findMany({
-    where: { id: { in: cartItemIds }, userId },
-    select: { id: true, inventoryProductId: true, quantity: true },
-  });
-  if (cartItems.length === 0) {
+  if (!order) {
+    // The pre-create either never happened (older flow) or the row was
+    // manually deleted. Log and bail — never invent an order out of metadata.
     console.error(
-      "[stripe] applyDirectSaleFromCheckout: cart items vanished",
+      "[stripe] applyDirectSaleFromCheckout: no PENDING order for checkout",
       checkoutSession.id,
     );
     return;
   }
-
-  // Snapshot product info from inventory at fulfillment time.
-  const inventoryIds = [...new Set(cartItems.map((c) => c.inventoryProductId))];
-  const productSnapshots = new Map<
-    string,
-    { title: string; brand: string | null; imageUrl: string | null; priceInCents: number; merchant: string | null }
-  >();
-  for (const id of inventoryIds) {
-    const product = await getProduct(id);
-    if (!product) continue;
-    const listing = product.listings.find((l) => l.in_stock) ?? product.listings[0];
-    productSnapshots.set(id, {
-      title: listing?.title || product.canonical_name,
-      brand: product.brand_name ?? null,
-      imageUrl: listing?.primary_image_url || product.primary_image_url || null,
-      priceInCents: Math.round(
-        ((listing?.sale_price && listing.sale_price > 0 ? listing.sale_price : listing?.base_price) ?? 0) * 100,
-      ),
-      merchant: listing?.merchant_name ?? null,
-    });
+  if (order.status !== "PENDING") {
+    return; // already processed
   }
 
   const totalInCents = checkoutSession.amount_total ?? 0;
@@ -248,25 +290,15 @@ export async function applyDirectSaleFromCheckout(
   const shipping = checkoutSession.collected_information?.shipping_details ?? null;
   const addr = shipping?.address ?? null;
 
-  // Pick the first merchant we resolved as the order's retailer label;
-  // direct-sale orders are typically single-merchant in v1.
-  const retailer =
-    [...productSnapshots.values()].find((p) => p.merchant)?.merchant ?? "wishi";
-
   await prisma.$transaction(async (tx) => {
-    await tx.order.create({
+    const result = await tx.order.updateMany({
+      where: { id: order.id, status: "PENDING" },
       data: {
-        userId,
-        sessionId,
-        source: "DIRECT_SALE",
         status: "ORDERED",
-        retailer,
         totalInCents,
         taxInCents,
         shippingInCents,
-        isPriorityShipping,
         currency,
-        stripeCheckoutSessionId: checkoutSession.id,
         stripePaymentIntentId: paymentIntentId,
         shippingName: shipping?.name ?? null,
         shippingLine1: addr?.line1 ?? null,
@@ -275,24 +307,18 @@ export async function applyDirectSaleFromCheckout(
         shippingState: addr?.state ?? null,
         shippingPostalCode: addr?.postal_code ?? null,
         shippingCountry: addr?.country ?? null,
-        items: {
-          create: cartItems.map((c) => {
-            const snap = productSnapshots.get(c.inventoryProductId);
-            return {
-              inventoryProductId: c.inventoryProductId,
-              title: snap?.title ?? "Item",
-              brand: snap?.brand ?? null,
-              imageUrl: snap?.imageUrl ?? null,
-              priceInCents: snap?.priceInCents ?? 0,
-              quantity: c.quantity,
-            };
-          }),
-        },
       },
     });
-
+    if (result.count === 0) {
+      // Lost a race with another delivery — they already advanced it.
+      return;
+    }
     await tx.cartItem.deleteMany({
-      where: { id: { in: cartItems.map((c) => c.id) }, userId },
+      where: {
+        userId,
+        sessionId,
+        inventoryProductId: { in: order.items.map((i) => i.inventoryProductId) },
+      },
     });
   });
 }
