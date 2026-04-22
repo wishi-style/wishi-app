@@ -17,6 +17,7 @@ variable "twilio_api_key_secret_arn" { type = string }
 variable "twilio_conversations_service_sid_arn" { type = string }
 variable "vapid_public_key_arn" { type = string }
 variable "vapid_private_key_arn" { type = string }
+variable "klaviyo_api_key_arn" { type = string }
 variable "worker_secret_arn" { type = string }
 variable "ecr_web_url" { type = string }
 variable "cpu" {
@@ -309,6 +310,7 @@ resource "aws_ecs_task_definition" "web" {
       { name = "TWILIO_CONVERSATIONS_SERVICE_SID", valueFrom = var.twilio_conversations_service_sid_arn },
       { name = "VAPID_PUBLIC_KEY", valueFrom = var.vapid_public_key_arn },
       { name = "VAPID_PRIVATE_KEY", valueFrom = var.vapid_private_key_arn },
+      { name = "KLAVIYO_API_KEY", valueFrom = var.klaviyo_api_key_arn },
       { name = "WORKER_SHARED_SECRET", valueFrom = var.worker_secret_arn },
     ]
 

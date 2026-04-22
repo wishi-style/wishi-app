@@ -2,6 +2,7 @@ import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { createClosetItemsFromOrder } from "@/lib/closet/auto-create";
+import { dispatchNotification } from "@/lib/notifications/dispatcher";
 import type { Order, OrderItem, OrderSource, OrderStatus } from "@/generated/prisma/client";
 
 export const REFUND_SOFT_CAP_CENTS = 20_000; // $200 — surfaces a manager-approval warning
@@ -155,6 +156,43 @@ export async function transitionOrderStatus(
     await createClosetItemsFromOrder(orderId);
   }
 
+  const emailEvent =
+    next === "SHIPPED"
+      ? "order.shipped"
+      : next === "ARRIVED"
+        ? "order.arrived"
+        : null;
+
+  if (emailEvent) {
+    const itemTitle = updated.items[0]?.title ?? "your order";
+    const extra = updated.items.length > 1 ? ` and ${updated.items.length - 1} more` : "";
+    const title =
+      emailEvent === "order.shipped" ? "Your Wishi order shipped" : "Your Wishi order arrived";
+    const body =
+      emailEvent === "order.shipped"
+        ? `${itemTitle}${extra} is on the way${updated.trackingNumber ? ` (tracking ${updated.trackingNumber})` : ""}.`
+        : `${itemTitle}${extra} just arrived — enjoy!`;
+    await dispatchNotification({
+      event: emailEvent,
+      userId: updated.userId,
+      title,
+      body,
+      url: `/orders/${updated.id}`,
+      emailProperties: {
+        orderId: updated.id,
+        retailer: updated.retailer,
+        totalInCents: updated.totalInCents,
+        trackingNumber: updated.trackingNumber,
+        carrier: updated.carrier,
+        itemCount: updated.items.length,
+        firstItemTitle: itemTitle,
+        firstItemImageUrl: updated.items[0]?.imageUrl ?? null,
+      },
+    }).catch((err) => {
+      console.warn(`[orders] ${emailEvent} dispatch failed for ${updated.id}:`, err);
+    });
+  }
+
   return updated;
 }
 
@@ -267,6 +305,23 @@ export async function refundOrder(
       refundedAt: new Date(),
       refundedInCents: alreadyRefunded + amountInCents,
     },
+  });
+
+  await dispatchNotification({
+    event: "order.refunded",
+    userId: order.userId,
+    title: "Refund issued",
+    body: `We refunded $${(amountInCents / 100).toFixed(2)} to your original payment method.`,
+    url: `/orders/${orderId}`,
+    emailProperties: {
+      orderId,
+      refundedInCents: alreadyRefunded + amountInCents,
+      refundAmountInCents: amountInCents,
+      stripeRefundId: refund.id,
+      reason: reason ?? null,
+    },
+  }).catch((err) => {
+    console.warn(`[orders] order.refunded dispatch failed for ${orderId}:`, err);
   });
 
   return {

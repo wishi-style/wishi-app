@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { dispatchNotification } from "@/lib/notifications/dispatcher";
 import type { Order, OrderItem } from "@/generated/prisma/client";
 
 export const RETURN_WINDOW_DAYS = 14;
@@ -106,5 +107,21 @@ export async function initiateReturn(
   }
 
   const updated = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+
+  await dispatchNotification({
+    event: "order.return_initiated",
+    userId,
+    title: "Return started",
+    body: "We'll email return instructions shortly. Pack up the item and ship it back within 7 days.",
+    url: `/orders/${orderId}`,
+    emailProperties: {
+      orderId,
+      totalInCents: updated.totalInCents,
+      returnInitiatedAt: updated.returnInitiatedAt?.toISOString() ?? null,
+    },
+  }).catch((err) => {
+    console.warn(`[orders] order.return_initiated dispatch failed for ${orderId}:`, err);
+  });
+
   return updated;
 }
