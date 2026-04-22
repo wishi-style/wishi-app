@@ -7,8 +7,20 @@ import {
   buildCheckoutRecoveryPlan,
   buildSessionRecoveryPlan,
 } from "./webhook-recovery";
+import { applyUpgradeFromCheckout } from "./session-upgrade.service";
+import { applyBuyMoreLooksFromCheckout } from "./buy-more-looks.service";
 
 export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
+  const purpose = session.metadata?.purpose;
+  if (purpose === "UPGRADE") {
+    await applyUpgradeFromCheckout(session);
+    return;
+  }
+  if (purpose === "BUY_MORE_LOOKS") {
+    await applyBuyMoreLooksFromCheckout(session);
+    return;
+  }
+
   const { userId, planType, stylistUserId } = session.metadata ?? {};
   if (!userId || !planType) {
     console.error("[stripe] Missing metadata on checkout session", session.id);

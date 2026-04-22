@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { DM_Sans } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { ImpersonationBannerMount } from "@/components/admin/impersonation-banner-mount";
+import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -31,6 +32,7 @@ export default async function RootLayout({
         >
           <ImpersonationBannerMount />
           {children}
+          <Toaster />
         </ClerkProvider>
       </body>
     </html>
