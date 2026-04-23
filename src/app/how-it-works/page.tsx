@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { auth } from "@clerk/nextjs/server";
 import { ArrowRightIcon, StarIcon } from "lucide-react";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
@@ -14,9 +15,9 @@ export const metadata: Metadata = {
 };
 
 const steps = [
-  { num: "01", title: "Tell us About You", desc: "Share your style, size, fit, wardrobe needs, budget, and lifestyle." },
-  { num: "02", title: "Meet Your Stylist", desc: "Get matched with a stylist who understands your style, directly." },
-  { num: "03", title: "Get Your Style Boards", desc: "Your stylist creates curated shoppable outfit boards — just for you." },
+  { num: "01", title: "Tell us About You", desc: "Short style quiz to understand your taste, needs, lifestyle, and goals." },
+  { num: "02", title: "Meet Your Stylist", desc: "Get matched with a professional stylist and chat directly." },
+  { num: "03", title: "Get Your Style Boards", desc: "Your stylist creates curated outfits with shoppable items." },
   { num: "04", title: "Collaborate & Refine", desc: "Give feedback and your stylist updates the looks." },
   { num: "05", title: "Shop What You Love", desc: "Buy only what you want — directly from retailers." },
 ] as const;
@@ -49,54 +50,74 @@ const reviews = [
   { text: "She has that 'her too' vibe. I already sent it to my friends. It felt personal and powerful.", author: "Elena C.", rating: 5 },
 ] as const;
 
-export default function HowItWorksPage() {
+export default async function HowItWorksPage() {
+  const { userId } = await auth();
+  const signedIn = userId !== null && userId !== undefined;
+  // Logged-in users have already onboarded — send them straight to the
+  // stylist roster. New visitors land in the /welcome funnel, which warms
+  // them up before /match-quiz + sign-up.
+  const ctaHref = signedIn ? "/stylists" : "/welcome";
+
   return (
     <>
       <SiteHeader />
       <main className="min-h-screen bg-background">
         <section className="bg-secondary/30 py-16 md:py-24">
-          <div className="mx-auto max-w-5xl px-6 md:px-10">
+          <div className="mx-auto max-w-6xl px-6 md:px-10">
             <Reveal>
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground text-center mb-3">
-                Your Style Journey
-              </p>
-              <h1 className="font-display text-4xl md:text-5xl text-center mb-4">
+              <h1 className="font-display text-4xl md:text-5xl text-center mb-12 md:mb-16">
                 How it Works
               </h1>
-              <p className="text-sm text-muted-foreground text-center max-w-lg mx-auto mb-14">
-                Five simple steps to a wardrobe you&apos;ll actually love.
-              </p>
             </Reveal>
 
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-8 md:gap-5 mb-12">
-              {steps.map((step, i) => (
-                <Reveal key={step.num} delay={i * 100}>
-                  <div className="relative text-center">
-                    <div className="w-10 h-10 rounded-full bg-foreground text-background flex items-center justify-center mx-auto mb-3 font-display text-sm">
-                      {step.num}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-16 items-center">
+              {/* Left: Steps */}
+              <div className="space-y-8">
+                {steps.map((step, i) => (
+                  <Reveal key={step.num} delay={i * 80}>
+                    <div className="flex gap-4">
+                      <span className="font-display text-3xl text-foreground/25 shrink-0 w-10">
+                        {step.num}
+                      </span>
+                      <div>
+                        <h3 className="font-display text-lg mb-1">
+                          {step.title}
+                        </h3>
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          {step.desc}
+                        </p>
+                      </div>
                     </div>
-                    {i < steps.length - 1 && (
-                      <div className="hidden md:block absolute top-5 left-[60%] right-[-40%] border-t border-dashed border-foreground/20" />
-                    )}
-                    <h3 className="font-display text-sm md:text-base mb-1.5">
-                      {step.title}
-                    </h3>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      {step.desc}
-                    </p>
+                  </Reveal>
+                ))}
+
+                <Reveal delay={500}>
+                  <div className="pl-14">
+                    <PillButton href={ctaHref} variant="solid" size="md" className="group">
+                      Find Your Best Match
+                      <ArrowRightIcon className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                    </PillButton>
                   </div>
                 </Reveal>
-              ))}
-            </div>
-
-            <Reveal delay={500}>
-              <div className="flex justify-center">
-                <PillButton href="/match-quiz" variant="solid" size="lg" className="group">
-                  Find Your Best Match
-                  <ArrowRightIcon className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                </PillButton>
               </div>
-            </Reveal>
+
+              {/* Right: Embedded brand video */}
+              <Reveal delay={200}>
+                <div className="relative aspect-[3/4] rounded-2xl overflow-hidden bg-muted border border-border shadow-sm">
+                  {/* Scale iframe up + offset to crop the YouTube chrome */}
+                  <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                    <iframe
+                      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+                      style={{ width: "120%", height: "120%" }}
+                      src="https://www.youtube.com/embed/92ErFLJyJCk?autoplay=1&mute=1&loop=1&playlist=92ErFLJyJCk&controls=0&showinfo=0&rel=0&modestbranding=1&playsinline=1&iv_load_policy=3&disablekb=1&fs=0"
+                      title="How Wishi Works"
+                      allow="autoplay; encrypted-media"
+                      frameBorder="0"
+                    />
+                  </div>
+                </div>
+              </Reveal>
+            </div>
           </div>
         </section>
 
@@ -146,7 +167,7 @@ export default function HowItWorksPage() {
               <div className="grid md:grid-cols-2 gap-10 items-center">
                 <div className="relative aspect-[5/4] overflow-hidden rounded-2xl shadow-md">
                   <Image
-                    src="/img/hiw-wardrobe.png"
+                    src="/img/hiw-closet.png"
                     alt="Use what you already own"
                     fill
                     className="object-cover"
@@ -162,7 +183,7 @@ export default function HowItWorksPage() {
                     into new outfits. No need to start from scratch — we work with what you have.
                   </p>
                   <Link
-                    href="/match-quiz"
+                    href={ctaHref}
                     className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground underline underline-offset-4 hover:text-foreground/70 transition-colors"
                   >
                     Get started <ArrowRightIcon className="h-3.5 w-3.5" />
@@ -302,7 +323,7 @@ export default function HowItWorksPage() {
                 Join thousands of clients who&apos;ve transformed their style with Wishi.
               </p>
               <Link
-                href="/match-quiz"
+                href={ctaHref}
                 className="group inline-flex items-center gap-2 rounded-full bg-background text-foreground px-10 py-3.5 text-sm font-medium hover:bg-background/90 transition-colors"
               >
                 Let&apos;s Get Styling
