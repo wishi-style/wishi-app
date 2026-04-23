@@ -121,6 +121,7 @@ module "service" {
   max_count                            = var.ecs_max_count
   log_group_name                       = aws_cloudwatch_log_group.web.name
   enable_demo_mode                     = var.enable_demo_mode
+  inventory_service_url                = var.inventory_service_url
 }
 
 # -----------------------------------------------------------------------------
