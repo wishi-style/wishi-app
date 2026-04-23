@@ -1,10 +1,11 @@
 import Image from "next/image";
+import Link from "next/link";
+import { ClockIcon } from "lucide-react";
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
 } from "@/components/ui/avatar";
-import { PillButton } from "@/components/primitives/pill-button";
 
 interface StylistCardProps {
   id: string;
@@ -28,7 +29,6 @@ export function StylistCard({
   id,
   name,
   avatarUrl,
-  bio,
   styleSpecialties,
   matchScore,
   isAvailable,
@@ -41,10 +41,11 @@ export function StylistCard({
     .filter(Boolean)
     .slice(0, 2)
     .join("");
+  const firstName = name.split(" ")[0] || name;
 
   return (
-    <article className="group flex flex-col">
-      <div className="relative aspect-square overflow-hidden rounded-xl mb-4 bg-muted">
+    <Link href={`/stylists/${id}`} className="group block">
+      <div className="relative aspect-square overflow-hidden bg-muted">
         {heroImage ? (
           <Image
             src={heroImage}
@@ -58,22 +59,10 @@ export function StylistCard({
             {initials || name.charAt(0)}
           </div>
         )}
-
-        {matchScore !== null && matchScore !== undefined ? (
-          <div className="absolute right-3 top-3 rounded-full bg-foreground/80 px-3 py-1 text-xs font-medium text-background backdrop-blur-sm">
-            {matchScore}% Match
-          </div>
-        ) : null}
-
-        {!isAvailable && (
-          <div className="absolute bottom-3 left-3 rounded-full bg-foreground/80 px-3 py-1 text-xs text-background backdrop-blur-sm">
-            Waitlist
-          </div>
-        )}
       </div>
 
-      <div className="flex flex-col items-center text-center">
-        <Avatar className="h-12 w-12 mb-2 border-2 border-background shadow-sm">
+      <div className="flex flex-col items-center text-center bg-card px-4 py-5 border-x border-b border-border rounded-b-xl">
+        <Avatar className="h-12 w-12 -mt-10 mb-2 border-2 border-background shadow-sm">
           {avatarUrl ? <AvatarImage src={avatarUrl} alt={name} /> : null}
           <AvatarFallback className="text-xs bg-secondary text-secondary-foreground">
             {initials || name.charAt(0)}
@@ -85,20 +74,19 @@ export function StylistCard({
             {styleSpecialties.slice(0, 2).join(" · ")}
           </p>
         ) : null}
-        {bio ? (
-          <p className="text-xs text-muted-foreground mt-2 line-clamp-2 max-w-[30ch]">
-            {bio}
-          </p>
+        {matchScore !== null && matchScore !== undefined ? (
+          <p className="font-display text-base mt-1 italic">{matchScore}% Match</p>
         ) : null}
-        <PillButton
-          href={`/stylists/${id}`}
-          variant="outline"
-          size="sm"
-          className="mt-3 w-full max-w-[220px]"
-        >
-          View Profile
-        </PillButton>
+        {!isAvailable ? (
+          <div className="flex items-center gap-1.5 mt-1.5 text-muted-foreground">
+            <ClockIcon className="h-3.5 w-3.5" />
+            <span className="text-xs">Waitlist only</span>
+          </div>
+        ) : null}
+        <span className="mt-3 w-full max-w-[220px] rounded-full bg-foreground text-background py-2.5 text-sm font-medium group-hover:bg-foreground/90 transition-colors text-center block">
+          {isAvailable ? `Meet ${firstName}` : "Join waitlist"}
+        </span>
       </div>
-    </article>
+    </Link>
   );
 }
