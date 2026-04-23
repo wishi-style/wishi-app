@@ -58,6 +58,9 @@ interface Props {
   curated: WorkspaceItem[];
   cart: WorkspaceCartItem[];
   progress: WorkspaceProgress;
+  /** Override the viewport-locked height when extra chrome (e.g. a session
+   *  header bar) sits between the SiteHeader and the workspace. */
+  heightClass?: string;
 }
 
 type Tab = "chat" | "moodboard" | "styleboards" | "curated" | "cart";
@@ -76,6 +79,7 @@ export function SessionWorkspace({
   curated,
   cart,
   progress,
+  heightClass = "h-[calc(100vh-4rem)]",
 }: Props) {
   const [tab, setTab] = React.useState<Tab>("chat");
 
@@ -108,7 +112,7 @@ export function SessionWorkspace({
   );
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col lg:flex-row">
+    <div className={`flex ${heightClass} flex-col lg:flex-row`}>
       <div className="flex flex-1 min-h-0 flex-col">
         <div className="flex border-b border-border overflow-x-auto">
           {tabs.map((t) => (
