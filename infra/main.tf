@@ -109,6 +109,9 @@ module "service" {
   twilio_conversations_service_sid_arn = module.secrets.secret_arns["twilio/conversations_service_sid"]
   vapid_public_key_arn                 = module.secrets.secret_arns["web_push/vapid_public_key"]
   vapid_private_key_arn                = module.secrets.secret_arns["web_push/vapid_private_key"]
+  klaviyo_api_key_arn                  = module.secrets.secret_arns["klaviyo/api_key"]
+  easypost_api_key_arn                 = module.secrets.secret_arns["easypost/api_key"]
+  easypost_webhook_secret_arn          = module.secrets.secret_arns["easypost/webhook_secret"]
   worker_secret_arn                    = module.secrets.secret_arns["app/worker_secret"]
   ecr_web_url                          = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.project}-web"
   cpu                                  = var.ecs_cpu

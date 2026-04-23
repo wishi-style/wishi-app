@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -18,6 +19,50 @@ export const dynamic = "force-dynamic";
 
 interface Props {
   params: Promise<{ id: string }>;
+}
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { id } = await params;
+  const stylist = await prisma.stylistProfile.findUnique({
+    where: { id },
+    select: {
+      bio: true,
+      philosophy: true,
+      styleSpecialties: true,
+      user: { select: { firstName: true, lastName: true, avatarUrl: true } },
+    },
+  });
+  if (!stylist) {
+    return { title: "Stylist not found" };
+  }
+  const name = `${stylist.user.firstName} ${stylist.user.lastName}`.trim();
+  const specialties = stylist.styleSpecialties.slice(0, 3).join(", ");
+  const description =
+    stylist.bio ??
+    stylist.philosophy ??
+    (specialties
+      ? `Wishi stylist ${name} — specialises in ${specialties}.`
+      : `Wishi stylist ${name}.`);
+  return {
+    title: `${name} — Wishi Stylist`,
+    description: description.slice(0, 200),
+    openGraph: {
+      title: `${name} — Wishi Stylist`,
+      description: description.slice(0, 200),
+      url: `/stylists/${id}`,
+      type: "profile",
+      ...(stylist.user.avatarUrl
+        ? { images: [{ url: stylist.user.avatarUrl, alt: name }] }
+        : {}),
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${name} — Wishi Stylist`,
+      description: description.slice(0, 200),
+      ...(stylist.user.avatarUrl ? { images: [stylist.user.avatarUrl] } : {}),
+    },
+    alternates: { canonical: `/stylists/${id}` },
+  };
 }
 
 export default async function StylistProfilePage({ params }: Props) {
@@ -80,8 +125,35 @@ export default async function StylistProfilePage({ params }: Props) {
     limit: 20,
   });
 
+  const personLd = {
+    "@context": "https://schema.org",
+    "@type": "Person",
+    name,
+    jobTitle: "Personal Stylist",
+    ...(stylist.user.avatarUrl ? { image: stylist.user.avatarUrl } : {}),
+    ...(stylist.bio ? { description: stylist.bio } : {}),
+    ...(stylist.styleSpecialties.length > 0
+      ? { knowsAbout: stylist.styleSpecialties }
+      : {}),
+    worksFor: { "@type": "Organization", name: "Wishi" },
+    ...(stylist.averageRating !== null && totalReviews > 0
+      ? {
+          aggregateRating: {
+            "@type": "AggregateRating",
+            ratingValue: stylist.averageRating,
+            reviewCount: totalReviews,
+          },
+        }
+      : {}),
+  };
+
   return (
     <>
+      <script
+        type="application/ld+json"
+        suppressHydrationWarning
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(personLd) }}
+      />
       <SiteHeader />
       <main className="min-h-screen bg-background">
         <div className="mx-auto max-w-3xl px-6 md:px-10 py-12 md:py-16">

@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { getOrCreateStripeCustomer } from "@/lib/payments/stripe-customer";
+import { sendTransactionalEmail } from "@/lib/notifications/transactional";
 import { Prisma } from "@/generated/prisma/client";
 
 export const GIFT_CARD_MIN_CENTS = 2500; // $25 floor
@@ -130,51 +131,55 @@ export async function applyGiftCardPurchaseFromCheckout(
 
   const currency = checkoutSession.currency ?? "usd";
 
+  let createdCodes: { sessionCode: string; shoppingCode: string } | null = null;
+
   try {
-    await prisma.$transaction(async (tx) => {
-    const sessionCode = await tx.promoCode.create({
-      data: {
-        code: giftPromoCode("S"),
-        creditType: "SESSION",
-        amountInCents: amountPaid,
-        usageLimit: 1,
-      },
-    });
-    const shoppingCode = await tx.promoCode.create({
-      data: {
-        code: giftPromoCode("H"),
-        creditType: "SHOPPING",
-        amountInCents: amountPaid,
-        usageLimit: 1,
-      },
-    });
+    createdCodes = await prisma.$transaction(async (tx) => {
+      const sessionCode = await tx.promoCode.create({
+        data: {
+          code: giftPromoCode("S"),
+          creditType: "SESSION",
+          amountInCents: amountPaid,
+          usageLimit: 1,
+        },
+      });
+      const shoppingCode = await tx.promoCode.create({
+        data: {
+          code: giftPromoCode("H"),
+          creditType: "SHOPPING",
+          amountInCents: amountPaid,
+          usageLimit: 1,
+        },
+      });
 
-    const giftCard = await tx.giftCard.create({
-      data: {
-        code: giftCardCode(),
-        purchaserUserId,
-        recipientEmail,
-        recipientName,
-        message,
-        amountInCents: amountPaid,
-        currency,
-        sessionPromoCodeId: sessionCode.id,
-        shoppingPromoCodeId: shoppingCode.id,
-      },
-    });
+      const giftCard = await tx.giftCard.create({
+        data: {
+          code: giftCardCode(),
+          purchaserUserId,
+          recipientEmail,
+          recipientName,
+          message,
+          amountInCents: amountPaid,
+          currency,
+          sessionPromoCodeId: sessionCode.id,
+          shoppingPromoCodeId: shoppingCode.id,
+        },
+      });
 
-    await tx.payment.create({
-      data: {
-        userId: purchaserUserId,
-        type: "GIFT_CARD_PURCHASE",
-        status: "SUCCEEDED",
-        amountInCents: amountPaid,
-        currency,
-        stripePaymentIntentId: paymentIntentId,
-        giftCardId: giftCard.id,
-        description: `Gift card for ${recipientEmail}`,
-      },
-    });
+      await tx.payment.create({
+        data: {
+          userId: purchaserUserId,
+          type: "GIFT_CARD_PURCHASE",
+          status: "SUCCEEDED",
+          amountInCents: amountPaid,
+          currency,
+          stripePaymentIntentId: paymentIntentId,
+          giftCardId: giftCard.id,
+          description: `Gift card for ${recipientEmail}`,
+        },
+      });
+
+      return { sessionCode: sessionCode.code, shoppingCode: shoppingCode.code };
     });
   } catch (err) {
     // P2002 on Payment.stripePaymentIntentId means a concurrent webhook
@@ -189,6 +194,34 @@ export async function applyGiftCardPurchaseFromCheckout(
     }
     throw err;
   }
+
+  if (!createdCodes) return;
+
+  const purchaser = await prisma.user.findUnique({
+    where: { id: purchaserUserId },
+    select: { firstName: true, lastName: true },
+  });
+  const purchaserName = purchaser
+    ? `${purchaser.firstName ?? ""} ${purchaser.lastName ?? ""}`.trim()
+    : "";
+
+  await sendTransactionalEmail({
+    event: "gift-card.delivered",
+    profile: {
+      email: recipientEmail,
+      firstName: recipientName ?? undefined,
+    },
+    properties: {
+      amountInCents: amountPaid,
+      currency,
+      sessionCode: createdCodes.sessionCode,
+      shoppingCode: createdCodes.shoppingCode,
+      purchaserName: purchaserName || "A friend",
+      message: message ?? "",
+    },
+  }).catch((err) => {
+    console.warn(`[gift-card] recipient email failed for ${recipientEmail}:`, err);
+  });
 }
 
 /**

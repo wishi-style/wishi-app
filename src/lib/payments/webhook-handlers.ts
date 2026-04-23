@@ -2,6 +2,7 @@ import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { getPlanByType } from "@/lib/plans";
 import { matchStylistForSession } from "@/lib/services/match.service";
+import { dispatchNotification } from "@/lib/notifications/dispatcher";
 import type { PlanType, SubscriptionStatus } from "@/generated/prisma/client";
 import {
   buildCheckoutRecoveryPlan,
@@ -316,7 +317,7 @@ export async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
   });
   if (!localSub) return;
 
-  await prisma.subscription.update({
+  const updated = await prisma.subscription.update({
     where: { id: localSub.id },
     data: {
       status: "PAST_DUE",
@@ -336,6 +337,27 @@ export async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
       frozenAt: new Date(),
       frozenReason: "subscription_payment_failed",
     },
+  });
+
+  await dispatchNotification({
+    event: "subscription.retry_failed",
+    userId: localSub.userId,
+    title: "Payment failed — action needed",
+    body: "We couldn't charge your card. Your sessions are paused — update your payment method to resume.",
+    url: "/settings?tab=billing",
+    emailProperties: {
+      subscriptionId: updated.id,
+      planType: updated.planType,
+      frequency: updated.frequency,
+      retryCount: updated.paymentRetryCount,
+      amountDueInCents: invoice.amount_due ?? null,
+      hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
+    },
+  }).catch((err) => {
+    console.warn(
+      `[subscription] retry_failed dispatch failed for ${localSub.id}:`,
+      err,
+    );
   });
 }
 

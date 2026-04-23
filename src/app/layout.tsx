@@ -22,10 +22,64 @@ const displaySerif = Bodoni_Moda({
   display: "swap",
 });
 
+const siteUrl = process.env.APP_URL ?? "http://localhost:3000";
+
 export const metadata: Metadata = {
-  title: "Wishi — Your Personal Stylist",
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: "Wishi — Personalized Luxury Styling",
+    template: "%s · Wishi",
+  },
   description:
-    "The styling marketplace that connects you with expert stylists for personalized fashion advice.",
+    "Wishi connects you with expert stylists who curate personalized, shoppable looks — from your own closet and the best brands in the world.",
+  applicationName: "Wishi",
+  authors: [{ name: "Wishi" }],
+  keywords: [
+    "personal stylist",
+    "online styling",
+    "fashion advice",
+    "styling service",
+    "personal shopping",
+    "wardrobe",
+    "lookbook",
+  ],
+  openGraph: {
+    type: "website",
+    siteName: "Wishi",
+    locale: "en_US",
+    url: siteUrl,
+    title: "Wishi — Personalized Luxury Styling",
+    description:
+      "Wishi connects you with expert stylists who curate personalized, shoppable looks — from your own closet and the best brands in the world.",
+    images: [
+      {
+        url: "/img/og-default.jpg",
+        width: 1200,
+        height: 630,
+        alt: "Wishi",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Wishi — Personalized Luxury Styling",
+    description:
+      "Wishi connects you with expert stylists who curate personalized, shoppable looks.",
+    images: ["/img/og-default.jpg"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export default async function RootLayout({

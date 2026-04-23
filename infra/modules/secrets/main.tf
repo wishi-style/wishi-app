@@ -16,6 +16,8 @@ locals {
     "twilio/api_key_secret",
     "twilio/conversations_service_sid",
     "klaviyo/api_key",
+    "easypost/api_key",
+    "easypost/webhook_secret",
     "anthropic/api_key",
     "mixpanel/token",
     "web_push/vapid_public_key",

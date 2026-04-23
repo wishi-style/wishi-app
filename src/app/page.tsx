@@ -87,6 +87,16 @@ const faqs = [
 
 const pressLogos = ["InStyle", "Vogue", "Forbes", "GQ", "Elle", "WWD", "The Cut", "Nylon"] as const;
 
+const faqLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: faqs.map((f) => ({
+    "@type": "Question",
+    name: f.q,
+    acceptedAnswer: { "@type": "Answer", text: f.a },
+  })),
+};
+
 export default async function HomePage() {
   const prices = await getPlanPricesForUi();
   const priceFor: Record<PlanTier, number> = {
@@ -97,6 +107,11 @@ export default async function HomePage() {
 
   return (
     <>
+      <script
+        type="application/ld+json"
+        suppressHydrationWarning
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd) }}
+      />
       <SiteHeader />
       <main className="min-h-screen bg-background">
         {/* Hero */}
