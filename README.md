@@ -42,6 +42,10 @@ npm run test:visual        # Playwright visual regression (12 baselines)
 npm run test:load          # k6 — marketing ramp (100 VUs) — needs BASE_URL
 npm run test:load:feed     # k6 — feed API burst
 npm run test:load:checkout # k6 — Stripe Checkout burst (needs E2E_CLERK_ID_COOKIE)
+
+# Full end-to-end walkthrough (one-command pre-cohort-launch health check)
+npm run dev:e2e &
+npx tsx --env-file=.env scripts/e2e-full-walkthrough.ts
 ```
 
 ### Local webhooks via ngrok
