@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Image from "next/image";
+import Link from "next/link";
+import { auth } from "@clerk/nextjs/server";
 import { StarIcon } from "lucide-react";
 import { getPlanPricesForUi } from "@/lib/plans";
-import { planCopy, planTierOrder, type PlanTier } from "@/lib/ui/plan-copy";
+import { planTierOrder, type PlanTier } from "@/lib/ui/plan-copy";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
 import { Reveal } from "@/components/primitives/reveal";
@@ -17,11 +19,19 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-const stylists = [
-  { name: "Mika", style: "Minimalist · Chic", portfolio: "/img/portfolio-mika.jpg" },
-  { name: "Adriana", style: "Classic · Minimal", portfolio: "/img/portfolio-adriana.jpg" },
-  { name: "Sophie", style: "Effortless · Cool", portfolio: "/img/portfolio-sophie.jpg" },
-  { name: "Claire", style: "French · Elegant", portfolio: "/img/portfolio-claire.jpg" },
+const featuredStylist = {
+  name: "Karla Welch",
+  subtitle: "Wishi Co-founder\nCelebrity Stylist",
+  image: "/img/stylist-karla.png",
+};
+
+const gridStylists = [
+  { name: "Zuajeiliy", tags: ["Elegant", "Minimal"], image: "/img/stylist-zuajeiliy.png" },
+  { name: "Connor", tags: ["Edgy", "Streetwear"], image: "/img/stylist-connor.png" },
+  { name: "Alia", tags: ["Classic", "Boho"], image: "/img/stylist-alia.png" },
+  { name: "Meredith", tags: ["Edgy", "Sexy"], image: "/img/stylist-meredith.png" },
+  { name: "Adriana", tags: ["Classic", "Minimal"], image: "/img/stylist-adriana-new.png" },
+  { name: "Daphne", tags: ["Chic", "Minimal"], image: "/img/stylist-daphne.png" },
 ] as const;
 
 const steps = [
@@ -37,30 +47,78 @@ const tierLandingLabel: Record<PlanTier, string> = {
   LUX: "Take my wardrobe to the next level",
 };
 
-const reviews = [
+const tierAccent: Record<PlanTier, string> = {
+  MINI: "bg-foreground",
+  MAJOR: "bg-burgundy",
+  LUX: "bg-[hsl(45,60%,45%)]",
+};
+
+const tierName: Record<PlanTier, string> = {
+  MINI: "Wishi Mini",
+  MAJOR: "Wishi Major",
+  LUX: "Wishi Lux",
+};
+
+const tierShortFeatures: Record<PlanTier, readonly string[]> = {
+  MINI: ["1:1 chat with your stylist", "2 Style Boards", "Revisions to get it just right"],
+  MAJOR: ["1:1 chat with your stylist", "5 Style Boards", "Closet styling & beauty advice"],
+  LUX: ["30-min intro video call", "Up to 8 Style Boards", "Unlimited messaging + priority shipping"],
+};
+
+const styledLooks = [
+  "/img/styled-look-1.png",
+  "/img/styled-look-2.png",
+  "/img/styled-look-3.png",
+  "/img/styled-look-4.jpg",
+] as const;
+
+// One review in Loveable's source uses a word that is on the founder's
+// blocked-copy list (decision 2026-04-07); the Megan testimonial below
+// intentionally rephrases that original to stay compliant.
+type Review = {
+  text: string;
+  author: string;
+  stylist: string;
+  photo?: string;
+};
+
+const reviews: readonly Review[] = [
   {
     text: "Wishi has completely changed how I shop online. My stylist knows exactly what works for me and my lifestyle.",
     author: "Vicki",
-    role: "Hotelier",
+    stylist: "Daphne V.",
+    photo: "/img/review-vicki.jpg",
   },
   {
     text: "My stylist introduced me to brands I never would have found on my own. It's like having a fashion-savvy best friend.",
     author: "Hanna",
-    role: "Marketing Director",
+    stylist: "Mika R.",
+    photo: "/img/review-hanna.jpg",
   },
   {
     text: "I used Wishi for a special event and received so many compliments. I'll definitely be using it again.",
     author: "Sybella",
-    role: "Creative Director",
+    stylist: "Adriana M.",
+    photo: "/img/review-sybella.jpg",
   },
-] as const;
-
-const styledLooks = [
-  "/img/styled-look-1.jpg",
-  "/img/styled-look-2.jpg",
-  "/img/styled-look-3.jpg",
-  "/img/styled-look-4.jpg",
-] as const;
+  {
+    text: "I was skeptical at first, but after my first mood board I was hooked. My wardrobe has never looked this cohesive.",
+    author: "James",
+    stylist: "Connor B.",
+    photo: "/img/review-james.jpg",
+  },
+  {
+    text: "As a busy mom, I don't have time to shop. Wishi gave me a complete closet refresh that actually works for my life.",
+    author: "Megan",
+    stylist: "Daphne V.",
+    photo: "/img/review-megan.jpg",
+  },
+  {
+    text: "The mood board alone was worth it. It gave me so much clarity about the direction I wanted my style to go.",
+    author: "Oliver",
+    stylist: "Connor B.",
+  },
+];
 
 const faqs = [
   {
@@ -85,7 +143,7 @@ const faqs = [
   },
 ] as const;
 
-const pressLogos = ["InStyle", "Vogue", "Forbes", "GQ", "Elle", "WWD", "The Cut", "Nylon"] as const;
+const pressLogos = Array.from({ length: 9 }, (_, i) => `/img/press/logo-${i + 1}.png`);
 
 const faqLd = {
   "@context": "https://schema.org",
@@ -98,7 +156,9 @@ const faqLd = {
 };
 
 export default async function HomePage() {
-  const prices = await getPlanPricesForUi();
+  const [{ userId }, prices] = await Promise.all([auth(), getPlanPricesForUi()]);
+  const signedIn = userId !== null && userId !== undefined;
+  const matchHref = signedIn ? "/stylists" : "/welcome";
   const priceFor: Record<PlanTier, number> = {
     MINI: prices.mini.displayDollars,
     MAJOR: prices.major.displayDollars,
@@ -127,7 +187,7 @@ export default async function HomePage() {
                   incorporating what you already own to build your perfect wardrobe.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start">
-                  <PillButton href="/match-quiz" variant="solid" size="lg">
+                  <PillButton href="/welcome" variant="solid" size="lg">
                     Let&apos;s Get Styling
                   </PillButton>
                   <PillButton href="/how-it-works" variant="outline" size="lg">
@@ -137,69 +197,43 @@ export default async function HomePage() {
               </div>
 
               <div className="flex-1 w-full max-w-lg">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-3">
-                    <Image
-                      src="/img/hiw-styleboards.png"
-                      alt="Style board preview"
-                      width={400}
-                      height={520}
-                      className="w-full rounded-xl shadow-md"
-                      sizes="(min-width: 1024px) 25vw, 50vw"
-                    />
-                    <Image
-                      src="/img/hiw-chat.png"
-                      alt="Stylist chat preview"
-                      width={400}
-                      height={520}
-                      className="w-full rounded-xl shadow-md"
-                      sizes="(min-width: 1024px) 25vw, 50vw"
-                    />
-                  </div>
-                  <div className="space-y-3 pt-8">
-                    <Image
-                      src="/img/hiw-moodboard.png"
-                      alt="Mood board preview"
-                      width={400}
-                      height={520}
-                      className="w-full rounded-xl shadow-md"
-                      sizes="(min-width: 1024px) 25vw, 50vw"
-                    />
-                    <Image
-                      src="/img/hiw-purchaselinks.png"
-                      alt="Shop the board preview"
-                      width={400}
-                      height={520}
-                      className="w-full rounded-xl shadow-md"
-                      sizes="(min-width: 1024px) 25vw, 50vw"
-                    />
-                  </div>
-                </div>
+                <Image
+                  src="/img/hero-collage.png"
+                  alt="Personalized styling collage showing stylist and client interaction"
+                  width={1200}
+                  height={1200}
+                  priority
+                  className="w-full h-auto"
+                  sizes="(min-width: 1024px) 40vw, 100vw"
+                />
               </div>
             </div>
           </div>
         </section>
 
         {/* Press Logos */}
-        <section className="border-y border-border bg-muted/30 py-8">
+        <section className="bg-foreground py-10">
           <div className="mx-auto max-w-6xl px-6 md:px-10">
-            <p className="text-center font-display text-lg italic text-muted-foreground mb-6">
+            <p className="text-center font-display text-xl md:text-2xl italic text-background/70 mb-6">
               &ldquo;Best Personalized Styling App&rdquo;
             </p>
-            <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-4">
-              {pressLogos.map((name) => (
-                <span
-                  key={name}
-                  className="font-display text-base text-muted-foreground/70 tracking-wide"
-                >
-                  {name}
-                </span>
+            <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-6">
+              {pressLogos.map((src, i) => (
+                <Image
+                  key={src}
+                  src={src}
+                  alt={`Press logo ${i + 1}`}
+                  width={120}
+                  height={32}
+                  className="h-6 md:h-8 w-auto object-contain opacity-70 brightness-0 invert"
+                  loading="lazy"
+                />
               ))}
             </div>
           </div>
         </section>
 
-        {/* Stylists */}
+        {/* Meet the Stylists */}
         <section className="py-16 md:py-24">
           <div className="mx-auto max-w-6xl px-6 md:px-10">
             <Reveal>
@@ -214,28 +248,71 @@ export default async function HomePage() {
               </div>
             </Reveal>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              {stylists.map((s, i) => (
-                <Reveal key={s.name} delay={i * 80}>
-                  <div className="group text-center">
-                    <div className="relative aspect-[3/4] overflow-hidden rounded-xl mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_1.5fr] gap-4">
+              {/* Featured tall card — Karla */}
+              <Reveal>
+                <Link
+                  href="/stylists"
+                  className="relative aspect-[3/4] md:aspect-auto md:h-full overflow-hidden rounded-2xl block group"
+                >
+                  <Image
+                    src={featuredStylist.image}
+                    alt={featuredStylist.name}
+                    fill
+                    sizes="(min-width: 768px) 40vw, 100vw"
+                    className="object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                  <div className="absolute bottom-6 left-6 right-6">
+                    <h3 className="font-display text-3xl md:text-4xl text-white leading-tight">
+                      {featuredStylist.name}
+                    </h3>
+                    <p className="text-sm text-white/80 mt-1 whitespace-pre-line">
+                      {featuredStylist.subtitle}
+                    </p>
+                  </div>
+                </Link>
+              </Reveal>
+
+              {/* 2x3 right grid */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {gridStylists.map((s, i) => (
+                  <Reveal key={s.name} delay={i * 60}>
+                    <Link
+                      href="/stylists"
+                      className="relative aspect-[3/4] overflow-hidden rounded-2xl group block"
+                    >
                       <Image
-                        src={s.portfolio}
+                        src={s.image}
                         alt={s.name}
                         fill
-                        sizes="(min-width: 768px) 25vw, 50vw"
+                        sizes="(min-width: 768px) 20vw, 50vw"
                         className="object-cover transition-transform duration-500 group-hover:scale-105"
                       />
-                    </div>
-                    <h3 className="font-display text-xl">{s.name}</h3>
-                    <p className="text-xs text-muted-foreground mt-1">{s.style}</p>
-                  </div>
-                </Reveal>
-              ))}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent" />
+                      <div className="absolute bottom-4 left-4 right-4">
+                        <h3 className="font-display text-xl md:text-2xl text-white italic">
+                          {s.name}
+                        </h3>
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          {s.tags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="rounded-full bg-white/20 backdrop-blur-sm px-3 py-0.5 text-xs text-white"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </Link>
+                  </Reveal>
+                ))}
+              </div>
             </div>
 
             <div className="text-center mt-10">
-              <PillButton href="/match-quiz" variant="solid" size="lg">
+              <PillButton href={matchHref} variant="solid" size="lg">
                 Find Your Best Match
               </PillButton>
             </div>
@@ -244,30 +321,29 @@ export default async function HomePage() {
 
         {/* How it Works */}
         <section className="bg-muted/30 border-y border-border">
-          <div className="mx-auto max-w-5xl px-6 md:px-10 py-16 md:py-24">
+          <div className="mx-auto max-w-5xl px-6 md:px-10 py-14 md:py-20">
             <Reveal>
-              <h2 className="font-display text-3xl md:text-4xl text-center mb-14">
-                How It Works
+              <h2 className="font-display text-3xl md:text-4xl text-center mb-12">
+                How it Works
               </h2>
             </Reveal>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8">
               {steps.map((step, i) => (
                 <Reveal key={step.num} delay={i * 80}>
                   <div className="text-center">
-                    <div className="inline-flex items-center justify-center h-10 w-10 rounded-full border-2 border-foreground font-display text-lg mb-4">
-                      {step.num}
-                    </div>
-                    <p className="text-sm font-medium text-foreground mb-4">
+                    <p className="font-display text-3xl mb-2">{step.num}</p>
+                    <p className="text-sm text-foreground/80 mb-5 leading-snug min-h-[40px]">
                       {step.title}
                     </p>
-                    <div className="relative aspect-[9/16] overflow-hidden rounded-2xl bg-muted shadow-md">
+                    <div className="rounded-xl overflow-hidden border border-border bg-background shadow-sm">
                       <Image
                         src={step.image}
                         alt={step.title}
-                        fill
-                        sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
-                        className="object-cover object-top"
+                        width={300}
+                        height={300}
+                        className="w-full h-auto object-contain"
+                        loading="lazy"
                       />
                     </div>
                   </div>
@@ -292,18 +368,18 @@ export default async function HomePage() {
               </h2>
             </Reveal>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
-              {planTierOrder.map((tier, i) => {
-                const copy = planCopy[tier];
-                return (
-                  <Reveal key={tier} delay={i * 80}>
-                    <div className="rounded-xl border border-border bg-card p-8 flex flex-col h-full hover:shadow-md transition-shadow">
-                      <p className="text-xs text-foreground uppercase tracking-wider mb-3 font-medium">
+              {planTierOrder.map((tier, i) => (
+                <Reveal key={tier} delay={i * 80}>
+                  <div className="rounded-xl border border-border bg-card flex flex-col h-full hover:shadow-md transition-shadow overflow-hidden">
+                    <div className={`h-1.5 w-full ${tierAccent[tier]}`} />
+                    <div className="p-8 flex flex-col flex-1">
+                      <p className="text-xs text-foreground uppercase tracking-wider text-center mb-3 font-medium">
                         {tierLandingLabel[tier]}
                       </p>
-                      <h3 className="font-display text-2xl mb-1">Wishi {copy.name}</h3>
-                      <p className="font-display text-3xl mb-6">${priceFor[tier]}</p>
+                      <h3 className="font-display text-2xl text-center mb-2">{tierName[tier]}</h3>
+                      <p className="font-display text-4xl text-center mb-6">{`$${priceFor[tier]}`}</p>
                       <ul className="space-y-3 flex-1">
-                        {copy.bulletsShort.map((f) => (
+                        {tierShortFeatures[tier].map((f) => (
                           <li
                             key={f}
                             className="text-sm text-foreground flex items-start gap-2"
@@ -322,9 +398,9 @@ export default async function HomePage() {
                         Learn More
                       </PillButton>
                     </div>
-                  </Reveal>
-                );
-              })}
+                  </div>
+                </Reveal>
+              ))}
             </div>
           </div>
         </section>
@@ -343,10 +419,10 @@ export default async function HomePage() {
                 </p>
               </div>
             </Reveal>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6">
               {styledLooks.map((src, i) => (
                 <Reveal key={src} delay={i * 60}>
-                  <div className="relative aspect-square overflow-hidden rounded-xl">
+                  <div className="relative aspect-[601/712] overflow-hidden rounded-xl">
                     <Image
                       src={src}
                       alt={`Styled look ${i + 1}`}
@@ -358,35 +434,86 @@ export default async function HomePage() {
                 </Reveal>
               ))}
             </div>
+            <div className="text-center mt-12">
+              <Link
+                href="/feed"
+                className="inline-flex items-center justify-center rounded-[4px] border border-foreground text-foreground px-8 py-3 text-sm hover:bg-foreground hover:text-background transition-colors"
+              >
+                View more looks
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        {/* Concierge Banner */}
+        <section className="bg-[hsl(30,30%,93%)]">
+          <div className="grid grid-cols-1 md:grid-cols-2 items-center gap-0">
+            <div className="relative h-[400px] md:h-[520px] overflow-hidden">
+              <Image
+                src="/img/wishi-concierge.png"
+                alt="Wishi Concierge on a phone screen"
+                fill
+                sizes="(min-width: 768px) 50vw, 100vw"
+                className="object-cover object-center"
+              />
+            </div>
+            <div className="text-center px-8 py-16 md:py-0">
+              <h2 className="font-display text-3xl md:text-4xl mb-4">Chat with us.</h2>
+              <p className="text-sm text-foreground max-w-sm mx-auto mb-8 leading-relaxed">
+                Schedule a complimentary consultation with Wishi Concierge to discuss your style
+                goals and find a plan tailored to you.
+              </p>
+              <a
+                href="https://calendly.com/ninane-wishi/wishi-consultation?month=2026-04"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center border border-foreground rounded-[4px] px-8 py-3 text-sm hover:bg-foreground hover:text-background transition-colors"
+              >
+                Schedule consultation
+              </a>
+            </div>
           </div>
         </section>
 
         {/* Reviews */}
         <section className="py-16 md:py-24">
-          <div className="mx-auto max-w-5xl px-6 md:px-10">
+          <div className="mx-auto max-w-6xl px-6 md:px-10">
             <Reveal>
               <h2 className="font-display text-3xl md:text-4xl text-center mb-12">
                 Our Clients Tell It How It Is
               </h2>
             </Reveal>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {reviews.map((r, i) => (
-                <Reveal key={r.author} delay={i * 100}>
-                  <div className="flex flex-col h-full">
-                    <div className="flex gap-1 mb-4">
-                      {Array.from({ length: 5 }).map((_, idx) => (
-                        <StarIcon
-                          key={idx}
-                          className="h-4 w-4 fill-foreground text-foreground"
+                <Reveal key={r.author} delay={i * 80}>
+                  <div className="flex flex-col h-full border border-border rounded-xl overflow-hidden bg-card">
+                    {r.photo && (
+                      <div className="relative aspect-[4/3] overflow-hidden">
+                        <Image
+                          src={r.photo}
+                          alt={`${r.author}'s look`}
+                          fill
+                          sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
+                          className="object-cover"
                         />
-                      ))}
-                    </div>
-                    <p className="text-base text-foreground leading-relaxed flex-1 italic">
-                      &ldquo;{r.text}&rdquo;
-                    </p>
-                    <div className="mt-4 pt-4 border-t border-border">
-                      <p className="font-display text-base">{r.author}</p>
-                      <p className="text-xs text-muted-foreground">{r.role}</p>
+                      </div>
+                    )}
+                    <div className="p-5 flex flex-col flex-1">
+                      <div className="flex gap-1 mb-3">
+                        {Array.from({ length: 5 }).map((_, idx) => (
+                          <StarIcon
+                            key={idx}
+                            className="h-4 w-4 fill-foreground text-foreground"
+                          />
+                        ))}
+                      </div>
+                      <p className="text-sm text-foreground leading-relaxed flex-1 italic">
+                        &ldquo;{r.text}&rdquo;
+                      </p>
+                      <div className="mt-4 pt-4 border-t border-border">
+                        <p className="font-display text-base">{r.author}</p>
+                        <p className="text-xs text-muted-foreground">Styled by {r.stylist}</p>
+                      </div>
                     </div>
                   </div>
                 </Reveal>
@@ -417,7 +544,7 @@ export default async function HomePage() {
               <p className="text-base text-muted-foreground max-w-md mx-auto mb-8">
                 Take a quick style quiz and get matched with a stylist who truly gets your vibe.
               </p>
-              <PillButton href="/match-quiz" variant="solid" size="lg">
+              <PillButton href="/welcome" variant="solid" size="lg">
                 Let&apos;s Get Styling
               </PillButton>
             </Reveal>
