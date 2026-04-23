@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import Image from "next/image";
-import { StarIcon } from "lucide-react";
+import {
+  PackageIcon,
+  TruckIcon,
+  GiftIcon,
+  StarIcon,
+} from "lucide-react";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
 import { Reveal } from "@/components/primitives/reveal";
@@ -19,19 +24,19 @@ const journeySteps = [
     title: "Personal Consultation Call",
     description:
       "A 30-minute video call with your stylist to talk through your lifestyle, style goals, preferences, and the looks you want to achieve.",
-    image: "/img/hiw-chat.png",
+    image: "/img/journey-call.png",
   },
   {
     title: "Share Your Closet",
     description:
       "Add items to your closet for your stylist to review and use in your style boards.",
-    image: "/img/hiw-purchaselinks.png",
+    image: "/img/journey-closet.png",
   },
   {
     title: "Complement Your Color & Shape",
     description:
       "Your stylist will advise on the colors and shapes that suit you best, using your preferences and inspiration photos.",
-    image: "/img/hiw-moodboard.png",
+    image: "/img/journey-color.png",
   },
 ] as const;
 
@@ -66,24 +71,27 @@ const processSteps = [
   },
 ] as const;
 
+// Icon-based callouts for the "Buy What You Love" section. Replaces the old
+// image-card layout with the cleaner Loveable design language. Title is
+// "Priority Shipping" — the "Free &" prefix from the Loveable source is
+// locked-out copy per the 2026-04-07 founder decision.
 const buyFeatures = [
   {
     title: "Personal Concierge",
     description:
       "Wishi fulfillment for items you buy through Wishi — tax, shipping, and returns handled end-to-end.",
-    image: "/img/styled-look-1.jpg",
+    Icon: PackageIcon,
+  },
+  {
+    title: "Priority Shipping",
+    description: "Your must-have pieces, always delivered with priority shipping.",
+    Icon: TruckIcon,
   },
   {
     title: "Any Brand, Any Budget",
     description:
-      "Stylists source from luxury, contemporary, and high-street brands across the entire fashion market.",
-    image: "/img/styled-look-2.jpg",
-  },
-  {
-    title: "A Human Every Step",
-    description:
-      "Your 30-minute call sets the direction, and your stylist is in chat through every board revision.",
-    image: "/img/styled-look-3.jpg",
+      "Stylists can source from luxury, contemporary, and high-street brands across the entire fashion market.",
+    Icon: GiftIcon,
   },
 ] as const;
 
@@ -92,16 +100,19 @@ const lifeStages = [
     title: "Busy Moms",
     description:
       "Your lifestyle shapes your wardrobe. We simplify dressing so you can focus on what matters.",
+    image: "/img/life-busy-mom.png",
   },
   {
     title: "Boss Ladies",
     description:
       "No time to waste. Your Lux looks deliver effortless, polished, confident workwear.",
+    image: "/img/life-executives.png",
   },
   {
     title: "Life Updates",
     description:
       "Wishi adapts your wardrobe for life's big changes: promotions, motherhood, body changes, and more.",
+    image: "/img/life-updates.png",
   },
 ] as const;
 
@@ -179,7 +190,7 @@ export default function LuxPage() {
                   The most highly curated digital styling experience — 8 style boards, a dedicated
                   stylist, and a 30-minute video call included.
                 </p>
-                <PillButton href="/match-quiz" variant="solid" size="lg">
+                <PillButton href="/welcome" variant="solid" size="lg">
                   Get Started
                 </PillButton>
               </div>
@@ -233,7 +244,7 @@ export default function LuxPage() {
               ))}
             </div>
             <div className="text-center mt-12">
-              <PillButton href="/match-quiz" variant="solid" size="lg">
+              <PillButton href="/welcome" variant="solid" size="lg">
                 Get Started
               </PillButton>
             </div>
@@ -284,7 +295,37 @@ export default function LuxPage() {
           </div>
         </section>
 
-        {/* Buy */}
+        {/* Concierge Banner */}
+        <section className="bg-[hsl(30,30%,93%)]">
+          <div className="grid grid-cols-1 md:grid-cols-2 items-center gap-0">
+            <div className="relative h-[400px] md:h-[520px] overflow-hidden">
+              <Image
+                src="/img/wishi-concierge.png"
+                alt="Wishi Concierge on a phone screen"
+                fill
+                sizes="(min-width: 768px) 50vw, 100vw"
+                className="object-cover object-center"
+              />
+            </div>
+            <div className="text-center px-8 py-16 md:py-0">
+              <h2 className="font-display text-3xl md:text-4xl mb-4">Chat with us.</h2>
+              <p className="text-sm text-muted-foreground max-w-sm mx-auto mb-8 leading-relaxed">
+                Schedule a complimentary consultation with Wishi Concierge to discuss your style
+                goals and find a plan tailored to you.
+              </p>
+              <a
+                href="https://calendly.com/ninane-wishi/wishi-consultation?month=2026-04"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center border border-foreground rounded-none px-8 py-3 text-sm hover:bg-foreground hover:text-background transition-colors"
+              >
+                Schedule consultation
+              </a>
+            </div>
+          </div>
+        </section>
+
+        {/* Buy What You Love — icon-based callouts */}
         <section className="bg-muted/30 border-y border-border">
           <div className="mx-auto max-w-5xl px-6 md:px-10 py-16 md:py-24">
             <Reveal>
@@ -292,23 +333,17 @@ export default function LuxPage() {
                 Buy What You Love
               </h2>
             </Reveal>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {buyFeatures.map((f, i) => (
-                <Reveal key={f.title} delay={i * 80}>
-                  <div className="text-center">
-                    <div className="relative aspect-square overflow-hidden rounded-xl mb-5">
-                      <Image
-                        src={f.image}
-                        alt={f.title}
-                        fill
-                        sizes="(min-width: 768px) 33vw, 100vw"
-                        className="object-cover"
-                      />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-12">
+              {buyFeatures.map(({ title, description, Icon }, i) => (
+                <Reveal key={title} delay={i * 80}>
+                  <div className="flex items-start gap-4">
+                    <Icon className="h-10 w-10 shrink-0 text-foreground stroke-[1.2]" />
+                    <div>
+                      <h3 className="font-display text-lg mb-1">{title}</h3>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        {description}
+                      </p>
                     </div>
-                    <h3 className="font-display text-xl mb-2">{f.title}</h3>
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                      {f.description}
-                    </p>
                   </div>
                 </Reveal>
               ))}
@@ -316,21 +351,32 @@ export default function LuxPage() {
           </div>
         </section>
 
-        {/* Exclusive perk */}
+        {/* Exclusive perk — Wishi Lux Bag with image */}
         <section className="py-16 md:py-24">
-          <div className="mx-auto max-w-4xl px-6 md:px-10">
+          <div className="mx-auto max-w-5xl px-6 md:px-10">
             <Reveal>
-              <div className="rounded-2xl border border-border bg-card p-10 md:p-14 text-center">
-                <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">
-                  A gift from us
-                </p>
-                <h2 className="font-display text-3xl md:text-4xl mb-4">
-                  The Wishi Lux Bag: An Exclusive Perk
-                </h2>
-                <p className="text-base text-muted-foreground max-w-lg mx-auto leading-relaxed">
-                  When you book Lux, you&apos;ll receive an exclusive bag filled with Wishi
-                  essentials — because great style deserves a little something extra.
-                </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 items-center gap-10 rounded-2xl border border-border bg-card p-10 md:p-14">
+                <div className="relative aspect-[4/3] overflow-hidden rounded-2xl shadow-lg">
+                  <Image
+                    src="/img/lux-gift.png"
+                    alt="Wishi Lux gift bag with thank-you card"
+                    fill
+                    sizes="(min-width: 768px) 50vw, 100vw"
+                    className="object-cover"
+                  />
+                </div>
+                <div className="text-center md:text-left">
+                  <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">
+                    A gift from us
+                  </p>
+                  <h2 className="font-display text-3xl md:text-4xl mb-4">
+                    The Wishi Lux Bag: An Exclusive Perk
+                  </h2>
+                  <p className="text-base text-muted-foreground max-w-lg leading-relaxed">
+                    When you book Lux, you&apos;ll receive an exclusive bag filled with Wishi
+                    essentials — because great style deserves a little something extra.
+                  </p>
+                </div>
               </div>
             </Reveal>
           </div>
@@ -367,29 +413,43 @@ export default function LuxPage() {
               ))}
             </div>
             <div className="text-center mt-12">
-              <PillButton href="/match-quiz" variant="solid" size="lg">
+              <PillButton href="/welcome" variant="solid" size="lg">
                 Book a Stylist
               </PillButton>
             </div>
           </div>
         </section>
 
-        {/* Life stages */}
-        <section className="py-16 md:py-24">
-          <div className="mx-auto max-w-5xl px-6 md:px-10">
+        {/* Life stages — image cards with overlay */}
+        <section className="bg-foreground text-background py-16 md:py-24">
+          <div className="mx-auto max-w-6xl px-6 md:px-10">
             <Reveal>
               <h2 className="font-display text-3xl md:text-4xl text-center mb-14">
                 Wishi Is For Every Stage Of Your Life
               </h2>
             </Reveal>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-0">
               {lifeStages.map((stage, i) => (
                 <Reveal key={stage.title} delay={i * 100}>
-                  <div className="rounded-xl border border-border bg-card p-8 text-center h-full">
-                    <h3 className="font-display text-xl mb-3">{stage.title}</h3>
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                      {stage.description}
-                    </p>
+                  <div className="flex flex-col h-full">
+                    <div className="relative aspect-square overflow-hidden">
+                      <Image
+                        src={stage.image}
+                        alt={stage.title}
+                        fill
+                        sizes="(min-width: 768px) 33vw, 100vw"
+                        className="object-cover"
+                      />
+                      <div className="absolute inset-0 bg-black/30" />
+                      <h3 className="absolute bottom-6 left-6 right-6 font-display text-2xl md:text-3xl text-white">
+                        {stage.title}
+                      </h3>
+                    </div>
+                    <div className="px-6 py-6 text-center">
+                      <p className="text-sm text-background/70 leading-relaxed">
+                        {stage.description}
+                      </p>
+                    </div>
                   </div>
                 </Reveal>
               ))}
@@ -408,7 +468,7 @@ export default function LuxPage() {
                 Schedule a free consultation to discuss your style goals. We&apos;ll help you find
                 the perfect fit for your needs.
               </p>
-              <PillButton href="/match-quiz" variant="solid" size="lg">
+              <PillButton href="/welcome" variant="solid" size="lg">
                 Schedule Your Free Consultation
               </PillButton>
             </Reveal>
