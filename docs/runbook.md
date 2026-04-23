@@ -168,6 +168,7 @@ orders aren't advancing SHIPPED → ARRIVED:
    - All Phase 11 verification checkboxes in `WISHI-REBUILD-PLAN.md` checked
    - Klaviyo flows live for all `order.*`, `gift-card.*`, `subscription.*` events
    - CloudWatch dashboard loaded; Slack alert channel confirmed
+   - **Full e2e walkthrough clean**: `npm run dev:e2e & npx tsx --env-file=.env scripts/e2e-full-walkthrough.ts` returns 0 (32/32 golden-path + integration + DB checks)
 2. T-0:
    - Route 53: create `app.wishi.me` A/ALIAS → production ALB
    - Send invite emails via Klaviyo to the cohort list (20–50 users)
