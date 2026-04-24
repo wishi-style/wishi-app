@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import type { ClientProfileView } from "@/lib/stylists/client-profile";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -157,9 +158,22 @@ interface ClientDetailPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sessionId: string | null;
+  /**
+   * Preferred identifier for the real-data fetch. When provided, the panel
+   * hits `/api/stylist/clients/[clientId]/profile` to resolve a full
+   * ClientProfileView. Falls back to the legacy mockClientProfiles[sessionId]
+   * lookup if omitted or the fetch fails, so the Dashboard's placeholder
+   * rendering still works while the profile is in flight.
+   */
+  clientId?: string | null;
 }
 
-export default function ClientDetailPanel({ open, onOpenChange, sessionId }: ClientDetailPanelProps) {
+export default function ClientDetailPanel({
+  open,
+  onOpenChange,
+  sessionId,
+  clientId,
+}: ClientDetailPanelProps) {
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -182,7 +196,28 @@ export default function ClientDetailPanel({ open, onOpenChange, sessionId }: Cli
     }
   };
 
-  const profile = sessionId ? mockClientProfiles[sessionId] : null;
+  const [fetchedProfile, setFetchedProfile] = useState<ClientProfileView | null>(null);
+  useEffect(() => {
+    if (!open || !clientId) return;
+    let alive = true;
+    setFetchedProfile(null);
+    void (async () => {
+      try {
+        const res = await fetch(`/api/stylist/clients/${clientId}/profile`);
+        if (!res.ok) return;
+        const data = (await res.json()) as { profile: ClientProfileView };
+        if (alive) setFetchedProfile(data.profile);
+      } catch {
+        /* fall back to mock */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [open, clientId]);
+
+  const profile =
+    fetchedProfile ?? (sessionId ? mockClientProfiles[sessionId] : null);
 
   if (!profile) {
     return (
