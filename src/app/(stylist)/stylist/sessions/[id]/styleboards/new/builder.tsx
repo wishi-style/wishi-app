@@ -23,6 +23,7 @@ import {
   ShirtIcon,
   StoreIcon,
   SparklesIcon,
+  LayersIcon,
   XIcon,
   ArrowUpToLineIcon,
   ArrowDownToLineIcon,
@@ -65,7 +66,22 @@ import type {
   SearchResponse,
 } from "@/lib/inventory/types";
 
-type Tab = "inventory" | "closet" | "inspiration" | "web";
+type Tab = "inventory" | "closet" | "inspiration" | "previous" | "web";
+
+interface PreviousLookItem {
+  id: string;
+  boardId: string;
+  boardTitle: string | null;
+  boardSentAt: string;
+  source: string;
+  inventoryProductId: string | null;
+  closetItemId: string | null;
+  inspirationPhotoId: string | null;
+  webItemUrl: string | null;
+  imageUrl: string | null;
+  label: string | null;
+  brand: string | null;
+}
 
 interface Props {
   boardId: string;
@@ -178,6 +194,9 @@ export function StyleboardBuilder({
   const [canvasSize, setCanvasSize] = useState<CanvasSize>("small");
   const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set());
   const [cropTargetId, setCropTargetId] = useState<string | null>(null);
+  const [previousScope, setPreviousScope] = useState<"all" | "client">("client");
+  const [previousItems, setPreviousItems] = useState<PreviousLookItem[]>([]);
+  const [previousLoading, setPreviousLoading] = useState(false);
 
   // Advanced filter state — populated from /api/products/filters, used by
   // runInventorySearch to narrow the tastegraph query.
@@ -249,6 +268,67 @@ export function StyleboardBuilder({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // Fetch previous looks when the tab opens or scope toggles.
+  useEffect(() => {
+    if (tab !== "previous") return;
+    let alive = true;
+    setPreviousLoading(true);
+    const qs = previousScope === "client" ? `?clientId=${clientId}` : "";
+    void (async () => {
+      try {
+        const res = await fetch(`/api/stylist/previous-looks${qs}`);
+        if (!res.ok) {
+          if (alive) setPreviousItems([]);
+          return;
+        }
+        const data = (await res.json()) as { items: PreviousLookItem[] };
+        if (alive) setPreviousItems(data.items ?? []);
+      } finally {
+        if (alive) setPreviousLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [tab, previousScope, clientId]);
+
+  async function addPreviousLookItem(it: PreviousLookItem) {
+    if (it.inventoryProductId) {
+      await addItem(
+        "INVENTORY",
+        { inventoryProductId: it.inventoryProductId },
+        it.imageUrl,
+        it.label,
+      );
+    } else if (it.closetItemId) {
+      await addItem(
+        "CLOSET",
+        { closetItemId: it.closetItemId },
+        it.imageUrl,
+        it.label,
+      );
+    } else if (it.inspirationPhotoId) {
+      await addItem(
+        "INSPIRATION_PHOTO",
+        { inspirationPhotoId: it.inspirationPhotoId },
+        it.imageUrl,
+        it.label,
+      );
+    } else if (it.webItemUrl) {
+      await addItem(
+        "WEB_ADDED",
+        {
+          webItemUrl: it.webItemUrl,
+          webItemImageUrl: it.imageUrl,
+          webItemTitle: it.label,
+          webItemBrand: it.brand,
+        },
+        it.imageUrl,
+        it.label,
+      );
+    }
+  }
 
   async function toggleFavorite(productId: string) {
     const had = favoritedIds.has(productId);
@@ -541,6 +621,7 @@ export function StyleboardBuilder({
     { id: "inventory", label: "Shop", icon: StoreIcon },
     { id: "closet", label: "Closet", icon: ShirtIcon },
     { id: "inspiration", label: "Inspiration", icon: SparklesIcon },
+    { id: "previous", label: "Previous looks", icon: LayersIcon },
     { id: "web", label: "Web URL", icon: LinkIcon },
   ];
 
@@ -794,6 +875,67 @@ export function StyleboardBuilder({
             </ScrollArea>
           )}
 
+          {tab === "previous" && (
+            <>
+              <div className="flex items-center gap-1 border-b border-border px-3 py-2">
+                <PreviousScopeToggle
+                  value={previousScope}
+                  onChange={setPreviousScope}
+                />
+              </div>
+              <ScrollArea className="flex-1">
+                <div className="grid grid-cols-2 gap-2 p-3">
+                  {previousLoading && (
+                    <p className="col-span-2 py-6 text-center font-body text-xs text-muted-foreground">
+                      Loading…
+                    </p>
+                  )}
+                  {!previousLoading &&
+                    previousItems.map((it) => (
+                      <SourceTile
+                        key={it.id}
+                        imageUrl={it.imageUrl}
+                        label={it.label ?? "Item"}
+                        sublabel={it.boardTitle ?? it.brand ?? "Past look"}
+                        onAdd={() => void addPreviousLookItem(it)}
+                        onDragStart={() => {
+                          dragData.current = {
+                            source: it.inventoryProductId
+                              ? "INVENTORY"
+                              : it.closetItemId
+                                ? "CLOSET"
+                                : it.inspirationPhotoId
+                                  ? "INSPIRATION_PHOTO"
+                                  : "WEB_ADDED",
+                            imageUrl: it.imageUrl,
+                            label: it.label,
+                            payload: it.inventoryProductId
+                              ? { inventoryProductId: it.inventoryProductId }
+                              : it.closetItemId
+                                ? { closetItemId: it.closetItemId }
+                                : it.inspirationPhotoId
+                                  ? { inspirationPhotoId: it.inspirationPhotoId }
+                                  : {
+                                      webItemUrl: it.webItemUrl,
+                                      webItemImageUrl: it.imageUrl,
+                                      webItemTitle: it.label,
+                                      webItemBrand: it.brand,
+                                    },
+                          };
+                        }}
+                      />
+                    ))}
+                  {!previousLoading && previousItems.length === 0 && (
+                    <p className="col-span-2 px-2 py-6 font-body text-xs text-muted-foreground text-center">
+                      No past looks yet
+                      {previousScope === "client" ? " for this client" : ""}.
+                    </p>
+                  )}
+                </div>
+              </ScrollArea>
+            </>
+          )}
+
           {tab === "web" && (
             <div className="p-4 space-y-2">
               <Input
@@ -925,6 +1067,40 @@ export function StyleboardBuilder({
           }}
         />
       )}
+    </div>
+  );
+}
+
+function PreviousScopeToggle({
+  value,
+  onChange,
+}: {
+  value: "all" | "client";
+  onChange: (v: "all" | "client") => void;
+}) {
+  const opts: { key: "all" | "client"; label: string }[] = [
+    { key: "client", label: "This client" },
+    { key: "all", label: "All clients" },
+  ];
+  return (
+    <div className="inline-flex items-center rounded-sm bg-muted p-0.5">
+      {opts.map((o) => {
+        const active = value === o.key;
+        return (
+          <button
+            key={o.key}
+            onClick={() => onChange(o.key)}
+            className={cn(
+              "px-3 py-1 rounded-sm font-body text-[11px] transition-colors",
+              active
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
