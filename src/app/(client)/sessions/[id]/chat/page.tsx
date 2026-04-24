@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { redirect, notFound } from "next/navigation";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 import { SessionWorkspace } from "@/components/session/workspace";
+import { SessionHeaderBar } from "@/components/session/session-header-bar";
 import { getWorkspaceData } from "@/lib/sessions/workspace-query";
 import { PushPermission } from "@/components/chat/push-permission";
 
@@ -61,9 +62,24 @@ export default async function ClientChatPage({ params }: Props) {
     user.id,
   );
 
+  const planLabel =
+    progress.planType === "MINI"
+      ? "Mini"
+      : progress.planType === "MAJOR"
+        ? "Major"
+        : progress.planType === "LUX"
+          ? "Lux"
+          : null;
+
   return (
     <>
+      <SessionHeaderBar
+        stylistName={stylistName}
+        stylistAvatarUrl={session.stylist?.avatarUrl ?? null}
+        planLabel={planLabel}
+      />
       <SessionWorkspace
+        heightClass="h-[calc(100vh-7.5rem)]"
         sessionId={session.id}
         currentIdentity={user.clerkId!}
         otherUserName={stylistName}
