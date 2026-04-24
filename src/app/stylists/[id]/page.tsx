@@ -104,11 +104,15 @@ export default async function StylistProfilePage({ params }: Props) {
   let matchScore: number | null = null;
   let favorited = false;
   let canReview = false;
+  let styleQuizCompleted = false;
   const { userId: clerkId } = await getServerAuth();
   if (clerkId) {
     const user = await prisma.user.findUnique({
       where: { clerkId },
-      select: { id: true },
+      select: {
+        id: true,
+        styleProfile: { select: { quizCompletedAt: true } },
+      },
     });
     if (user) {
       const [quizResult, isFav, completedCount] = await Promise.all([
@@ -128,8 +132,16 @@ export default async function StylistProfilePage({ params }: Props) {
       if (quizResult) matchScore = cosmeticMatchScore(stylist, quizResult);
       favorited = isFav;
       canReview = completedCount > 0;
+      styleQuizCompleted = !!user.styleProfile?.quizCompletedAt;
     }
   }
+
+  // Continue CTA branches on style-quiz completion. Unauth users skip the
+  // check — /style-quiz and /bookings/new both bounce them to /sign-in.
+  const continueHref =
+    clerkId && !styleQuizCompleted
+      ? `/style-quiz?stylistId=${stylist.id}`
+      : `/bookings/new?stylistId=${stylist.id}`;
 
   const { reviews, total: totalReviews } = await listStylistReviews(stylist.id, {
     limit: 20,
@@ -280,7 +292,7 @@ export default async function StylistProfilePage({ params }: Props) {
               <div className="mt-8 flex gap-4">
                 {stylist.isAvailable ? (
                   <PillButton
-                    href={`/bookings/new?stylistId=${stylist.id}`}
+                    href={continueHref}
                     variant="solid"
                     size="lg"
                   >
@@ -556,7 +568,7 @@ export default async function StylistProfilePage({ params }: Props) {
           </div>
           {stylist.isAvailable ? (
             <PillButton
-              href={`/bookings/new?stylistId=${stylist.id}`}
+              href={continueHref}
               variant="solid"
               size="md"
             >
