@@ -12,6 +12,7 @@ const isPublicRoute = createRouteMatcher([
   "/stylists",
   "/stylists/(.*)",
   "/feed",
+  "/reviews",
   "/match-quiz(.*)",
   "/demo",
   "/api/health",
