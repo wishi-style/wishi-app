@@ -48,12 +48,22 @@ async function createBoard(opts: {
   sentAt: Date | null;
   title: string;
   stylistNote: string;
+  isRevision?: boolean;
+  parentBoardId?: string | null;
 }) {
   const id = `board_${Math.random().toString(36).slice(2, 10)}`;
   await getPool().query(
-    `INSERT INTO boards (id, type, session_id, title, stylist_note, sent_at, created_at, updated_at)
-     VALUES ($1, 'STYLEBOARD', $2, $3, $4, $5, NOW(), NOW())`,
-    [id, opts.sessionId, opts.title, opts.stylistNote, opts.sentAt],
+    `INSERT INTO boards (id, type, session_id, title, stylist_note, sent_at, is_revision, parent_board_id, created_at, updated_at)
+     VALUES ($1, 'STYLEBOARD', $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
+    [
+      id,
+      opts.sessionId,
+      opts.title,
+      opts.stylistNote,
+      opts.sentAt,
+      opts.isRevision ?? false,
+      opts.parentBoardId ?? null,
+    ],
   );
   return id;
 }
@@ -130,4 +140,38 @@ test("/board/[id] 404s for a DRAFT styleboard (sentAt null)", async ({
 test("/board/[id] 404s for an unknown board id", async ({ page }) => {
   const res = await page.goto("/board/does-not-exist-12345");
   expect(res?.status()).toBe(404);
+});
+
+test("/board/[id] 404s for a SENT restyle (isRevision=true)", async ({
+  page,
+}) => {
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const { stylist, stylistEmail, clientEmail, session } =
+    await seedStylistWithSession(stamp);
+
+  const parentBoardId = await createBoard({
+    sessionId: session.id,
+    sentAt: new Date(),
+    title: "Original",
+    stylistNote: "Original look.",
+  });
+  const restyleBoardId = await createBoard({
+    sessionId: session.id,
+    sentAt: new Date(),
+    title: "Restyle",
+    stylistNote: "Revised look.",
+    isRevision: true,
+    parentBoardId,
+  });
+
+  try {
+    const res = await page.goto(`/board/${restyleBoardId}`);
+    expect(res?.status()).toBe(404);
+  } finally {
+    await deleteBoard(restyleBoardId);
+    await deleteBoard(parentBoardId);
+    await cleanupStylistProfile(stylist.id);
+    await cleanupE2EUserByEmail(clientEmail);
+    await cleanupE2EUserByEmail(stylistEmail);
+  }
 });

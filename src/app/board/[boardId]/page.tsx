@@ -47,15 +47,29 @@ async function loadSharedBoard(boardId: string) {
   if (!board) return null;
   if (board.type !== "STYLEBOARD") return null;
   if (!board.sentAt) return null;
+  // Restyle/revision boards wrap an original STYLEBOARD and aren't meant
+  // to be shared publicly — the canonical share URL is the parent board.
+  if (board.isRevision) return null;
   if (!board.session?.stylist) return null;
   if (!board.session.stylist.stylistProfile) return null;
   return board;
 }
 
+// Shared boards are public-by-link, not public-by-discovery — unfurls +
+// social previews are wanted, but search-engine indexing of per-client
+// styleboards is not. Override the root layout's `robots.index = true`.
+const SHARED_BOARD_ROBOTS = {
+  index: false,
+  follow: false,
+  googleBot: { index: false, follow: false },
+} as const;
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { boardId } = await params;
   const board = await loadSharedBoard(boardId);
-  if (!board) return { title: "Styleboard — Wishi" };
+  if (!board) {
+    return { title: "Styleboard — Wishi", robots: SHARED_BOARD_ROBOTS };
+  }
 
   const stylist = board.session?.stylist;
   const stylistName = stylist
@@ -68,6 +82,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: `${title} — styled by ${stylistName}`,
     description: description.slice(0, 200),
+    robots: SHARED_BOARD_ROBOTS,
     openGraph: {
       title: `${title} — styled by ${stylistName}`,
       description: description.slice(0, 200),
