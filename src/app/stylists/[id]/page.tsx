@@ -105,6 +105,7 @@ export default async function StylistProfilePage({ params }: Props) {
   let favorited = false;
   let canReview = false;
   let styleQuizCompleted = false;
+  let hasDbUser = false;
   const { userId: clerkId } = await getServerAuth();
   if (clerkId) {
     const user = await prisma.user.findUnique({
@@ -115,6 +116,7 @@ export default async function StylistProfilePage({ params }: Props) {
       },
     });
     if (user) {
+      hasDbUser = true;
       const [quizResult, isFav, completedCount] = await Promise.all([
         prisma.matchQuizResult.findFirst({
           where: { userId: user.id },
@@ -136,10 +138,12 @@ export default async function StylistProfilePage({ params }: Props) {
     }
   }
 
-  // Continue CTA branches on style-quiz completion. Unauth users skip the
-  // check — /style-quiz and /bookings/new both bounce them to /sign-in.
+  // Continue CTA routes to /style-quiz only when we can actually submit it
+  // (clerk session + DB user row + quiz not yet completed). Everything else
+  // — unauth, Clerk-session-without-DB-user, already-completed — falls
+  // through to /bookings/new, which owns its own sign-in bounce.
   const continueHref =
-    clerkId && !styleQuizCompleted
+    clerkId && hasDbUser && !styleQuizCompleted
       ? `/style-quiz?stylistId=${stylist.id}`
       : `/bookings/new?stylistId=${stylist.id}`;
 

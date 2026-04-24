@@ -15,8 +15,9 @@ interface Props {
  * funnel paths — match-quiz → stylist pick → style-quiz → book, and the
  * direct-from-stylist-profile flow that skips match-quiz entirely.
  *
- * Skipped (via the /stylists/[id] server-side redirect) when the user
- * already has a completed StyleProfile, so returning clients don't
+ * Returning clients with a completed StyleProfile normally bypass this
+ * via the CTA href on /stylists/[id]; if they still reach /style-quiz,
+ * this page redirects them based on `quizCompletedAt` so they don't
  * re-answer 22 questions on every booking.
  */
 export default async function StyleQuizPage({ searchParams }: Props) {
@@ -35,7 +36,12 @@ export default async function StyleQuizPage({ searchParams }: Props) {
     },
   });
 
-  if (user?.styleProfile?.quizCompletedAt) {
+  if (!user) {
+    const next = stylistId ? `/style-quiz?stylistId=${stylistId}` : "/style-quiz";
+    redirect(`/sign-in?next=${encodeURIComponent(next)}`);
+  }
+
+  if (user.styleProfile?.quizCompletedAt) {
     if (stylistId) {
       redirect(`/bookings/new?stylistId=${encodeURIComponent(stylistId)}`);
     }

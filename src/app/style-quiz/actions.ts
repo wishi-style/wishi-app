@@ -26,23 +26,31 @@ export async function submitStyleQuiz(
 
   const user = await prisma.user.findUnique({
     where: { clerkId },
-    select: { id: true },
+    select: {
+      id: true,
+      styleProfile: { select: { quizCompletedAt: true } },
+    },
   });
   if (!user) {
     redirect("/sign-in");
   }
 
-  await persistStyleQuizAnswers(user.id, answers);
-  const answersJson = answers as Prisma.InputJsonValue;
-  await prisma.styleProfile.upsert({
-    where: { userId: user.id },
-    update: { quizCompletedAt: new Date(), quizAnswers: answersJson },
-    create: {
-      userId: user.id,
-      quizCompletedAt: new Date(),
-      quizAnswers: answersJson,
-    },
-  });
+  // Idempotent — the page redirects completed users away, but a replay
+  // (double-submit, stale tab, direct action call) must not overwrite the
+  // original quizCompletedAt or stored answers.
+  if (!user.styleProfile?.quizCompletedAt) {
+    await persistStyleQuizAnswers(user.id, answers);
+    const answersJson = answers as Prisma.InputJsonValue;
+    await prisma.styleProfile.upsert({
+      where: { userId: user.id },
+      update: { quizCompletedAt: new Date(), quizAnswers: answersJson },
+      create: {
+        userId: user.id,
+        quizCompletedAt: new Date(),
+        quizAnswers: answersJson,
+      },
+    });
+  }
 
   if (stylistId) {
     redirect(`/bookings/new?stylistId=${encodeURIComponent(stylistId)}`);
