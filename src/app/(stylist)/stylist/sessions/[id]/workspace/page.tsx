@@ -1,10 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { redirect, notFound } from "next/navigation";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
-import { SessionWorkspace } from "@/components/session/workspace";
+import { StylistWorkspace } from "@/components/stylist/workspace";
 import { getWorkspaceData } from "@/lib/sessions/workspace-query";
-import Link from "next/link";
-import { StylistEndSessionButton } from "./end-button";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +11,15 @@ const CHAT_STATUSES = [
   "PENDING_END",
   "PENDING_END_APPROVAL",
   "END_DECLINED",
+  "COMPLETED",
+  "CANCELLED",
 ];
+
+function planTypeToSessionType(plan: string): "mini" | "major" | "lux" {
+  if (plan === "MINI") return "mini";
+  if (plan === "MAJOR") return "major";
+  return "lux";
+}
 
 export default async function StylistWorkspacePage({
   params,
@@ -30,9 +36,19 @@ export default async function StylistWorkspacePage({
       id: true,
       stylistId: true,
       status: true,
+      planType: true,
       twilioChannelSid: true,
       client: {
-        select: { firstName: true, lastName: true, avatarUrl: true, clerkId: true },
+        select: {
+          firstName: true,
+          lastName: true,
+          avatarUrl: true,
+          clerkId: true,
+          locations: {
+            select: { city: true, country: true },
+            take: 1,
+          },
+        },
       },
     },
   });
@@ -40,42 +56,36 @@ export default async function StylistWorkspacePage({
   if (!CHAT_STATUSES.includes(session.status)) redirect("/stylist/sessions");
   if (!session.twilioChannelSid) redirect("/stylist/sessions");
 
-  const clientName = `${session.client.firstName} ${session.client.lastName}`;
+  const clientName =
+    [session.client.firstName, session.client.lastName]
+      .filter(Boolean)
+      .join(" ") || "Client";
+  const loc = session.client.locations[0];
+  const clientLocation = loc
+    ? [loc.city, loc.country].filter(Boolean).join(", ")
+    : null;
+  const isClosed =
+    session.status === "COMPLETED" || session.status === "CANCELLED";
+
   const { boards, curated, cart, progress } = await getWorkspaceData(session.id);
   const canRequestEnd =
     session.status === "ACTIVE" || session.status === "PENDING_END";
 
   return (
-    <>
-      <div className="flex items-center justify-between border-b bg-stone-50 px-6 py-3">
-        <div className="flex gap-3 text-sm">
-          <Link
-            href={`/stylist/sessions/${session.id}/moodboards/new`}
-            className="rounded-full border px-4 py-1.5 hover:bg-foreground hover:text-background"
-          >
-            Build Moodboard
-          </Link>
-          <Link
-            href={`/stylist/sessions/${session.id}/styleboards/new`}
-            className="rounded-full border px-4 py-1.5 hover:bg-foreground hover:text-background"
-          >
-            Build Styleboard
-          </Link>
-        </div>
-        {canRequestEnd && <StylistEndSessionButton sessionId={session.id} />}
-      </div>
-      <SessionWorkspace
-        sessionId={session.id}
-        currentIdentity={user.clerkId!}
-        otherUserName={clientName}
-        otherUserAvatar={session.client.avatarUrl ?? null}
-        sessionStatus={session.status}
-        viewerRole="STYLIST"
-        boards={boards}
-        curated={curated}
-        cart={cart}
-        progress={progress}
-      />
-    </>
+    <StylistWorkspace
+      sessionId={session.id}
+      sessionStatus={session.status}
+      sessionType={planTypeToSessionType(session.planType)}
+      isClosed={isClosed}
+      currentIdentity={user.clerkId!}
+      clientName={clientName}
+      clientAvatarUrl={session.client.avatarUrl ?? null}
+      clientLocation={clientLocation}
+      canRequestEnd={canRequestEnd}
+      boards={boards}
+      curated={curated}
+      cart={cart}
+      progress={progress}
+    />
   );
 }
