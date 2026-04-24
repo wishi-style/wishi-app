@@ -177,13 +177,12 @@ export default function StylistDashboard({
 }: {
   sessions: MockSession[];
 }) {
-  const [selectedId, setSelectedId] = useState<string | null>(() => {
-    // Auto-select first session on desktop-width initial render so the right pane isn't empty
-    if (typeof window !== "undefined" && window.innerWidth >= 768 && mockSessions.length > 0) {
-      return mockSessions[0].id;
-    }
-    return null;
-  });
+  // Pre-select first session so the right pane isn't empty on desktop. Use
+  // a lazy initializer that reads the sessions array directly (no `window`
+  // branch — that caused SSR/client divergence and hydration mismatches).
+  const [selectedId, setSelectedId] = useState<string | null>(
+    () => mockSessions[0]?.id ?? null,
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<StatFilter | null>(null);
   const [sessionTypeFilter, setSessionTypeFilter] = useState<SessionType | "all">("all");
@@ -526,7 +525,7 @@ export default function StylistDashboard({
                 className="flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors"
               >
                 <button
-                  onClick={() => router.push(`/create-moodboard?draft=${draft.id}`)}
+                  onClick={() => router.push(`/stylist/sessions/${draft.sessionId ?? ""}/moodboards/new?draftBoardId=${draft.id}`)}
                   className="flex items-center gap-3 min-w-0 flex-1 text-left"
                 >
                   <div className="h-10 w-10 rounded-sm bg-muted border border-border flex items-center justify-center shrink-0 overflow-hidden">
@@ -565,11 +564,19 @@ export default function StylistDashboard({
             const isSelected = selectedId === session.id;
             const badge = sessionTypeBadge[session.sessionType];
             return (
-              <button
+              <div
                 key={session.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => setSelectedId(session.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setSelectedId(session.id);
+                  }
+                }}
                 className={cn(
-                  "w-full text-left p-4 transition-colors hover:bg-muted/50",
+                  "w-full text-left p-4 transition-colors hover:bg-muted/50 cursor-pointer",
                   isSelected && "bg-muted/80"
                 )}
               >
@@ -602,13 +609,14 @@ export default function StylistDashboard({
                       e.stopPropagation();
                       setSelectedId(session.id);
                       if (session.actionLabel === "Create Moodboard") {
-                        router.push(`/create-moodboard?client=${encodeURIComponent(session.clientName)}&sid=${session.id}`);
+                        router.push(`/stylist/sessions/${session.id}/moodboards/new`);
                         return;
                       }
                       if (session.actionLabel === "Create Look") {
-                        router.push(`/create-look?client=${encodeURIComponent(session.clientName)}&sid=${session.id}`);
+                        router.push(`/stylist/sessions/${session.id}/styleboards/new`);
                         return;
                       }
+                      router.push(`/stylist/sessions/${session.id}/workspace`);
                     }}
                     className={cn(
                       "w-full rounded-sm py-2 text-xs font-body font-medium text-center transition-colors",
@@ -624,7 +632,7 @@ export default function StylistDashboard({
                 <div className="flex justify-center mt-2">
                   <ChevronDown className="h-4 w-4 text-muted-foreground" />
                 </div>
-              </button>
+              </div>
             );
           })}
 
@@ -668,9 +676,11 @@ export default function StylistDashboard({
             className="font-body text-xs h-8 rounded-sm"
             onClick={() => {
               if (selected.actionLabel === "Create Moodboard") {
-                router.push(`/create-moodboard?client=${encodeURIComponent(selected.clientName)}&sid=${selected.id}`);
+                router.push(`/stylist/sessions/${selected.id}/moodboards/new`);
               } else if (selected.actionLabel === "Create Look") {
-                router.push(`/create-look?client=${encodeURIComponent(selected.clientName)}&sid=${selected.id}`);
+                router.push(`/stylist/sessions/${selected.id}/styleboards/new`);
+              } else {
+                router.push(`/stylist/sessions/${selected.id}/workspace`);
               }
             }}
           >
