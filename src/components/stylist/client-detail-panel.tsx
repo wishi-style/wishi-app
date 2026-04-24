@@ -21,6 +21,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Camera, Heart, StickyNote } from "lucide-react";
+import { loyaltyConfig, mockClientProfiles } from "@/data/client-profiles";
 
 function InstagramIcon({ className }: { className?: string }) {
   return (
@@ -40,7 +41,6 @@ function InstagramIcon({ className }: { className?: string }) {
     </svg>
   );
 }
-import { loyaltyConfig, mockClientProfiles } from "@/data/client-profiles";
 
 const s1 = {
   fullName: "Feizhen Li",

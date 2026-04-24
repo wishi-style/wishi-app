@@ -38,6 +38,7 @@ import type {
 interface Props {
   boardId: string;
   sessionId: string;
+  clientId: string;
   clientName: string;
   initialPhotos: BoardPhoto[];
   inspiration: InspirationPhoto[];
@@ -46,6 +47,7 @@ interface Props {
 export function MoodboardBuilder({
   boardId,
   sessionId,
+  clientId,
   clientName,
   initialPhotos,
   inspiration,
@@ -115,14 +117,36 @@ export function MoodboardBuilder({
     }
   }
 
-  function clearCanvas() {
-    const ids = photos.map((p) => p.id);
+  async function clearCanvas() {
+    const prev = photos;
+    const ids = prev.map((p) => p.id);
     setPhotos([]);
-    ids.forEach((id) => {
-      void fetch(`/api/moodboards/${boardId}/photos/${id}`, {
-        method: "DELETE",
-      });
-    });
+    const results = await Promise.allSettled(
+      ids.map((id) =>
+        fetch(`/api/moodboards/${boardId}/photos/${id}`, {
+          method: "DELETE",
+        }).then((res) => {
+          if (!res.ok) throw new Error(`delete ${id} → ${res.status}`);
+          return id;
+        }),
+      ),
+    );
+    const failed = results.filter((r) => r.status === "rejected");
+    if (failed.length > 0) {
+      // Re-fetch authoritative state from the server rather than trying to
+      // reconstruct it client-side — some deletes may have succeeded.
+      const res = await fetch(`/api/moodboards/${boardId}`);
+      if (res.ok) {
+        const body = (await res.json()) as { photos?: BoardPhoto[] };
+        if (body.photos) setPhotos(body.photos);
+        else setPhotos(prev);
+      } else {
+        setPhotos(prev);
+      }
+      toast.error(
+        `Could not remove ${failed.length} photo${failed.length === 1 ? "" : "s"}`,
+      );
+    }
   }
 
   async function sendBoard(note: string) {
@@ -167,7 +191,7 @@ export function MoodboardBuilder({
         </div>
         <div className="flex items-center gap-2">
           <Link
-            href={`/stylist/clients/${sessionId}`}
+            href={`/stylist/clients/${clientId}`}
             className="inline-flex items-center gap-1.5 h-8 rounded-sm border border-border px-3 font-body text-xs hover:bg-muted transition-colors"
           >
             <UserIcon className="h-3.5 w-3.5" />
@@ -177,7 +201,7 @@ export function MoodboardBuilder({
             <Button
               variant="ghost"
               size="sm"
-              onClick={clearCanvas}
+              onClick={() => void clearCanvas()}
               className="font-body text-xs text-muted-foreground h-8 gap-1"
             >
               <Trash2Icon className="h-3.5 w-3.5" />

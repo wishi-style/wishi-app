@@ -19,6 +19,7 @@ export default async function NewMoodboardPage({ params }: Props) {
     select: {
       id: true,
       stylistId: true,
+      clientId: true,
       client: { select: { firstName: true, lastName: true } },
     },
   });
@@ -62,6 +63,7 @@ export default async function NewMoodboardPage({ params }: Props) {
     <MoodboardBuilder
       boardId={board.id}
       sessionId={sessionId}
+      clientId={session.clientId}
       clientName={clientName}
       initialPhotos={board.photos}
       inspiration={inspiration}

@@ -78,15 +78,16 @@ function isSameLocalDay(a: Date, b: Date): boolean {
 
 function humanDueLabel(earliestDueAt: Date | null, now: Date): string {
   if (!earliestDueAt) return "";
-  const deltaMs = earliestDueAt.getTime() - now.getTime();
-  const deltaDays = Math.round(deltaMs / MS_PER_DAY);
   if (isSameLocalDay(earliestDueAt, now)) return "Due Today";
-  if (deltaDays > 0) {
-    return deltaDays === 1 ? "Due tomorrow" : `Due in ${deltaDays} days`;
+  // Sign-aware day math so something overdue by 3 hours doesn't round to
+  // "Due now" (Math.round would truncate it to 0 days).
+  const deltaMs = earliestDueAt.getTime() - now.getTime();
+  if (deltaMs > 0) {
+    const daysAhead = Math.ceil(deltaMs / MS_PER_DAY);
+    return daysAhead === 1 ? "Due tomorrow" : `Due in ${daysAhead} days`;
   }
-  const overdueDays = Math.abs(deltaDays);
-  if (overdueDays === 0) return "Due now";
-  return `Due: ${overdueDays} day${overdueDays === 1 ? "" : "s"} ago`;
+  const daysBehind = Math.ceil(-deltaMs / MS_PER_DAY);
+  return `Due: ${daysBehind} day${daysBehind === 1 ? "" : "s"} ago`;
 }
 
 function actionLabelFor(type: PendingActionType | null): string {

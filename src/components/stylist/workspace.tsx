@@ -441,7 +441,7 @@ function CartTab({ cart }: { cart: WorkspaceCartItem[] }) {
                     </p>
                   </div>
                   <p className="font-body text-sm text-foreground">
-                    ${Math.round((item.priceInCents * item.quantity) / 100)}
+                    {formatCents(item.priceInCents * item.quantity)}
                   </p>
                 </div>
               </div>
@@ -451,4 +451,12 @@ function CartTab({ cart }: { cart: WorkspaceCartItem[] }) {
       )}
     </div>
   );
+}
+
+function formatCents(cents: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+  }).format(cents / 100);
 }

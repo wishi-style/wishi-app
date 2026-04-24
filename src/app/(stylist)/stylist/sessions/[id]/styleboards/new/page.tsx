@@ -75,6 +75,7 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
       boardId={board.id}
       sessionId={sessionId}
       isRevision={board.isRevision}
+      clientId={session.clientId}
       clientName={clientName}
       initialItems={board.items}
       closetItems={closetItems}

@@ -49,6 +49,7 @@ interface Props {
   boardId: string;
   sessionId: string;
   isRevision: boolean;
+  clientId: string;
   clientName: string;
   initialItems: BoardItem[];
   closetItems: ClosetItem[];
@@ -86,6 +87,7 @@ export function StyleboardBuilder({
   boardId,
   sessionId,
   isRevision,
+  clientId,
   clientName,
   initialItems,
   closetItems,
@@ -240,14 +242,34 @@ export function StyleboardBuilder({
     });
   }
 
-  function clearCanvas() {
+  async function clearCanvas() {
     if (!confirm(`Remove all ${canvas.length} items from this look?`)) return;
-    const ids = canvas.map((c) => c.id);
+    const prev = canvas;
+    const ids = prev.map((c) => c.id);
     setCanvas([]);
     setSelectedId(null);
-    ids.forEach((id) => {
-      void fetch(`/api/styleboards/${boardId}/items/${id}`, { method: "DELETE" });
-    });
+    const results = await Promise.allSettled(
+      ids.map((id) =>
+        fetch(`/api/styleboards/${boardId}/items/${id}`, {
+          method: "DELETE",
+        }).then((res) => {
+          if (!res.ok) throw new Error(`delete ${id} → ${res.status}`);
+          return id;
+        }),
+      ),
+    );
+    const rejected = results
+      .map((r, i) => ({ r, id: ids[i] }))
+      .filter(({ r }) => r.status === "rejected")
+      .map(({ id }) => id);
+    if (rejected.length > 0) {
+      // Restore only the items whose DELETE failed server-side — the ones
+      // that succeeded stay gone.
+      setCanvas(prev.filter((c) => rejected.includes(c.id)));
+      toast.error(
+        `Could not remove ${rejected.length} item${rejected.length === 1 ? "" : "s"}`,
+      );
+    }
   }
 
   function handleCanvasDrop(e: React.DragEvent) {
@@ -333,7 +355,7 @@ export function StyleboardBuilder({
         </div>
         <div className="flex items-center gap-2">
           <Link
-            href={`/stylist/clients/${sessionId}`}
+            href={`/stylist/clients/${clientId}`}
             className="inline-flex items-center gap-1.5 h-8 rounded-sm border border-border px-3 font-body text-xs hover:bg-muted transition-colors"
           >
             <UserIcon className="h-3.5 w-3.5" />
@@ -343,7 +365,7 @@ export function StyleboardBuilder({
             <Button
               variant="ghost"
               size="sm"
-              onClick={clearCanvas}
+              onClick={() => void clearCanvas()}
               className="font-body text-xs text-muted-foreground h-8 gap-1"
             >
               <Trash2Icon className="h-3.5 w-3.5" />
