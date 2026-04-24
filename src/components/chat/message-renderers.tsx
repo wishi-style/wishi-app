@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ChatMessage } from "./use-chat";
+import { boardMessageHref } from "./board-href";
 
 export type ViewerRole = "CLIENT" | "STYLIST";
 
@@ -33,13 +34,7 @@ export function MessageBubble({
         <BoardCard
           label="Moodboard"
           accent="🎨"
-          href={
-            boardId
-              ? viewerRole === "CLIENT"
-                ? `/sessions/${sessionId}/moodboards/${boardId}`
-                : `/sessions/${sessionId}/moodboards/${boardId}`
-              : null
-          }
+          href={boardMessageHref({ kind, sessionId, boardId, viewerRole })}
           isOwn={isOwn}
         />
       );
@@ -48,7 +43,7 @@ export function MessageBubble({
         <BoardCard
           label="Styleboard"
           accent="✨"
-          href={boardId ? `/sessions/${sessionId}/styleboards/${boardId}` : null}
+          href={boardMessageHref({ kind, sessionId, boardId, viewerRole })}
           isOwn={isOwn}
         />
       );
@@ -57,7 +52,7 @@ export function MessageBubble({
         <BoardCard
           label="Restyle"
           accent="🔄"
-          href={boardId ? `/sessions/${sessionId}/styleboards/${boardId}` : null}
+          href={boardMessageHref({ kind, sessionId, boardId, viewerRole })}
           isOwn={isOwn}
         />
       );
