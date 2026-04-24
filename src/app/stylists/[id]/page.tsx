@@ -13,7 +13,14 @@ import { WriteReviewDialog } from "@/components/stylist/write-review-dialog";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
 import { PillButton } from "@/components/primitives/pill-button";
-import { StarIcon } from "lucide-react";
+import {
+  StarIcon,
+  ClockIcon,
+  ShoppingBagIcon,
+  ShieldCheckIcon,
+  RepeatIcon,
+  HeartIcon,
+} from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +98,9 @@ export default async function StylistProfilePage({ params }: Props) {
     `${stylist.user.firstName?.[0] ?? ""}${stylist.user.lastName?.[0] ?? ""}`.toUpperCase() ||
     name.charAt(0);
 
+  const heroImage = stylist.profileBoards[0]?.photos[0]?.url ?? null;
+  const additionalBoards = stylist.profileBoards.slice(heroImage ? 1 : 0);
+
   let matchScore: number | null = null;
   let favorited = false;
   let canReview = false;
@@ -147,6 +157,29 @@ export default async function StylistProfilePage({ params }: Props) {
       : {}),
   };
 
+  const trustItems = [
+    {
+      icon: ShoppingBagIcon,
+      title: "Use any brand",
+      desc: "From your fave to hidden gems — we work with your preferences, not our own bias.",
+    },
+    {
+      icon: ShieldCheckIcon,
+      title: "No commissions",
+      desc: "We don't earn from what you buy. Our only goal is finding what works for you.",
+    },
+    {
+      icon: RepeatIcon,
+      title: "Switch anytime",
+      desc: "Not the right fit? Change stylists at no cost. Your preference matters most.",
+    },
+    {
+      icon: HeartIcon,
+      title: "Shop your closet",
+      desc: "We help you rediscover what you already own and style it in new ways.",
+    },
+  ];
+
   return (
     <>
       <script
@@ -155,29 +188,41 @@ export default async function StylistProfilePage({ params }: Props) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(personLd) }}
       />
       <SiteHeader />
-      <main className="min-h-screen bg-background">
-        <div className="mx-auto max-w-3xl px-6 md:px-10 py-12 md:py-16">
-          {/* Header */}
-          <header className="mb-8 flex flex-col items-center gap-6 sm:flex-row sm:items-start">
-            <div className="relative h-32 w-32 flex-shrink-0 overflow-hidden rounded-full bg-muted">
-              {stylist.user.avatarUrl ? (
+      <main className="min-h-screen bg-background pb-20">
+        {/* Hero */}
+        <section className="container mx-auto max-w-5xl px-6 py-10 md:py-14">
+          <div className="flex flex-col items-center gap-8 md:flex-row md:items-start md:gap-12">
+            <div className="w-full overflow-hidden rounded-lg bg-muted md:w-[465px] md:flex-shrink-0">
+              {heroImage ? (
+                <Image
+                  src={heroImage}
+                  alt={`${name} portfolio`}
+                  width={930}
+                  height={930}
+                  sizes="(min-width: 768px) 465px, 100vw"
+                  className="aspect-square h-auto w-full object-cover"
+                  priority
+                />
+              ) : stylist.user.avatarUrl ? (
                 <Image
                   src={stylist.user.avatarUrl}
                   alt={name}
-                  fill
-                  sizes="128px"
-                  className="object-cover"
+                  width={930}
+                  height={930}
+                  sizes="(min-width: 768px) 465px, 100vw"
+                  className="aspect-square h-auto w-full object-cover"
+                  priority
                 />
               ) : (
-                <div className="flex h-full w-full items-center justify-center font-display text-4xl text-muted-foreground">
+                <div className="flex aspect-square w-full items-center justify-center font-display text-6xl text-muted-foreground">
                   {initials}
                 </div>
               )}
             </div>
 
-            <div className="flex-1 text-center sm:text-left">
-              <div className="flex items-center justify-center gap-3 sm:justify-start">
-                <h1 className="font-display text-3xl md:text-4xl">{name}</h1>
+            <div className="flex-1">
+              <div className="flex items-center gap-3">
+                <h1 className="font-display text-4xl md:text-5xl">{name}</h1>
                 {clerkId && (
                   <FavoriteStylistButton
                     stylistProfileId={stylist.id}
@@ -185,110 +230,176 @@ export default async function StylistProfilePage({ params }: Props) {
                   />
                 )}
               </div>
+              {stylist.yearsExperience && (
+                <p className="mt-1 text-sm uppercase tracking-widest text-muted-foreground">
+                  {stylist.yearsExperience}+ years experience
+                </p>
+              )}
 
-              <div className="mt-3 flex flex-wrap items-center justify-center gap-3 sm:justify-start">
-                {matchScore !== null && (
-                  <span className="rounded-full bg-foreground px-3 py-1 text-xs font-medium text-background">
-                    {matchScore}% Match
+              {matchScore !== null && (
+                <div className="mt-6">
+                  <div className="flex items-baseline gap-3">
+                    <span className="font-display text-4xl">{matchScore}%</span>
+                    <span className="text-sm text-muted-foreground">style match</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Based on your style and needs
+                  </p>
+                </div>
+              )}
+
+              {stylist.averageRating !== null && totalReviews > 0 && (
+                <div className="mt-6 flex items-center gap-3">
+                  <div className="flex gap-0.5">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <StarIcon
+                        key={i}
+                        className="h-4 w-4 fill-foreground text-foreground"
+                      />
+                    ))}
+                  </div>
+                  <span className="text-sm font-medium">
+                    {stylist.averageRating.toFixed(1)}
                   </span>
-                )}
-                {stylist.yearsExperience && (
-                  <span className="text-sm text-muted-foreground">
-                    {stylist.yearsExperience}+ years experience
+                  <span className="text-xs text-muted-foreground">
+                    {totalReviews} {totalReviews === 1 ? "Review" : "Reviews"}
                   </span>
-                )}
-                {stylist.averageRating !== null &&
-                  stylist.averageRating !== undefined && (
-                    <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-                      <StarIcon className="h-3.5 w-3.5 fill-foreground text-foreground" />
-                      {stylist.averageRating.toFixed(1)}
-                    </span>
-                  )}
-                {!stylist.isAvailable && (
-                  <span className="rounded-full border border-burgundy/40 bg-burgundy/10 px-3 py-1 text-xs text-burgundy">
-                    Waitlist only
-                  </span>
-                )}
-                {stylist.instagramHandle && (
-                  <a
-                    href={`https://instagram.com/${stylist.instagramHandle}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+                </div>
+              )}
+
+              {!stylist.isAvailable && (
+                <div className="mt-6 flex items-center gap-2 rounded-lg bg-muted px-3 py-2">
+                  <ClockIcon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                  <p className="text-xs text-muted-foreground">
+                    {firstName} is currently unavailable. Join the waitlist to be
+                    notified when they&apos;re back.
+                  </p>
+                </div>
+              )}
+
+              <div className="mt-8 flex gap-4">
+                {stylist.isAvailable ? (
+                  <PillButton
+                    href={`/bookings/new?stylistId=${stylist.id}`}
+                    variant="solid"
+                    size="lg"
                   >
-                    @{stylist.instagramHandle}
-                  </a>
+                    Continue with {firstName}
+                  </PillButton>
+                ) : (
+                  <WaitlistButton stylistProfileId={stylist.id} />
                 )}
               </div>
             </div>
-          </header>
+          </div>
+        </section>
 
-          {stylist.bio && (
-            <section className="mb-6">
-              <h2 className="mb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                About
+        {/* Meet [Name] */}
+        {(stylist.bio || stylist.directorPick || stylist.philosophy) && (
+          <section className="border-t border-border">
+            <div className="container mx-auto max-w-5xl px-6 py-10 md:py-14">
+              <h2 className="mb-8 font-display text-2xl">Meet {firstName}</h2>
+
+              <div className="grid gap-10 md:grid-cols-2">
+                <div>
+                  <div className="aspect-square overflow-hidden rounded-xl bg-muted">
+                    {stylist.user.avatarUrl ? (
+                      <Image
+                        src={stylist.user.avatarUrl}
+                        alt={name}
+                        width={600}
+                        height={600}
+                        sizes="(min-width: 768px) 50vw, 100vw"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center font-display text-5xl text-muted-foreground">
+                        {initials}
+                      </div>
+                    )}
+                  </div>
+                  {stylist.instagramHandle && (
+                    <a
+                      href={`https://instagram.com/${stylist.instagramHandle}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-3 inline-block text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+                    >
+                      @{stylist.instagramHandle}
+                    </a>
+                  )}
+                </div>
+
+                <div className="space-y-6">
+                  {stylist.bio && (
+                    <div>
+                      <p className="mb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                        My Approach
+                      </p>
+                      <p className="text-sm leading-relaxed text-foreground">
+                        {stylist.bio}
+                      </p>
+                    </div>
+                  )}
+
+                  {stylist.directorPick && (
+                    <div className="border-l-2 border-secondary pl-4">
+                      <p className="mb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                        Director&apos;s Pick
+                      </p>
+                      <p className="text-sm italic leading-relaxed text-foreground">
+                        “{stylist.directorPick}”
+                      </p>
+                    </div>
+                  )}
+
+                  {stylist.philosophy && (
+                    <div>
+                      <p className="mb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                        Style Philosophy
+                      </p>
+                      <p className="text-sm leading-relaxed text-foreground">
+                        {stylist.philosophy}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {stylist.styleSpecialties.length > 0 && (
+          <section className="border-t border-border">
+            <div className="container mx-auto max-w-5xl px-6 py-10 md:py-14">
+              <h2 className="mb-3 text-center font-display text-2xl">
+                Why {firstName}?
               </h2>
-              <p className="text-sm leading-relaxed text-foreground">{stylist.bio}</p>
-            </section>
-          )}
-          {stylist.philosophy && (
-            <section className="mb-6">
-              <h2 className="mb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                Style Philosophy
-              </h2>
-              <p className="text-sm leading-relaxed text-foreground">
-                {stylist.philosophy}
+              <p className="mb-6 text-center text-xs text-muted-foreground">
+                Good for:
               </p>
-            </section>
-          )}
-          {stylist.directorPick && (
-            <section className="mb-6 rounded-xl bg-cream p-4">
-              <h2 className="mb-1 text-xs font-medium uppercase tracking-widest text-dark-taupe">
-                Director&apos;s Pick
-              </h2>
-              <p className="text-sm italic text-dark-taupe">{stylist.directorPick}</p>
-            </section>
-          )}
-
-          {stylist.styleSpecialties.length > 0 && (
-            <section className="mb-8">
-              <h2 className="mb-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                Specialties
-              </h2>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap justify-center gap-2">
                 {stylist.styleSpecialties.map((s: string) => (
                   <span
                     key={s}
-                    className="rounded-full border border-border bg-background px-4 py-1.5 text-sm capitalize text-foreground"
+                    className="rounded-full bg-foreground px-4 py-1.5 text-xs font-medium capitalize text-background"
                   >
                     {s}
                   </span>
                 ))}
               </div>
-            </section>
-          )}
+            </div>
+          </section>
+        )}
 
-          <div className="mb-12 flex gap-4">
-            {stylist.isAvailable ? (
-              <PillButton
-                href={`/bookings/new?stylistId=${stylist.id}`}
-                variant="solid"
-                size="lg"
-              >
-                Book This Stylist
-              </PillButton>
-            ) : (
-              <WaitlistButton stylistProfileId={stylist.id} />
-            )}
-          </div>
-
-          {stylist.profileBoards.length > 0 && (
-            <section className="mb-12">
-              <h2 className="mb-4 text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                Featured boards
+        {additionalBoards.length > 0 && (
+          <section className="border-t border-border">
+            <div className="container mx-auto max-w-5xl px-6 py-10 md:py-14">
+              <h2 className="mb-6 text-center font-display text-2xl">
+                Styled by {firstName}
               </h2>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {stylist.profileBoards.map((b: (typeof stylist.profileBoards)[number]) => (
+                {additionalBoards.map((b) => (
                   <div
                     key={b.id}
                     className="overflow-hidden rounded-xl border border-border bg-card"
@@ -308,21 +419,23 @@ export default async function StylistProfilePage({ params }: Props) {
                       </div>
                     )}
                     {b.profileStyle && (
-                      <div className="p-2 text-center text-xs text-muted-foreground capitalize">
+                      <div className="p-2 text-center text-xs capitalize text-muted-foreground">
                         {b.profileStyle.toLowerCase()}
                       </div>
                     )}
                   </div>
                 ))}
               </div>
-            </section>
-          )}
+            </div>
+          </section>
+        )}
 
-          {/* Reviews */}
-          <section>
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                Reviews {totalReviews > 0 && `(${totalReviews})`}
+        {/* Reviews */}
+        <section className="border-t border-border">
+          <div className="container mx-auto max-w-5xl px-6 py-10 md:py-14">
+            <div className="mb-6 flex items-center justify-between">
+              <h2 className="font-display text-xl">
+                What {firstName}&apos;s clients say
               </h2>
               {canReview && (
                 <WriteReviewDialog
@@ -332,11 +445,11 @@ export default async function StylistProfilePage({ params }: Props) {
               )}
             </div>
             {reviews.length > 0 ? (
-              <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 {reviews.map((review) => (
                   <article
                     key={review.id}
-                    className="rounded-xl border border-border bg-card p-4"
+                    className="rounded-xl border border-border bg-card p-5"
                   >
                     <header className="mb-2 flex items-center gap-2">
                       <span className="text-sm font-medium text-foreground">
@@ -354,7 +467,7 @@ export default async function StylistProfilePage({ params }: Props) {
                         {review.createdAt.toLocaleDateString()}
                       </span>
                     </header>
-                    <p className="text-sm text-foreground leading-relaxed">
+                    <p className="text-sm leading-relaxed text-foreground">
                       {review.reviewText}
                     </p>
                   </article>
@@ -366,18 +479,84 @@ export default async function StylistProfilePage({ params }: Props) {
                 {canReview && " Be the first to share your experience."}
               </p>
             )}
-          </section>
-
-          <div className="mt-12 text-center">
-            <Link
-              href="/stylists"
-              className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-            >
-              ← Back to all stylists
-            </Link>
           </div>
+        </section>
+
+        {/* Trust */}
+        <section className="bg-foreground py-14 text-background md:py-20">
+          <div className="container mx-auto max-w-4xl px-6">
+            <h2 className="mb-12 text-center font-display text-2xl md:text-3xl">
+              A styling experience built on trust
+            </h2>
+            <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
+              {trustItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <div key={item.title} className="text-center">
+                    <Icon className="mx-auto mb-3 h-6 w-6 text-background/80" />
+                    <h3 className="mb-2 font-display text-sm">{item.title}</h3>
+                    <p className="text-xs leading-relaxed text-background/60">
+                      {item.desc}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        <div className="border-t border-border bg-background py-10 text-center">
+          <Link
+            href="/stylists"
+            className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+          >
+            ← Back to all stylists
+          </Link>
         </div>
       </main>
+
+      {/* Sticky bottom CTA */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-background">
+        <div className="container mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-muted">
+              {stylist.user.avatarUrl ? (
+                <Image
+                  src={stylist.user.avatarUrl}
+                  alt={name}
+                  fill
+                  sizes="40px"
+                  className="object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-xs font-medium text-muted-foreground">
+                  {initials}
+                </div>
+              )}
+            </div>
+            <div className="hidden min-w-0 sm:block">
+              <p className="truncate text-sm font-medium">{name}</p>
+              <p className="text-xs text-muted-foreground">
+                {stylist.isAvailable
+                  ? "Responds within 10 hours"
+                  : "Currently unavailable"}
+              </p>
+            </div>
+          </div>
+          {stylist.isAvailable ? (
+            <PillButton
+              href={`/bookings/new?stylistId=${stylist.id}`}
+              variant="solid"
+              size="md"
+            >
+              Continue with {firstName}
+            </PillButton>
+          ) : (
+            <WaitlistButton stylistProfileId={stylist.id} />
+          )}
+        </div>
+      </div>
+
       <SiteFooter />
     </>
   );
