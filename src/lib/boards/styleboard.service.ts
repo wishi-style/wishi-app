@@ -94,10 +94,22 @@ export async function addStyleboardItem(
   });
 }
 
+export interface PatchStyleboardItemInput {
+  x?: number;
+  y?: number;
+  zIndex?: number;
+  flipH?: boolean;
+  flipV?: boolean;
+  cropTop?: number | null;
+  cropRight?: number | null;
+  cropBottom?: number | null;
+  cropLeft?: number | null;
+}
+
 export async function patchStyleboardItem(
   boardId: string,
   itemId: string,
-  patch: { x?: number; y?: number; zIndex?: number },
+  patch: PatchStyleboardItemInput,
 ): Promise<BoardItem> {
   const existing = await prisma.boardItem.findUnique({
     where: { id: itemId },
@@ -112,6 +124,12 @@ export async function patchStyleboardItem(
       ...(patch.x !== undefined ? { x: patch.x } : {}),
       ...(patch.y !== undefined ? { y: patch.y } : {}),
       ...(patch.zIndex !== undefined ? { zIndex: patch.zIndex } : {}),
+      ...(patch.flipH !== undefined ? { flipH: patch.flipH } : {}),
+      ...(patch.flipV !== undefined ? { flipV: patch.flipV } : {}),
+      ...(patch.cropTop !== undefined ? { cropTop: patch.cropTop } : {}),
+      ...(patch.cropRight !== undefined ? { cropRight: patch.cropRight } : {}),
+      ...(patch.cropBottom !== undefined ? { cropBottom: patch.cropBottom } : {}),
+      ...(patch.cropLeft !== undefined ? { cropLeft: patch.cropLeft } : {}),
     },
   });
 }

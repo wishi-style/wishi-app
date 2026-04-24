@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import {
   patchStyleboardItem,
   removeStyleboardItem,
+  type PatchStyleboardItemInput,
 } from "@/lib/boards/styleboard.service";
 
 export const dynamic = "force-dynamic";
@@ -55,11 +56,7 @@ export async function PATCH(
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
-  const body = (await req.json().catch(() => ({}))) as {
-    x?: number;
-    y?: number;
-    zIndex?: number;
-  };
+  const body = (await req.json().catch(() => ({}))) as PatchStyleboardItemInput;
   try {
     const item = await patchStyleboardItem(id, itemId, body);
     return NextResponse.json(item);

@@ -29,7 +29,23 @@ import {
   EraserIcon,
   LinkIcon,
   SlidersHorizontalIcon,
+  FlipHorizontalIcon,
+  FlipVerticalIcon,
+  ScissorsIcon,
+  HeartIcon,
+  Minimize2Icon,
+  SquareIcon,
+  Maximize2Icon,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,27 +81,54 @@ interface Props {
 interface CanvasItem {
   id: string;
   source: BoardItemSource;
+  inventoryProductId: string | null;
   imageUrl: string | null;
   label: string | null;
   x: number; // percent 0-100
   y: number; // percent 0-100
   zIndex: number;
+  flipH: boolean;
+  flipV: boolean;
+  crop: { top: number; right: number; bottom: number; left: number } | null;
 }
+
+type CanvasSize = "min" | "small" | "large";
+const canvasSizeClass: Record<CanvasSize, string> = {
+  min: "max-w-[480px]",
+  small: "max-w-[640px]",
+  large: "max-w-[880px]",
+};
 
 const MIN_ITEMS = 3;
 const MAX_ITEMS = 12;
 const TILE_PERCENT = 22; // item tile width/height as % of canvas
 
 function toCanvasItem(item: BoardItem, fallbackIndex: number): CanvasItem {
+  const crop =
+    item.cropTop != null ||
+    item.cropRight != null ||
+    item.cropBottom != null ||
+    item.cropLeft != null
+      ? {
+          top: item.cropTop ?? 0,
+          right: item.cropRight ?? 0,
+          bottom: item.cropBottom ?? 0,
+          left: item.cropLeft ?? 0,
+        }
+      : null;
   return {
     id: item.id,
     source: item.source,
-    imageUrl:
-      item.webItemImageUrl ?? null,
-    label: item.webItemTitle ?? item.inventoryProductId ?? item.webItemUrl ?? null,
-    x: item.x ?? (20 + (fallbackIndex % 4) * 20),
-    y: item.y ?? (20 + Math.floor(fallbackIndex / 4) * 22),
+    inventoryProductId: item.inventoryProductId ?? null,
+    imageUrl: item.webItemImageUrl ?? null,
+    label:
+      item.webItemTitle ?? item.inventoryProductId ?? item.webItemUrl ?? null,
+    x: item.x ?? 20 + (fallbackIndex % 4) * 20,
+    y: item.y ?? 20 + Math.floor(fallbackIndex / 4) * 22,
     zIndex: item.zIndex ?? fallbackIndex,
+    flipH: item.flipH ?? false,
+    flipV: item.flipV ?? false,
+    crop,
   };
 }
 
@@ -132,6 +175,9 @@ export function StyleboardBuilder({
   const [webUrl, setWebUrl] = useState("");
   const [saveOpen, setSaveOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [canvasSize, setCanvasSize] = useState<CanvasSize>("small");
+  const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set());
+  const [cropTargetId, setCropTargetId] = useState<string | null>(null);
 
   // Advanced filter state — populated from /api/products/filters, used by
   // runInventorySearch to narrow the tastegraph query.
@@ -156,6 +202,114 @@ export function StyleboardBuilder({
       }
     })();
   }, []);
+
+  // Fetch the stylist's favorited items once so the source-tile heart
+  // reflects prior state.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/favorites/items");
+        if (res.ok) {
+          const data = (await res.json()) as {
+            items: Array<{ inventoryProductId: string | null }>;
+          };
+          setFavoritedIds(
+            new Set(
+              data.items
+                .map((f) => f.inventoryProductId)
+                .filter((id): id is string => !!id),
+            ),
+          );
+        }
+      } catch {
+        /* non-fatal */
+      }
+    })();
+  }, []);
+
+  // Keyboard shortcuts: 1/2/3 switch canvas size. Ignored when the user is
+  // typing in an input / textarea / search field.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === "1") setCanvasSize("min");
+      else if (e.key === "2") setCanvasSize("small");
+      else if (e.key === "3") setCanvasSize("large");
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  async function toggleFavorite(productId: string) {
+    const had = favoritedIds.has(productId);
+    const next = new Set(favoritedIds);
+    if (had) next.delete(productId);
+    else next.add(productId);
+    setFavoritedIds(next);
+    try {
+      if (had) {
+        await fetch(
+          `/api/favorites/items?inventoryProductId=${encodeURIComponent(productId)}`,
+          { method: "DELETE" },
+        );
+      } else {
+        await fetch("/api/favorites/items", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ inventoryProductId: productId }),
+        });
+      }
+    } catch {
+      // Roll back local state if the network write failed.
+      setFavoritedIds(favoritedIds);
+    }
+  }
+
+  async function flipItem(id: string, axis: "h" | "v") {
+    const item = canvas.find((c) => c.id === id);
+    if (!item) return;
+    const nextFlipH = axis === "h" ? !item.flipH : item.flipH;
+    const nextFlipV = axis === "v" ? !item.flipV : item.flipV;
+    setCanvas((prev) =>
+      prev.map((c) =>
+        c.id === id ? { ...c, flipH: nextFlipH, flipV: nextFlipV } : c,
+      ),
+    );
+    await fetch(`/api/styleboards/${boardId}/items/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ flipH: nextFlipH, flipV: nextFlipV }),
+    });
+  }
+
+  async function applyCrop(
+    id: string,
+    crop: { top: number; right: number; bottom: number; left: number } | null,
+  ) {
+    setCanvas((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, crop } : c)),
+    );
+    await fetch(`/api/styleboards/${boardId}/items/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        cropTop: crop?.top ?? null,
+        cropRight: crop?.right ?? null,
+        cropBottom: crop?.bottom ?? null,
+        cropLeft: crop?.left ?? null,
+      }),
+    });
+  }
 
   const dragData = useRef<{
     source: BoardItemSource;
@@ -258,11 +412,15 @@ export function StyleboardBuilder({
       {
         id: created.id,
         source: created.source,
+        inventoryProductId: created.inventoryProductId ?? null,
         imageUrl: imageUrl ?? created.webItemImageUrl ?? null,
         label,
         x: created.x ?? slot.x,
         y: created.y ?? slot.y,
         zIndex: created.zIndex ?? z,
+        flipH: false,
+        flipV: false,
+        crop: null,
       },
     ]);
   }
@@ -539,6 +697,8 @@ export function StyleboardBuilder({
                       imageUrl={p.primary_image_url ?? null}
                       label={p.canonical_name}
                       sublabel={p.brand_name}
+                      favorited={favoritedIds.has(p.id)}
+                      onFavoriteToggle={() => void toggleFavorite(p.id)}
                       onAdd={() =>
                         void addItem(
                           "INVENTORY",
@@ -658,13 +818,17 @@ export function StyleboardBuilder({
         </div>
 
         {/* Canvas */}
-        <div className="flex-1 flex flex-col items-center justify-center bg-muted/20 p-6 overflow-auto min-h-0">
+        <div className="flex-1 flex flex-col items-center justify-center bg-muted/20 p-6 overflow-auto min-h-0 gap-3">
+          <CanvasSizeToggle value={canvasSize} onChange={setCanvasSize} />
           <div
             ref={canvasRef}
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleCanvasDrop}
             onClick={() => setSelectedId(null)}
-            className="relative w-full max-w-[640px] aspect-square rounded-sm border-2 border-dashed border-border bg-background overflow-hidden"
+            className={cn(
+              "relative w-full aspect-square rounded-sm border-2 border-dashed border-border bg-background overflow-hidden",
+              canvasSizeClass[canvasSize],
+            )}
           >
             {canvas.length === 0 && (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
@@ -676,45 +840,55 @@ export function StyleboardBuilder({
                 </p>
               </div>
             )}
-            {canvas.map((c) => (
-              <div
-                key={c.id}
-                draggable
-                onDragStart={() => {
-                  movingId.current = c.id;
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedId(c.id);
-                }}
-                style={{
-                  left: `${c.x}%`,
-                  top: `${c.y}%`,
-                  zIndex: c.zIndex,
-                }}
-                className={cn(
-                  "absolute w-[22%] aspect-square -translate-x-1/2 -translate-y-1/2 rounded-sm overflow-hidden border-2 bg-card cursor-move transition-shadow",
-                  selectedId === c.id
-                    ? "border-foreground shadow-lg"
-                    : "border-transparent hover:border-border",
-                )}
-              >
-                {c.imageUrl ? (
-                  <Image
-                    src={c.imageUrl}
-                    alt={c.label ?? ""}
-                    fill
-                    className="object-cover pointer-events-none"
-                    sizes="200px"
-                    unoptimized
-                  />
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center bg-muted p-1 text-center text-[10px] text-muted-foreground">
-                    {c.label ?? "Item"}
-                  </div>
-                )}
-              </div>
-            ))}
+            {canvas.map((c) => {
+              const transform =
+                c.flipH || c.flipV
+                  ? `scale(${c.flipH ? -1 : 1}, ${c.flipV ? -1 : 1})`
+                  : undefined;
+              const clipPath = c.crop
+                ? `inset(${c.crop.top}% ${c.crop.right}% ${c.crop.bottom}% ${c.crop.left}%)`
+                : undefined;
+              return (
+                <div
+                  key={c.id}
+                  draggable
+                  onDragStart={() => {
+                    movingId.current = c.id;
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedId(c.id);
+                  }}
+                  style={{
+                    left: `${c.x}%`,
+                    top: `${c.y}%`,
+                    zIndex: c.zIndex,
+                  }}
+                  className={cn(
+                    "absolute w-[22%] aspect-square -translate-x-1/2 -translate-y-1/2 rounded-sm overflow-hidden border-2 bg-card cursor-move transition-shadow",
+                    selectedId === c.id
+                      ? "border-foreground shadow-lg"
+                      : "border-transparent hover:border-border",
+                  )}
+                >
+                  {c.imageUrl ? (
+                    <Image
+                      src={c.imageUrl}
+                      alt={c.label ?? ""}
+                      fill
+                      className="object-cover pointer-events-none"
+                      sizes="200px"
+                      style={{ transform, clipPath }}
+                      unoptimized
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center bg-muted p-1 text-center text-[10px] text-muted-foreground">
+                      {c.label ?? "Item"}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           {selectedId && (
@@ -722,6 +896,9 @@ export function StyleboardBuilder({
               onRemove={() => void removeItem(selectedId)}
               onFront={() => void changeZIndex(selectedId, maxZ + 1)}
               onBack={() => void changeZIndex(selectedId, 0)}
+              onFlipH={() => void flipItem(selectedId, "h")}
+              onFlipV={() => void flipItem(selectedId, "v")}
+              onCrop={() => setCropTargetId(selectedId)}
               onBgRemove={() =>
                 toast("Background removal coming soon — Phase 7 feature")
               }
@@ -737,6 +914,148 @@ export function StyleboardBuilder({
         clientName={clientName}
         onSend={sendBoard}
       />
+
+      {cropTargetId && (
+        <CropDialog
+          item={canvas.find((c) => c.id === cropTargetId) ?? null}
+          onClose={() => setCropTargetId(null)}
+          onApply={(crop) => {
+            void applyCrop(cropTargetId, crop);
+            setCropTargetId(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CanvasSizeToggle({
+  value,
+  onChange,
+}: {
+  value: CanvasSize;
+  onChange: (v: CanvasSize) => void;
+}) {
+  const options: { key: CanvasSize; icon: typeof SquareIcon; title: string }[] = [
+    { key: "min", icon: Minimize2Icon, title: "Minimize (press 1)" },
+    { key: "small", icon: SquareIcon, title: "Small (press 2)" },
+    { key: "large", icon: Maximize2Icon, title: "Large (press 3)" },
+  ];
+  return (
+    <div className="inline-flex items-center gap-0.5 rounded-full bg-card border border-border shadow-sm p-1">
+      {options.map((o) => {
+        const Icon = o.icon;
+        const active = value === o.key;
+        return (
+          <button
+            key={o.key}
+            onClick={() => onChange(o.key)}
+            title={o.title}
+            className={cn(
+              "h-7 w-7 rounded-full flex items-center justify-center transition-colors",
+              active
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:bg-muted",
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function CropDialog({
+  item,
+  onClose,
+  onApply,
+}: {
+  item: CanvasItem | null;
+  onClose: () => void;
+  onApply: (
+    crop: { top: number; right: number; bottom: number; left: number } | null,
+  ) => void;
+}) {
+  const [top, setTop] = useState(item?.crop?.top ?? 0);
+  const [right, setRight] = useState(item?.crop?.right ?? 0);
+  const [bottom, setBottom] = useState(item?.crop?.bottom ?? 0);
+  const [left, setLeft] = useState(item?.crop?.left ?? 0);
+  if (!item) return null;
+  const clipPath = `inset(${top}% ${right}% ${bottom}% ${left}%)`;
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-[420px] rounded-sm">
+        <DialogHeader>
+          <DialogTitle className="font-display text-lg">Crop item</DialogTitle>
+          <DialogDescription className="font-body text-xs text-muted-foreground">
+            Trim the image from each edge. Values are percent insets.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="aspect-square w-full bg-muted rounded-sm overflow-hidden relative">
+          {item.imageUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={item.imageUrl}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+              style={{ clipPath }}
+            />
+          )}
+        </div>
+        <div className="space-y-3 py-2">
+          <CropSlider label="Top" value={top} onChange={setTop} />
+          <CropSlider label="Right" value={right} onChange={setRight} />
+          <CropSlider label="Bottom" value={bottom} onChange={setBottom} />
+          <CropSlider label="Left" value={left} onChange={setLeft} />
+        </div>
+        <DialogFooter className="gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onApply(null)}
+            className="h-8 rounded-sm font-body text-xs"
+          >
+            Reset
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => onApply({ top, right, bottom, left })}
+            className="h-8 rounded-sm font-body text-xs"
+          >
+            Apply crop
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CropSlider({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between font-body text-[11px] text-muted-foreground mb-1">
+        <span>{label}</span>
+        <span>{Math.round(value)}%</span>
+      </div>
+      <Slider
+        value={[value]}
+        onValueChange={(vals) => {
+          const next = Array.isArray(vals) ? vals[0] : vals;
+          onChange(next ?? 0);
+        }}
+        min={0}
+        max={40}
+        step={1}
+      />
     </div>
   );
 }
@@ -745,35 +1064,43 @@ function SourceTile({
   imageUrl,
   label,
   sublabel,
+  favorited,
   onAdd,
+  onFavoriteToggle,
   onDragStart,
 }: {
   imageUrl: string | null;
   label: string;
   sublabel: string | null;
+  favorited?: boolean;
   onAdd: () => void;
+  onFavoriteToggle?: () => void;
   onDragStart: () => void;
 }) {
   return (
-    <button
-      onClick={onAdd}
+    <div
       draggable
       onDragStart={onDragStart}
-      className="overflow-hidden rounded-sm border border-border bg-card text-left hover:shadow-sm transition-shadow"
+      className="relative group overflow-hidden rounded-sm border border-border bg-card text-left hover:shadow-sm transition-shadow"
     >
-      <div className="aspect-square bg-muted relative">
-        {imageUrl ? (
-          <Image
-            src={imageUrl}
-            alt={label}
-            fill
-            className="object-cover"
-            sizes="160px"
-            unoptimized
-          />
-        ) : null}
-      </div>
-      <div className="p-2">
+      <button
+        onClick={onAdd}
+        className="block w-full text-left"
+        aria-label={`Add ${label} to canvas`}
+      >
+        <div className="aspect-square bg-muted relative">
+          {imageUrl ? (
+            <Image
+              src={imageUrl}
+              alt={label}
+              fill
+              className="object-cover"
+              sizes="160px"
+              unoptimized
+            />
+          ) : null}
+        </div>
+        <div className="p-2">
         {sublabel && (
           <p className="font-body text-[10px] uppercase tracking-wider text-muted-foreground truncate">
             {sublabel}
@@ -781,7 +1108,26 @@ function SourceTile({
         )}
         <p className="font-body text-xs text-foreground truncate">{label}</p>
       </div>
-    </button>
+      </button>
+      {onFavoriteToggle && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onFavoriteToggle();
+          }}
+          title={favorited ? "Remove from favorites" : "Save to favorites"}
+          className="absolute top-2 right-2 h-7 w-7 rounded-full bg-background/80 backdrop-blur flex items-center justify-center hover:bg-background transition-colors opacity-0 group-hover:opacity-100 data-[favorited=true]:opacity-100"
+          data-favorited={favorited ? "true" : "false"}
+        >
+          <HeartIcon
+            className={cn(
+              "h-3.5 w-3.5",
+              favorited ? "fill-red-500 text-red-500" : "text-foreground",
+            )}
+          />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -789,12 +1135,18 @@ function SelectionBar({
   onRemove,
   onFront,
   onBack,
+  onFlipH,
+  onFlipV,
+  onCrop,
   onBgRemove,
   onClose,
 }: {
   onRemove: () => void;
   onFront: () => void;
   onBack: () => void;
+  onFlipH: () => void;
+  onFlipV: () => void;
+  onCrop: () => void;
   onBgRemove: () => void;
   onClose: () => void;
 }) {
@@ -805,6 +1157,16 @@ function SelectionBar({
       </ToolButton>
       <ToolButton title="Send to back" onClick={onBack}>
         <ArrowDownToLineIcon className="h-3.5 w-3.5" />
+      </ToolButton>
+      <div className="h-4 w-px bg-border mx-1" />
+      <ToolButton title="Flip horizontal" onClick={onFlipH}>
+        <FlipHorizontalIcon className="h-3.5 w-3.5" />
+      </ToolButton>
+      <ToolButton title="Flip vertical" onClick={onFlipV}>
+        <FlipVerticalIcon className="h-3.5 w-3.5" />
+      </ToolButton>
+      <ToolButton title="Crop" onClick={onCrop}>
+        <ScissorsIcon className="h-3.5 w-3.5" />
       </ToolButton>
       <ToolButton title="Remove background" onClick={onBgRemove}>
         <EraserIcon className="h-3.5 w-3.5" />

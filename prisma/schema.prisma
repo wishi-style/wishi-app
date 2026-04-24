@@ -1320,10 +1320,18 @@ model BoardItem {
   webItemImageUrl     String?         @map("web_item_image_url")
   // Phase 12: LookCreator canvas — stylists position each item on a 2-D
   // composition surface. x/y are canvas coordinates (pixels, 0-based),
-  // zIndex is the stacking order. Null on moodboard items + legacy rows.
+  // zIndex is the stacking order. flipH/V mirror the image; crop fields
+  // are percent insets (0–100) from each edge. Null on moodboard items +
+  // legacy rows; the client-side viewer ignores them.
   x                   Float?
   y                   Float?
   zIndex              Int?            @map("z_index")
+  flipH               Boolean         @default(false) @map("flip_h")
+  flipV               Boolean         @default(false) @map("flip_v")
+  cropTop             Float?          @map("crop_top")
+  cropRight           Float?          @map("crop_right")
+  cropBottom          Float?          @map("crop_bottom")
+  cropLeft            Float?          @map("crop_left")
   reaction            BoardRating?
   feedbackText        String?         @map("feedback_text") @db.Text
   suggestedFeedback   String[]        @map("suggested_feedback")
