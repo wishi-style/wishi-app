@@ -19,7 +19,12 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
 
   const session = await prisma.session.findUnique({
     where: { id: sessionId },
-    select: { id: true, clientId: true, stylistId: true },
+    select: {
+      id: true,
+      clientId: true,
+      stylistId: true,
+      client: { select: { firstName: true, lastName: true } },
+    },
   });
   if (!session) notFound();
 
@@ -60,23 +65,21 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
     listInspirationPhotos({ take: 60 }),
   ]);
 
+  const clientName =
+    [session.client.firstName, session.client.lastName]
+      .filter(Boolean)
+      .join(" ") || "Client";
+
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10">
-      <h1 className="mb-2 text-2xl font-semibold">
-        Build a {board.isRevision ? "Restyle" : "Styleboard"}
-      </h1>
-      <p className="mb-6 text-sm text-muted-foreground">
-        Mix items from inventory, the client&apos;s closet, the inspiration library,
-        or paste a web URL.
-      </p>
-      <StyleboardBuilder
-        boardId={board.id}
-        sessionId={sessionId}
-        isRevision={board.isRevision}
-        initialItems={board.items}
-        closetItems={closetItems}
-        inspiration={inspiration}
-      />
-    </div>
+    <StyleboardBuilder
+      boardId={board.id}
+      sessionId={sessionId}
+      isRevision={board.isRevision}
+      clientId={session.clientId}
+      clientName={clientName}
+      initialItems={board.items}
+      closetItems={closetItems}
+      inspiration={inspiration}
+    />
   );
 }

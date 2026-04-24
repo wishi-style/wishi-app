@@ -6,7 +6,7 @@ import { sendMoodboard } from "@/lib/boards/moodboard.service";
 export const dynamic = "force-dynamic";
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const user = await getCurrentUser();
@@ -22,8 +22,13 @@ export async function POST(
   if (board.session.stylistId !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  let note: string | undefined;
+  if (req.headers.get("content-type")?.includes("application/json")) {
+    const body = (await req.json().catch(() => ({}))) as { note?: string };
+    note = body.note;
+  }
   try {
-    const sent = await sendMoodboard(id);
+    const sent = await sendMoodboard(id, { note });
     return NextResponse.json(sent);
   } catch (e) {
     return NextResponse.json(

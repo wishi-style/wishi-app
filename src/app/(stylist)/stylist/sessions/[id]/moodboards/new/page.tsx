@@ -16,7 +16,12 @@ export default async function NewMoodboardPage({ params }: Props) {
 
   const session = await prisma.session.findUnique({
     where: { id: sessionId },
-    select: { id: true, stylistId: true },
+    select: {
+      id: true,
+      stylistId: true,
+      clientId: true,
+      client: { select: { firstName: true, lastName: true } },
+    },
   });
   if (!session) notFound();
 
@@ -49,18 +54,19 @@ export default async function NewMoodboardPage({ params }: Props) {
 
   if (!board) forbidden();
 
+  const clientName =
+    [session.client.firstName, session.client.lastName]
+      .filter(Boolean)
+      .join(" ") || "Client";
+
   return (
-    <div className="mx-auto max-w-5xl px-6 py-10">
-      <h1 className="mb-2 text-2xl font-semibold">Build a Moodboard</h1>
-      <p className="mb-6 text-sm text-muted-foreground">
-        Pick 6–10 photos that capture the direction for this client.
-      </p>
-      <MoodboardBuilder
-        boardId={board.id}
-        sessionId={sessionId}
-        initialPhotos={board.photos}
-        inspiration={inspiration}
-      />
-    </div>
+    <MoodboardBuilder
+      boardId={board.id}
+      sessionId={sessionId}
+      clientId={session.clientId}
+      clientName={clientName}
+      initialPhotos={board.photos}
+      inspiration={inspiration}
+    />
   );
 }
