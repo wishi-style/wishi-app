@@ -239,6 +239,23 @@ wishi-app/
 - [x] Phase 10: Client App Frontend Port — PR#30 merged 2026-04-22 (`bf022e7`). Foundation + all public marketing pages (`/`, `/pricing`, `/how-it-works`, `/lux`, `/stylists`, `/stylists/[id]`, `/feed`, `not-found.tsx`) + all authed pages (`(client)/sessions`, `settings`, `favorites`, `cart` with two-track Wishi + retailer UI, `matches`, `orders`, `closet`, `sessions/[id]/end-session`, `sessions/[id]/chat` = StylingRoom) + all shared dialogs (UpgradePlanDialog, CancelMembershipDialog, BuyLooksDialog, RestyleWizard, MoodBoardWizard, MoodBoardDialog, StyleBoardDialog, ProductDetailDialog, ClosetItemDialog) + Motion library `Reveal` + Playwright visual-regression harness (`npm run test:visual`) landed. StylingRoom ships Cart tab filtered to session CartItems, right-rail SessionSidebar (plan-progress, BuyLooks CTA, Upgrade deep-link), and Phase-7-forward Suggested Replies chip row gated on `NEXT_PUBLIC_FEATURE_AI_SUGGESTED_REPLIES`. Verified: dev server boots clean, all 6 marketing routes return 200, full repo `npx tsc --noEmit` is 0 errors, `npm test` is 248/279 passing / 31 intentionally skipped / 0 failing, 12 visual-regression baselines captured (6 routes × 2 viewports) and replay-stable. The authed "top matches" view lives at `/matches` since `/(client)/stylists` collided with the public `/stylists` directory. `shadcn add form` deferred — base-nova registry does not ship a form component and no Phase 10 page uses one.
 - [x] Phase 11: Polish & Launch — PR#36 merged 2026-04-23 (`56aed71`). Klaviyo transactional emails (Events API fan-out, 5 new NotificationEvents covering orders + subscription retry) + EasyPost tracker webhooks driving SHIPPED → ARRIVED automatically + root/route-group error boundaries + SEO (sitemap, robots, JSON-LD, dynamic OG images) + k6 load-test harness + architecture/runbook/ADR docs + CloudWatch launch dashboard with tuned alarms + hot-path DB indexes (orders.tracking_number, sessions composites, boards feed) + visual-regression GH Actions workflow + security audit (SECURITY.md + response headers) + Stripe CLI gift-card webhook-chain e2e harness. Phase 7 (AI) remains the only open phase.
 
+## Post-Phase-10 design parity sweep (Loveable catch-up)
+
+Full breakdown in `wishi-style/WISHI-REBUILD-PLAN.md` → "Post-Phase-10 Design Parity Sweep". Every slice shipped as its own PR; this section is the status index.
+
+- **Wave A — Funnel completion**: `/welcome` + single-hero `/matches` (PR #41), `/style-quiz` pre-booking gate (PR #54). `/checkout` native form is the only Wave A item still deferred — pending founder decision.
+- **Wave B — Page design refresh** (9/9 complete): homepage (#45), how-it-works (#42), lux (#43), pricing (#44), feed (#47), stylists (#46), settings card-grid (#49), StylingRoom SessionHeaderBar (#50), stylist-profile hero+Meet+Trust+sticky-CTA (#51).
+- **Wave C — New public surfaces**: `/reviews` + `/stylists/[id]/reviews` (#52), `/board/[boardId]` public-by-default SharedBoard (#55).
+- **Wave D — Founder-gated**: `/gift-cards` landing + Buy dialog (#56, merged to v1 scope). Split `/bookings/new` → `/select-plan` + `/session-checkout` deferred — pending founder decision.
+
+**Style-quiz flow (locked 2026-04-24):** `/style-quiz` is a required pre-booking gate on `/stylists/[id]` → Continue CTA (both funnel paths converge there). Returning clients with `StyleProfile.quizCompletedAt` bypass. Reuses the seeded `STYLE_PREFERENCE` quiz; `/style-quiz` is not public (writes require a Prisma `User.id`).
+
+**SharedBoard access model (locked 2026-04-24):** public-by-default. `/board/[boardId]` renders any *sent* STYLEBOARD for anyone with the URL; drafts (sentAt null) 404. No token/expiry infrastructure needed.
+
+**Remaining founder questions:**
+1. `/checkout` — native in-app page vs keep Stripe Hosted (today: Hosted owns shipping + payment with zero PCI scope).
+2. Split `/bookings/new` into `/select-plan` + `/session-checkout` — or keep single-page?
+
 ## Staging
 
 - **ALB:** `http://wishi-staging-alb-823228000.us-east-1.elb.amazonaws.com`
