@@ -1,4 +1,4 @@
-import type { ViewerRole } from "./message-renderers";
+type ViewerRole = "CLIENT" | "STYLIST" | "ADMIN";
 
 type BoardMessageKind = "MOODBOARD" | "STYLEBOARD" | "RESTYLE";
 
