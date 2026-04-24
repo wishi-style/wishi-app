@@ -5,6 +5,8 @@ import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { getPrivateNote } from "@/lib/stylists/private-notes";
+import { PrivateNoteEditor } from "./private-note-editor";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +26,7 @@ export default async function StylistClientDetailPage({
   });
   if (hasSession === 0) notFound();
 
-  const [client, styleProfile, bodyProfile, colors, budgets, sessions] =
+  const [client, styleProfile, bodyProfile, colors, budgets, sessions, privateNote] =
     await Promise.all([
       prisma.user.findUnique({
         where: { id: clientId },
@@ -56,6 +58,7 @@ export default async function StylistClientDetailPage({
         },
         orderBy: { createdAt: "desc" },
       }),
+      getPrivateNote(me.id, clientId),
     ]);
 
   if (!client) notFound();
@@ -189,6 +192,14 @@ export default async function StylistClientDetailPage({
             ))}
           </Card>
         )}
+      </Section>
+
+      <Section title="My private notes">
+        <PrivateNoteEditor
+          clientId={clientId}
+          initialBody={privateNote?.body ?? ""}
+          clientName={`${client.firstName ?? ""} ${client.lastName ?? ""}`.trim()}
+        />
       </Section>
 
       <Section title="Session history">

@@ -10,7 +10,7 @@
 // filters, favorites, "previous looks" tab, keyboard canvas-size shortcuts)
 // are tracked in WISHI-REBUILD-PLAN.md under Phase 12 deferred follow-ups.
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -28,6 +28,7 @@ import {
   ArrowDownToLineIcon,
   EraserIcon,
   LinkIcon,
+  SlidersHorizontalIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -41,7 +42,12 @@ import type {
   ClosetItem,
   InspirationPhoto,
 } from "@/generated/prisma/client";
-import type { ProductSearchDoc, SearchResponse } from "@/lib/inventory/types";
+import type {
+  FilterValuesResponse,
+  ProductSearchDoc,
+  SearchQueryDto,
+  SearchResponse,
+} from "@/lib/inventory/types";
 
 type Tab = "inventory" | "closet" | "inspiration" | "web";
 
@@ -127,6 +133,30 @@ export function StyleboardBuilder({
   const [saveOpen, setSaveOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Advanced filter state — populated from /api/products/filters, used by
+  // runInventorySearch to narrow the tastegraph query.
+  const [filterValues, setFilterValues] = useState<FilterValuesResponse | null>(null);
+  const [selectedMerchants, setSelectedMerchants] = useState<string[]>([]);
+  const [selectedColors, setSelectedColors] = useState<string[]>([]);
+  const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 5000]);
+  const [inStockOnly, setInStockOnly] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/products/filters");
+        if (res.ok) {
+          const data = (await res.json()) as FilterValuesResponse;
+          setFilterValues(data);
+        }
+      } catch {
+        /* non-fatal; filters just won't populate */
+      }
+    })();
+  }, []);
+
   const dragData = useRef<{
     source: BoardItemSource;
     imageUrl: string | null;
@@ -142,11 +172,21 @@ export function StyleboardBuilder({
 
   async function runInventorySearch() {
     setError(null);
-    const params = new URLSearchParams();
-    if (search) params.set("q", search);
-    params.set("inStockOnly", "true");
-    params.set("pageSize", "24");
-    const res = await fetch(`/api/products?${params.toString()}`);
+    const dto: SearchQueryDto = {
+      query: search || undefined,
+      merchantIds: selectedMerchants.length ? selectedMerchants : undefined,
+      colors: selectedColors.length ? selectedColors : undefined,
+      sizes: selectedSizes.length ? selectedSizes : undefined,
+      minPrice: priceRange[0] > 0 ? priceRange[0] : undefined,
+      maxPrice: priceRange[1] < 5000 ? priceRange[1] : undefined,
+      inStockOnly: inStockOnly || undefined,
+      pageSize: 24,
+    };
+    const res = await fetch("/api/products", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(dto),
+    });
     if (!res.ok) {
       setError("Inventory search failed");
       setInventoryResults([]);
@@ -155,6 +195,21 @@ export function StyleboardBuilder({
     const data = (await res.json()) as SearchResponse;
     setInventoryResults(data.results ?? []);
   }
+
+  function resetFilters() {
+    setSelectedMerchants([]);
+    setSelectedColors([]);
+    setSelectedSizes([]);
+    setPriceRange([0, 5000]);
+    setInStockOnly(true);
+  }
+
+  const activeFilterCount =
+    selectedMerchants.length +
+    selectedColors.length +
+    selectedSizes.length +
+    (priceRange[0] > 0 || priceRange[1] < 5000 ? 1 : 0) +
+    (inStockOnly ? 0 : 1); // in-stock default is ON, so only count off as "changed"
 
   function findFreeSlot(): { x: number; y: number } {
     const occupied = (px: number, py: number) =>
@@ -435,12 +490,47 @@ export function StyleboardBuilder({
                 <Button
                   size="sm"
                   variant="outline"
+                  onClick={() => setFiltersOpen((v) => !v)}
+                  className="h-8 rounded-sm font-body text-xs gap-1.5"
+                >
+                  <SlidersHorizontalIcon className="h-3.5 w-3.5" />
+                  Filters
+                  {activeFilterCount > 0 && (
+                    <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-foreground text-background text-[10px] px-1">
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
                   onClick={() => void runInventorySearch()}
                   className="h-8 rounded-sm font-body text-xs"
                 >
                   Search
                 </Button>
               </div>
+              {filtersOpen && filterValues && (
+                <FilterPanel
+                  filterValues={filterValues}
+                  selectedMerchants={selectedMerchants}
+                  selectedColors={selectedColors}
+                  selectedSizes={selectedSizes}
+                  priceRange={priceRange}
+                  inStockOnly={inStockOnly}
+                  activeFilterCount={activeFilterCount}
+                  onMerchants={setSelectedMerchants}
+                  onColors={setSelectedColors}
+                  onSizes={setSelectedSizes}
+                  onPriceRange={setPriceRange}
+                  onInStockOnly={setInStockOnly}
+                  onReset={resetFilters}
+                  onApply={() => {
+                    setFiltersOpen(false);
+                    void runInventorySearch();
+                  }}
+                />
+              )}
               <ScrollArea className="flex-1">
                 <div className="grid grid-cols-2 gap-2 p-3">
                   {inventoryResults.map((p) => (
@@ -747,5 +837,174 @@ function ToolButton({
     >
       {children}
     </button>
+  );
+}
+
+// Inventory filter panel — retailer chips, color swatches, size chips, and
+// a simple numeric budget range wired to tastegraph's SearchQueryDto.
+function FilterPanel({
+  filterValues,
+  selectedMerchants,
+  selectedColors,
+  selectedSizes,
+  priceRange,
+  inStockOnly,
+  activeFilterCount,
+  onMerchants,
+  onColors,
+  onSizes,
+  onPriceRange,
+  onInStockOnly,
+  onReset,
+  onApply,
+}: {
+  filterValues: FilterValuesResponse;
+  selectedMerchants: string[];
+  selectedColors: string[];
+  selectedSizes: string[];
+  priceRange: [number, number];
+  inStockOnly: boolean;
+  activeFilterCount: number;
+  onMerchants: (v: string[]) => void;
+  onColors: (v: string[]) => void;
+  onSizes: (v: string[]) => void;
+  onPriceRange: (v: [number, number]) => void;
+  onInStockOnly: (v: boolean) => void;
+  onReset: () => void;
+  onApply: () => void;
+}) {
+  function toggle<T>(arr: T[], val: T, setter: (next: T[]) => void) {
+    setter(arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val]);
+  }
+  return (
+    <div className="border-b border-border px-4 py-3 space-y-3 max-h-[50vh] overflow-y-auto">
+      <div className="flex items-center justify-between">
+        <h3 className="font-display text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Filters {activeFilterCount > 0 ? `(${activeFilterCount})` : ""}
+        </h3>
+        {activeFilterCount > 0 && (
+          <button
+            onClick={onReset}
+            className="font-body text-[10px] text-muted-foreground hover:text-foreground underline"
+          >
+            Reset
+          </button>
+        )}
+      </div>
+
+      {filterValues.merchants.length > 0 && (
+        <ChipGroup
+          label="Retailers"
+          options={filterValues.merchants.map((m) => ({ key: m.id, label: m.name }))}
+          selected={selectedMerchants}
+          onToggle={(k) => toggle(selectedMerchants, k, onMerchants)}
+        />
+      )}
+
+      {filterValues.colors.length > 0 && (
+        <ChipGroup
+          label="Colors"
+          options={filterValues.colors.map((c) => ({ key: c, label: c }))}
+          selected={selectedColors}
+          onToggle={(k) => toggle(selectedColors, k, onColors)}
+        />
+      )}
+
+      {filterValues.sizes.length > 0 && (
+        <ChipGroup
+          label="Sizes"
+          options={filterValues.sizes.map((s) => ({ key: s, label: s }))}
+          selected={selectedSizes}
+          onToggle={(k) => toggle(selectedSizes, k, onSizes)}
+        />
+      )}
+
+      <div>
+        <label className="block font-display text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+          Price (USD)
+        </label>
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            min={0}
+            value={priceRange[0]}
+            onChange={(e) =>
+              onPriceRange([Number(e.target.value) || 0, priceRange[1]])
+            }
+            className="h-7 w-20 rounded-sm font-body text-xs"
+            aria-label="Min price"
+          />
+          <span className="font-body text-xs text-muted-foreground">–</span>
+          <Input
+            type="number"
+            min={0}
+            value={priceRange[1]}
+            onChange={(e) =>
+              onPriceRange([priceRange[0], Number(e.target.value) || 0])
+            }
+            className="h-7 w-20 rounded-sm font-body text-xs"
+            aria-label="Max price"
+          />
+        </div>
+      </div>
+
+      <label className="flex items-center gap-2 font-body text-xs">
+        <input
+          type="checkbox"
+          checked={inStockOnly}
+          onChange={(e) => onInStockOnly(e.target.checked)}
+        />
+        In-stock only
+      </label>
+
+      <div className="pt-1">
+        <Button
+          size="sm"
+          onClick={onApply}
+          className="w-full h-8 rounded-sm font-body text-xs"
+        >
+          Apply filters
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ChipGroup({
+  label,
+  options,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  options: { key: string; label: string }[];
+  selected: string[];
+  onToggle: (key: string) => void;
+}) {
+  return (
+    <div>
+      <div className="font-display text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+        {label}
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {options.slice(0, 20).map((o) => {
+          const active = selected.includes(o.key);
+          return (
+            <button
+              key={o.key}
+              onClick={() => onToggle(o.key)}
+              className={cn(
+                "rounded-sm border px-2 py-1 font-body text-[11px] transition-colors",
+                active
+                  ? "bg-foreground text-background border-foreground"
+                  : "border-border text-foreground hover:bg-muted",
+              )}
+            >
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
