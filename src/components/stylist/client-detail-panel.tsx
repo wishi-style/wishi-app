@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { ClientProfileView } from "@/lib/stylists/client-profile";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -42,85 +42,6 @@ function InstagramIcon({ className }: { className?: string }) {
     </svg>
   );
 }
-
-const s1 = {
-  fullName: "Feizhen Li",
-  initials: "FL",
-  gender: "Female",
-  location: "Los Angeles, CA",
-  loyaltyTier: "gold",
-  totalSessions: 8,
-  stylingGoal: "A workwear wardrobe",
-  bodyIssues: ["Stomach", "Something else"],
-  bodyIssueNotes: "Post partum and I have a large stomach I'd like to hide",
-  bodyType: "Pear",
-  highlightAreas: ["Shoulders", "Waist"],
-  style: ["Classic", "Minimalist", "Polished"],
-  styleIcons: ["Meghan Markle", "Amal Clooney"],
-  comfortZone: "A little outside",
-  typicallyWears: "Mostly jeans and pants",
-  sizes: { Tops: "M", Bottoms: "8", Dresses: "8", Shoes: "7.5", Outerwear: "M" },
-  budgets: { Tops: "$50–$100", Bottoms: "$60–$120", Dresses: "$100–$200", Shoes: "$80–$150", Accessories: "$30–$80" },
-  fitPreferences: { top: "Relaxed", bottom: "Straight" },
-  occupation: "Marketing Manager",
-  dressCode: "Denim Friendly",
-  colorsLike: ["Navy", "Black", "White", "Camel", "Olive"],
-  colorsDislike: ["Neon", "Hot Pink", "Orange"],
-  fabricsDislike: ["Polyester", "Sequins"],
-  patternsDislike: ["Large florals", "Animal print"],
-  denimFit: ["Straight", "Wide Leg"],
-  dressStyles: ["Midi", "Wrap"],
-  heelPreference: "Never",
-  jewelryType: ["Gold"],
-  socialLinks: { instagram: "@feizhen.style", pinterest: "feizhen_d", facebook: "" },
-  favoriteLooks: ["Work Chic Board #2 — Look 3", "Weekend Casual — Look 1"],
-  previousBoards: [
-    { name: "Work Chic Moodboard", type: "mood" },
-    { name: "Work Chic Style Board #1", type: "style" },
-    { name: "Work Chic Style Board #2", type: "style" },
-  ],
-  photos: [],
-  notes: "Prefers shopping from Nordstrom and Revolve. Has a capsule wardrobe mindset. Doesn't like oversized fits on top.",
-};
-
-const s2 = {
-  fullName: "Crystal Stokey",
-  initials: "CS",
-  gender: "Female",
-  location: "Los Angeles, CA",
-  loyaltyTier: "silver",
-  totalSessions: 4,
-  stylingGoal: "Date night and weekend outfits",
-  bodyIssues: ["Arms"],
-  bodyIssueNotes: "Prefers sleeves or structured shoulders",
-  bodyType: "Hourglass",
-  highlightAreas: ["Waist", "Legs"],
-  style: ["Bohemian", "Romantic"],
-  styleIcons: ["Sienna Miller", "Vanessa Hudgens"],
-  comfortZone: "Stay close",
-  typicallyWears: "Dresses and skirts",
-  sizes: { Tops: "S", Bottoms: "4", Dresses: "4", Shoes: "8", Outerwear: "S" },
-  budgets: { Tops: "$40–$80", Bottoms: "$50–$100", Dresses: "$80–$160", Shoes: "$60–$120", Accessories: "$20–$60" },
-  fitPreferences: { top: "Fitted", bottom: "Slim" },
-  occupation: "Freelance Photographer",
-  dressCode: "Casual Creative",
-  colorsLike: ["Burnt Orange", "Olive", "Warm Brown", "Rust"],
-  colorsDislike: ["Cool Gray", "Bright Blue"],
-  fabricsDislike: ["Leather"],
-  patternsDislike: ["Stripes"],
-  denimFit: ["Skinny", "Flare"],
-  dressStyles: ["Maxi", "Mini"],
-  heelPreference: "Sometimes — low block heels",
-  jewelryType: ["Gold", "Mixed metals"],
-  socialLinks: { instagram: "@crystal.stokey", pinterest: "cstokey" },
-  favoriteLooks: ["Boho Date Night — Look 2"],
-  previousBoards: [
-    { name: "Boho Date Night Moodboard", type: "mood" },
-    { name: "Weekend Vibes Board", type: "style" },
-  ],
-  photos: [],
-  notes: "Loves earthy tones. Very specific about arm coverage.",
-};
 
 /* ─── Helpers ─── */
 function Detail({ label, value }: { label: string; value: React.ReactNode }) {
@@ -176,7 +97,6 @@ export default function ClientDetailPanel({
 }: ClientDetailPanelProps) {
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState("");
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   const sections = [
     { id: "needs", label: "Needs" },
@@ -196,17 +116,22 @@ export default function ClientDetailPanel({
     }
   };
 
-  const [fetchedProfile, setFetchedProfile] = useState<ClientProfileView | null>(null);
+  // Tagging the fetched profile with its source clientId avoids the
+  // setState-in-effect reset pattern that React Compiler rejects. When
+  // clientId changes, the tag no longer matches and the mock falls through
+  // until the new fetch lands.
+  const [fetchedProfile, setFetchedProfile] = useState<
+    { clientId: string; profile: ClientProfileView } | null
+  >(null);
   useEffect(() => {
     if (!open || !clientId) return;
     let alive = true;
-    setFetchedProfile(null);
     void (async () => {
       try {
         const res = await fetch(`/api/stylist/clients/${clientId}/profile`);
         if (!res.ok) return;
         const data = (await res.json()) as { profile: ClientProfileView };
-        if (alive) setFetchedProfile(data.profile);
+        if (alive) setFetchedProfile({ clientId, profile: data.profile });
       } catch {
         /* fall back to mock */
       }
@@ -216,8 +141,12 @@ export default function ClientDetailPanel({
     };
   }, [open, clientId]);
 
+  const liveProfile =
+    fetchedProfile && fetchedProfile.clientId === clientId
+      ? fetchedProfile.profile
+      : null;
   const profile =
-    fetchedProfile ?? (sessionId ? mockClientProfiles[sessionId] : null);
+    liveProfile ?? (sessionId ? mockClientProfiles[sessionId] : null);
 
   if (!profile) {
     return (
@@ -232,7 +161,6 @@ export default function ClientDetailPanel({
   }
 
   const loyalty = loyaltyConfig[profile.loyaltyTier];
-  const LoyaltyIcon = loyalty.icon;
 
   const hasSocial = profile.socialLinks.instagram || profile.socialLinks.pinterest || profile.socialLinks.facebook;
 

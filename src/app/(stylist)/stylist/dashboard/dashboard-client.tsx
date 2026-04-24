@@ -35,7 +35,6 @@ import {
   Search,
   Send,
   Mic,
-  Plus,
   AlertTriangle,
   Clock,
   MessageCircle,
@@ -46,9 +45,6 @@ import {
   Calendar,
   Settings,
   SlidersHorizontal,
-  Crown,
-  Star,
-  Heart,
   ShoppingBag,
   X,
   Image,
@@ -91,15 +87,6 @@ interface ChatMessage {
   type?: "text" | "item_recommendation";
   itemData?: { name: string; brand: string; price: string; imageUrl?: string; note?: string };
 }
-
-const loyaltyConfig: Record<LoyaltyTier, { label: string; icon: React.ElementType; className: string }> = {
-  new: { label: "New Client", icon: Sparkles, className: "text-foreground bg-muted" },
-  bronze: { label: "Bronze", icon: Star, className: "text-amber-800 bg-amber-100" },
-  silver: { label: "Silver", icon: Star, className: "text-slate-500 bg-slate-100" },
-  gold: { label: "Gold", icon: Crown, className: "text-amber-600 bg-amber-50" },
-  vip: { label: "VIP", icon: Crown, className: "text-accent bg-accent/10" },
-};
-
 
 const mockChats: Record<string, ChatMessage[]> = {
   s1: [
