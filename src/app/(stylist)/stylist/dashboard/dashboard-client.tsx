@@ -194,7 +194,12 @@ export default function StylistDashboard({
   const [itemRecOpen, setItemRecOpen] = useState(false);
   const [itemForm, setItemForm] = useState({ name: "", brand: "", price: "", note: "" });
   const [inputValue, setInputValue] = useState("");
+  // Messages are fetched per-session from /api/sessions/[id]/messages as
+  // soon as a session is selected. The mockChats seed is kept purely as
+  // an aesthetic placeholder while the fetch is in flight on first hover.
   const [messages, setMessages] = useState<Record<string, ChatMessage[]>>(mockChats);
+  const [messagesLoading, setMessagesLoading] = useState<Record<string, boolean>>({});
+  const [sending, setSending] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [drafts, setDrafts] = useState<MoodBoardDraft[]>(getDrafts());
   const router = useRouter();
@@ -254,19 +259,75 @@ export default function StylistDashboard({
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [selectedId, messages]);
 
-  const handleSend = () => {
-    if (!inputValue.trim() || !selectedId) return;
-    const newMsg: ChatMessage = {
-      id: `stylist-${Date.now()}`,
+  // Fetch real Twilio-mirrored messages from the DB when a session is
+  // selected. Only fires once per session per page-load to avoid pounding
+  // the API as the stylist hops rows; /workspace is the real-time surface.
+  useEffect(() => {
+    if (!selectedId) return;
+    if (messagesLoading[selectedId]) return;
+    const sid = selectedId;
+    setMessagesLoading((prev) => ({ ...prev, [sid]: true }));
+    void (async () => {
+      try {
+        const res = await fetch(`/api/sessions/${sid}/messages?limit=50`);
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          messages: Array<{
+            id: string;
+            text: string | null;
+            sender: "stylist" | "client" | "system";
+            createdAt: string;
+          }>;
+        };
+        const mapped: ChatMessage[] = data.messages
+          .filter((m) => m.sender !== "system")
+          .map((m) => ({
+            id: m.id,
+            sender: m.sender === "stylist" ? "stylist" : "client",
+            text: m.text ?? "",
+            timestamp: new Date(m.createdAt),
+          }));
+        setMessages((prev) => ({ ...prev, [sid]: mapped }));
+      } catch {
+        /* keep mock data on failure — Dashboard is preview-only */
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
+  const handleSend = async () => {
+    if (!inputValue.trim() || !selectedId || sending) return;
+    const text = inputValue.trim();
+    const optimistic: ChatMessage = {
+      id: `pending-${Date.now()}`,
       sender: "stylist",
-      text: inputValue.trim(),
+      text,
       timestamp: new Date(),
     };
     setMessages((prev) => ({
       ...prev,
-      [selectedId]: [...(prev[selectedId] || []), newMsg],
+      [selectedId]: [...(prev[selectedId] || []), optimistic],
     }));
     setInputValue("");
+    setSending(true);
+    try {
+      const res = await fetch(`/api/sessions/${selectedId}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ body: text }),
+      });
+      if (!res.ok) {
+        // Roll back the optimistic send so the stylist doesn't think it shipped.
+        setMessages((prev) => ({
+          ...prev,
+          [selectedId]:
+            (prev[selectedId] ?? []).filter((m) => m.id !== optimistic.id),
+        }));
+        setInputValue(text);
+      }
+    } finally {
+      setSending(false);
+    }
   };
 
   const handleSendItem = () => {
