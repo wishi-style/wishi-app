@@ -43,6 +43,6 @@ test("/feed gift-card promo banner injects when feed has >=3 cards", async ({ pa
   await expect(page.getByText(/Give the gift of style/i)).toBeVisible();
   await expect(page.getByRole("link", { name: /Buy gift card/i })).toHaveAttribute(
     "href",
-    "https://wishi.me/gift-cards/choose",
+    "/gift-cards",
   );
 });

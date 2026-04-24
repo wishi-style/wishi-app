@@ -57,8 +57,16 @@ export function BuyGiftCardDialog({
     e.preventDefault();
     setError(null);
     const amountInCents = Math.round(Number(amountDollars) * 100);
-    if (!Number.isFinite(amountInCents) || amountInCents < 1000) {
-      setError("Minimum gift amount is $10.");
+    // Mirror the server range enforced by gift-card.service.ts
+    // (GIFT_CARD_MIN_CENTS=2500, GIFT_CARD_MAX_CENTS=50000). Kept inline
+    // instead of imported to avoid pulling the server-only service into
+    // the client bundle.
+    if (!Number.isFinite(amountInCents) || amountInCents < 2500) {
+      setError("Minimum gift amount is $25.");
+      return;
+    }
+    if (amountInCents > 50000) {
+      setError("Maximum gift amount is $500.");
       return;
     }
     if (!recipientEmail.trim()) {
@@ -125,7 +133,8 @@ export function BuyGiftCardDialog({
               <input
                 id="gc-amount"
                 type="number"
-                min={10}
+                min={25}
+                max={500}
                 step={5}
                 inputMode="decimal"
                 value={amountDollars}

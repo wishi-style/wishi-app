@@ -55,12 +55,14 @@ test("/gift-cards renders publicly with plans + benefits + experience sections",
   expect(body).toContain("Stylist gets to work");
   expect(body).toContain("Shop the looks");
 
-  // There are at least three Buy Gift Card triggers (hero + benefits + experience)
-  // plus three per-plan gift CTAs. All rendered as buttons (controlled Dialog).
+  // Three section CTAs (hero + benefits + experience) + three per-plan
+  // gift CTAs = six triggers total. All rendered as buttons (controlled
+  // Dialog). Tighten the assertion so a regression that drops a CTA
+  // is caught instead of passing on "at least four".
   const triggers = page.getByRole("button", {
     name: /Buy a gift card|Gift Mini|Gift Major|Gift Lux/i,
   });
-  expect(await triggers.count()).toBeGreaterThanOrEqual(4);
+  expect(await triggers.count()).toBeGreaterThanOrEqual(6);
 });
 
 test("/gift-cards unauth Buy CTA opens the dialog and shows a sign-in prompt", async ({

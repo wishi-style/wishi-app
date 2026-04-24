@@ -93,12 +93,12 @@ function GiftCardPromoBanner() {
           Give the gift of style
         </h3>
       </div>
-      <a
+      <Link
         href="/gift-cards"
         className="inline-flex items-center justify-center border border-foreground rounded-[4px] px-4 md:px-5 py-2 text-xs hover:bg-foreground hover:text-background transition-colors shrink-0"
       >
         Buy gift card
-      </a>
+      </Link>
     </div>
   );
 }
