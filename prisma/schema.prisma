@@ -1255,6 +1255,9 @@ model Board {
   isRevision          Boolean      @default(false) @map("is_revision")
   title               String?
   stylistNote         String?      @map("stylist_note") @db.Text
+  // Phase 12: styleboard save dialog collects a description + tags alongside the title.
+  description         String?      @db.Text
+  tags                String[]     @default([])
   sentAt              DateTime?    @map("sent_at")
   rating              BoardRating?
   feedbackText        String?      @map("feedback_text") @db.Text
@@ -1293,6 +1296,12 @@ model BoardItem {
   webItemBrand        String?         @map("web_item_brand")
   webItemPriceInCents Int?            @map("web_item_price_in_cents")
   webItemImageUrl     String?         @map("web_item_image_url")
+  // Phase 12: LookCreator canvas — stylists position each item on a 2-D
+  // composition surface. x/y are canvas coordinates (pixels, 0-based),
+  // zIndex is the stacking order. Null on moodboard items + legacy rows.
+  x                   Float?
+  y                   Float?
+  zIndex              Int?            @map("z_index")
   reaction            BoardRating?
   feedbackText        String?         @map("feedback_text") @db.Text
   suggestedFeedback   String[]        @map("suggested_feedback")
