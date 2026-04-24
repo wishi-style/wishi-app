@@ -119,6 +119,137 @@ export async function listStylistReviews(
   return { reviews: all.slice(offset, offset + limit), total: all.length };
 }
 
+export interface FeaturedReviewItem {
+  id: string;
+  source: "REVIEW" | "SESSION";
+  rating: number;
+  reviewText: string;
+  createdAt: Date;
+  author: {
+    firstName: string;
+    lastNameInitial: string;
+  };
+  stylist: {
+    profileId: string;
+    firstName: string;
+    avatarUrl: string | null;
+  };
+}
+
+/**
+ * Featured reviews across every stylist, for the public /reviews page.
+ * Pulls both explicit `StylistReview` rows and `Session.reviewText`,
+ * filters to rating >= minRating (default 4), and orders by rating
+ * desc then createdAt desc. De-duplicates per (clientId, stylistId)
+ * so a user who both rated their session and later wrote an explicit
+ * review shows up only once.
+ */
+export async function listFeaturedReviews(options: {
+  limit?: number;
+  minRating?: number;
+} = {}): Promise<FeaturedReviewItem[]> {
+  const limit = Math.min(options.limit ?? 12, 50);
+  const minRating = options.minRating ?? 4;
+
+  const [explicitReviews, sessionReviews] = await Promise.all([
+    prisma.stylistReview.findMany({
+      where: { rating: { gte: minRating } },
+      include: {
+        user: { select: { firstName: true, lastName: true } },
+        stylistProfile: {
+          select: {
+            id: true,
+            user: { select: { firstName: true, avatarUrl: true } },
+          },
+        },
+      },
+      orderBy: [{ rating: "desc" }, { createdAt: "desc" }],
+      take: limit * 3,
+    }),
+    prisma.session.findMany({
+      where: {
+        status: "COMPLETED",
+        rating: { gte: minRating },
+        reviewText: { not: null },
+        stylist: { stylistProfile: { isNot: null } },
+      },
+      select: {
+        id: true,
+        rating: true,
+        reviewText: true,
+        ratedAt: true,
+        completedAt: true,
+        createdAt: true,
+        clientId: true,
+        stylistId: true,
+        client: { select: { firstName: true, lastName: true } },
+        stylist: {
+          select: {
+            firstName: true,
+            avatarUrl: true,
+            stylistProfile: { select: { id: true } },
+          },
+        },
+      },
+      orderBy: [{ rating: "desc" }, { ratedAt: "desc" }],
+      take: limit * 3,
+    }),
+  ]);
+
+  const reviewedKeys = new Set(
+    explicitReviews.map((r) => `${r.userId}:${r.stylistProfileId}`),
+  );
+
+  const explicitItems: FeaturedReviewItem[] = explicitReviews.map((r) => ({
+    id: r.id,
+    source: "REVIEW",
+    rating: r.rating,
+    reviewText: r.reviewText,
+    createdAt: r.createdAt,
+    author: {
+      firstName: r.user.firstName,
+      lastNameInitial: r.user.lastName.charAt(0),
+    },
+    stylist: {
+      profileId: r.stylistProfile.id,
+      firstName: r.stylistProfile.user.firstName,
+      avatarUrl: r.stylistProfile.user.avatarUrl ?? null,
+    },
+  }));
+
+  const sessionItems: FeaturedReviewItem[] = sessionReviews.flatMap((s) => {
+    const stylistUser = s.stylist;
+    const profileId = stylistUser?.stylistProfile?.id;
+    if (!stylistUser || !profileId) return [];
+    if (reviewedKeys.has(`${s.clientId}:${profileId}`)) return [];
+    return [
+      {
+        id: `session_${s.id}`,
+        source: "SESSION" as const,
+        rating: s.rating!,
+        reviewText: s.reviewText!,
+        createdAt: s.ratedAt ?? s.completedAt ?? s.createdAt,
+        author: {
+          firstName: s.client.firstName,
+          lastNameInitial: s.client.lastName.charAt(0),
+        },
+        stylist: {
+          profileId,
+          firstName: stylistUser.firstName,
+          avatarUrl: stylistUser.avatarUrl ?? null,
+        },
+      },
+    ];
+  });
+
+  return [...explicitItems, ...sessionItems]
+    .sort((a, b) => {
+      if (b.rating !== a.rating) return b.rating - a.rating;
+      return b.createdAt.getTime() - a.createdAt.getTime();
+    })
+    .slice(0, limit);
+}
+
 export interface CreateReviewInput {
   userId: string;
   stylistProfileId: string;

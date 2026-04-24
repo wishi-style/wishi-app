@@ -479,6 +479,17 @@ export default async function StylistProfilePage({ params }: Props) {
                 {canReview && " Be the first to share your experience."}
               </p>
             )}
+
+            {totalReviews > reviews.length && (
+              <div className="mt-6">
+                <Link
+                  href={`/stylists/${stylist.id}/reviews`}
+                  className="inline-flex items-center rounded-full border border-foreground px-6 py-2 text-sm font-medium text-foreground transition-colors hover:bg-foreground hover:text-background"
+                >
+                  Show all {totalReviews} reviews
+                </Link>
+              </div>
+            )}
           </div>
         </section>
 
