@@ -51,13 +51,28 @@ test("/stylists/[id] renders the post-refresh shell (hero + Meet + Trust + stick
   );
 
   try {
-    await page.goto(`/stylists/${profile.id}`);
+    // Navigate via the realistic /stylists → click Meet path so this spec
+    // also covers the directory → profile hop (where the production bug
+    // surfaced). Falling back to a direct goto lets the rest of the
+    // assertions still run if the card isn't visible (e.g. seed render
+    // shifted on Phase-13+).
+    await page.goto("/stylists");
     await page.waitForLoadState("networkidle");
+    const card = page.getByRole("link", { name: /Meet Loren/i }).first();
+    if ((await card.count()) > 0 && (await card.isVisible())) {
+      await card.click();
+      await page.waitForLoadState("networkidle");
+    } else {
+      await page.goto(`/stylists/${profile.id}`);
+      await page.waitForLoadState("networkidle");
+    }
 
     // Hero: name + a Continue CTA bound to /bookings/new?stylistId=...
     await expect(
       page.getByRole("heading", { level: 1, name: "Loren Profile" }),
     ).toBeVisible();
+    const heroBody = await page.locator("body").innerText();
+    expect(heroBody).not.toMatch(/Something went wrong/i);
     const heroCta = page
       .getByRole("link", { name: /Continue with Loren/i })
       .first();

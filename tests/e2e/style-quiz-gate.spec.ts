@@ -110,6 +110,16 @@ test("authed client with completed StyleProfile: Continue skips /style-quiz", as
     await page.goto(`/stylists/${profile.id}`);
     await page.waitForLoadState("networkidle");
 
+    // Profile must load cleanly first — the regression that motivated
+    // this strengthening dropped the page on render BEFORE the user
+    // could even read the CTA href. Asserting the page hero is visible
+    // proves we didn't fall through to error.tsx.
+    await expect(
+      page.getByRole("heading", { level: 1, name: /Noa Skip/i }),
+    ).toBeVisible();
+    const body = await page.locator("body").innerText();
+    expect(body).not.toMatch(/Something went wrong/i);
+
     const cta = page
       .getByRole("link", { name: /Continue with Noa/i })
       .first();
@@ -117,6 +127,16 @@ test("authed client with completed StyleProfile: Continue skips /style-quiz", as
       "href",
       `/bookings/new?stylistId=${profile.id}`,
     );
+
+    // Click through and assert the destination renders too — checking the
+    // href alone misses crashes on the booking page itself.
+    await cta.click();
+    await page.waitForLoadState("networkidle");
+    await expect(page).toHaveURL(
+      new RegExp(`/bookings/new\\?stylistId=${profile.id}`),
+    );
+    const bookingBody = await page.locator("body").innerText();
+    expect(bookingBody).not.toMatch(/Something went wrong/i);
   } finally {
     await cleanupStylistProfile(stylist.id);
     await cleanupE2EUserByEmail(clientEmail);
