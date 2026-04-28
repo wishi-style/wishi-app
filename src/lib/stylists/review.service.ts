@@ -91,13 +91,13 @@ export async function listStylistReviews(
     reviewText: r.reviewText,
     createdAt: r.createdAt,
     author: {
-      firstName: r.user.firstName,
-      lastNameInitial: r.user.lastName.charAt(0),
+      firstName: r.user?.firstName ?? "Anonymous",
+      lastNameInitial: r.user?.lastName?.charAt(0) ?? "",
     },
   }));
 
   const sessionItems: ReviewListItem[] = sessionReviews
-    .filter((s) => !reviewedUserIds.has(s.client.id))
+    .filter((s) => s.client && !reviewedUserIds.has(s.client.id))
     .map((s) => ({
       id: `session_${s.id}`,
       source: "SESSION",
@@ -105,8 +105,8 @@ export async function listStylistReviews(
       reviewText: s.reviewText!,
       createdAt: s.ratedAt ?? s.completedAt ?? s.createdAt,
       author: {
-        firstName: s.client.firstName,
-        lastNameInitial: s.client.lastName.charAt(0),
+        firstName: s.client?.firstName ?? "Anonymous",
+        lastNameInitial: s.client?.lastName?.charAt(0) ?? "",
       },
     }));
 

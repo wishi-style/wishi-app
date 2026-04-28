@@ -106,35 +106,51 @@ export default async function StylistProfilePage({ params }: Props) {
   let canReview = false;
   let styleQuizCompleted = false;
   let hasDbUser = false;
-  const { userId: clerkId } = await getServerAuth();
+  const { userId: clerkId } = await getServerAuth().catch(() => ({
+    userId: null as string | null,
+  }));
+  // Authed-only enrichment: match score, favorite state, can-review gate,
+  // quiz-gate routing. We swallow failures here on purpose — the public
+  // profile must render for everyone, and a flaky lookup against one of
+  // these four queries would otherwise replace the whole page with the
+  // root error boundary ("Try again" screen). Anything that fails just
+  // degrades back to the unauthed defaults.
   if (clerkId) {
-    const user = await prisma.user.findUnique({
-      where: { clerkId },
-      select: {
-        id: true,
-        styleProfile: { select: { quizCompletedAt: true } },
-      },
-    });
-    if (user) {
-      hasDbUser = true;
-      const [quizResult, isFav, completedCount] = await Promise.all([
-        prisma.matchQuizResult.findFirst({
-          where: { userId: user.id },
-          orderBy: { completedAt: "desc" },
-        }),
-        isStylistFavorited(user.id, stylist.id),
-        prisma.session.count({
-          where: {
-            clientId: user.id,
-            stylistId: stylist.userId,
-            status: "COMPLETED",
-          },
-        }),
-      ]);
-      if (quizResult) matchScore = cosmeticMatchScore(stylist, quizResult);
-      favorited = isFav;
-      canReview = completedCount > 0;
-      styleQuizCompleted = !!user.styleProfile?.quizCompletedAt;
+    try {
+      const user = await prisma.user.findUnique({
+        where: { clerkId },
+        select: {
+          id: true,
+          styleProfile: { select: { quizCompletedAt: true } },
+        },
+      });
+      if (user) {
+        hasDbUser = true;
+        const [quizResult, isFav, completedCount] = await Promise.all([
+          prisma.matchQuizResult
+            .findFirst({
+              where: { userId: user.id },
+              orderBy: { completedAt: "desc" },
+            })
+            .catch(() => null),
+          isStylistFavorited(user.id, stylist.id).catch(() => false),
+          prisma.session
+            .count({
+              where: {
+                clientId: user.id,
+                stylistId: stylist.userId,
+                status: "COMPLETED",
+              },
+            })
+            .catch(() => 0),
+        ]);
+        if (quizResult) matchScore = cosmeticMatchScore(stylist, quizResult);
+        favorited = isFav;
+        canReview = completedCount > 0;
+        styleQuizCompleted = !!user.styleProfile?.quizCompletedAt;
+      }
+    } catch (err) {
+      console.error("[stylists/[id]] authed enrichment failed", err);
     }
   }
 
@@ -147,8 +163,15 @@ export default async function StylistProfilePage({ params }: Props) {
       ? `/style-quiz?stylistId=${stylist.id}`
       : `/bookings/new?stylistId=${stylist.id}`;
 
+  // Reviews are nice-to-have on this page — never block the render. If the
+  // aggregation fails (transient DB error, malformed seed data, etc.), the
+  // reviews section just shows the "No reviews yet" empty state instead of
+  // bouncing the whole profile to the root error boundary.
   const { reviews, total: totalReviews } = await listStylistReviews(stylist.id, {
     limit: 20,
+  }).catch((err) => {
+    console.error("[stylists/[id]] listStylistReviews failed", err);
+    return { reviews: [], total: 0 };
   });
 
   const personLd = {
