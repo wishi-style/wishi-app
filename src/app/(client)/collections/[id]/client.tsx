@@ -63,7 +63,7 @@ export function CollectionDetailClient({ collection: initial }: Props) {
     const res = await fetch(`/api/collections/${collection.id}`, {
       method: "DELETE",
     });
-    if (res.ok) router.push("/closet");
+    if (res.ok) router.push("/profile");
     else setBusy(false);
   }
 

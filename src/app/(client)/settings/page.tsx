@@ -91,7 +91,7 @@ export default async function SettingsPage() {
       description: "Browse, add, and organise the pieces you already own.",
       iconKey: "shirt",
       accent: "bg-cream",
-      href: "/closet",
+      href: "/profile",
     },
     {
       kind: "link",
