@@ -252,3 +252,53 @@ test("authed client visiting public surfaces (/, /pricing, /how-it-works, /lux, 
     await cleanupE2EUserByEmail(clientEmail);
   }
 });
+
+test("authed client clicking 'Let's Get Styling' / 'Get Started' on every marketing page lands on a renderable destination", async ({
+  page,
+}) => {
+  // This is the exact scenario from the staging bug report: signed in,
+  // visit /pricing, click "Let's Get Styling" → bounce to "Try again".
+  // Root cause: every marketing CTA hardcodes href="/welcome", and that
+  // route had no page.tsx until this PR's redirect stub. Authed users
+  // weren't bounced to /sign-in (they were authed), so they landed on
+  // an empty Next route that bubbled to the root error boundary.
+  installFailureGuards(page);
+
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const clientEmail = `ac-trav-cta-${stamp}@e2e.wishi.test`;
+
+  await ensureClientUser({
+    clerkId: `e2e_ac_cta_${stamp}`,
+    email: clientEmail,
+    firstName: "CTA",
+    lastName: "Walker",
+  });
+
+  try {
+    await signIn(page, clientEmail);
+
+    const pages: Array<[string, RegExp]> = [
+      ["/", /Let's Get Styling/i],
+      ["/pricing", /Let's Get Styling/i],
+      ["/how-it-works", /Let's Get Styling/i],
+      ["/lux", /Get Started/i],
+    ];
+    for (const [path, ctaName] of pages) {
+      await gotoAndAssertOk(page, path);
+      const cta = page.getByRole("link", { name: ctaName }).first();
+      await expect(cta, `${path} exposes its primary CTA`).toBeVisible();
+      await cta.click();
+      await page.waitForLoadState("networkidle");
+      // The exact assertion from the staging report: clicking should NOT
+      // land on the global error boundary.
+      await expectNoErrorBoundary(page);
+      const url = page.url();
+      expect(
+        url,
+        `${path} → primary CTA left the authed user stranded on /welcome`,
+      ).not.toMatch(/\/welcome(\?|$|#)/);
+    }
+  } finally {
+    await cleanupE2EUserByEmail(clientEmail);
+  }
+});
