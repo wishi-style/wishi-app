@@ -23,7 +23,9 @@ test.afterAll(async () => {
 });
 
 async function signIn(page: import("@playwright/test").Page, email: string) {
-  await page.goto("/sign-in");
+  // `?e2e=1` opts into the test-only form (PR #74). Without it, the page
+  // renders the Clerk widget which can't be driven headlessly.
+  await page.goto("/sign-in?e2e=1");
   await page.getByLabel("Email").fill(email);
   await page.getByRole("button", { name: "Sign In" }).click();
   await expect(page).toHaveURL(/\/(sessions|stylist|match-quiz)/);

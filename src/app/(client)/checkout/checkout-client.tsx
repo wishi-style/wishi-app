@@ -543,6 +543,7 @@ function OrderSummary({
                   alt={item.title}
                   fill
                   sizes="56px"
+                  unoptimized
                   className="object-cover"
                 />
               ) : null}
@@ -642,6 +643,7 @@ function ConfirmationStep({
                     alt={item.title}
                     fill
                     sizes="48px"
+                    unoptimized
                     className="object-cover"
                   />
                 ) : null}
