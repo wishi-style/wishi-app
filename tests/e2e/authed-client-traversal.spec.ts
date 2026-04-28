@@ -39,22 +39,13 @@ async function signIn(page: Page, email: string): Promise<void> {
   await expect(page).toHaveURL(/\/(sessions|stylist|match-quiz|matches|welcome)/);
 }
 
-async function stampStyleProfile(userId: string, stamp: string): Promise<void> {
-  await getPool().query(
-    `INSERT INTO style_profiles (id, user_id, quiz_completed_at, quiz_answers, created_at, updated_at)
-     VALUES ($1, $2, NOW(), '{}'::jsonb, NOW(), NOW())
-     ON CONFLICT (user_id) DO UPDATE SET quiz_completed_at = NOW()`,
-    [`sp_${stamp}`, userId],
-  );
-}
-
-test("authed client (no StyleProfile) walks /stylists → Meet → profile → Continue → /style-quiz, all renders clean", async ({
+test("authed client walks /stylists → Meet → profile → Continue → /select-plan, regardless of StyleProfile state", async ({
   page,
 }) => {
   installFailureGuards(page);
 
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-  const clientEmail = `ac-trav-noprofile-${stamp}@e2e.wishi.test`;
+  const clientEmail = `ac-trav-${stamp}@e2e.wishi.test`;
   const stylistEmail = `ac-trav-stylist-${stamp}@e2e.wishi.test`;
   const stylistFirst = `Nora${stamp.slice(-4)}`;
 
@@ -79,96 +70,34 @@ test("authed client (no StyleProfile) walks /stylists → Meet → profile → C
   try {
     await signIn(page, clientEmail);
 
-    // Authed listing renders — this is the page that, while authed, used
-    // to bounce to "Try again" once the user clicked through.
     await gotoAndAssertOk(page, "/stylists");
 
     const meetCta = page
       .getByRole("link", { name: new RegExp(`Meet ${stylistFirst}`, "i") })
       .first();
     await expect(meetCta).toBeVisible();
-
     await meetCta.click();
     await page.waitForLoadState("networkidle");
     await expect(page).toHaveURL(new RegExp(`/stylists/${profile.id}`));
     await expectNoErrorBoundary(page);
 
-    // No StyleProfile yet → Continue routes to /style-quiz
+    // Continue routes straight to /select-plan — no pre-booking style-quiz
+    // gate. StyleProfile is required at first chat-room entry instead.
     const continueCta = page
       .getByRole("link", { name: new RegExp(`Continue with ${stylistFirst}`, "i") })
       .first();
     await expect(continueCta).toHaveAttribute(
       "href",
-      `/style-quiz?stylistId=${profile.id}`,
+      `/select-plan?stylistId=${profile.id}`,
     );
 
     await continueCta.click();
     await page.waitForLoadState("networkidle");
     await expect(page).toHaveURL(
-      new RegExp(`/style-quiz\\?stylistId=${profile.id}`),
+      new RegExp(`/select-plan\\?stylistId=${profile.id}`),
     );
     await expectNoErrorBoundary(page);
-    // First seeded STYLE_PREFERENCE question renders
-    await expect(page.getByText(/personal style/i).first()).toBeVisible();
-  } finally {
-    await cleanupStylistProfile(stylist.id);
-    await cleanupE2EUserByEmail(clientEmail);
-    await cleanupE2EUserByEmail(stylistEmail);
-  }
-});
-
-test("authed client (StyleProfile complete) bypasses quiz: Meet → profile → Continue → /bookings/new", async ({
-  page,
-}) => {
-  installFailureGuards(page);
-
-  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-  const clientEmail = `ac-trav-withprofile-${stamp}@e2e.wishi.test`;
-  const stylistEmail = `ac-trav-stylist2-${stamp}@e2e.wishi.test`;
-  const stylistFirst = `Sage${stamp.slice(-4)}`;
-
-  const client = await ensureClientUser({
-    clerkId: `e2e_ac_trav2_${stamp}`,
-    email: clientEmail,
-    firstName: "Returning",
-    lastName: "Client",
-  });
-  const stylist = await ensureStylistUser({
-    clerkId: `e2e_ac_trav2_styl_${stamp}`,
-    email: stylistEmail,
-    firstName: stylistFirst,
-    lastName: "Direct",
-  });
-  const profile = await ensureStylistProfile({ userId: stylist.id });
-  await stampStyleProfile(client.id, stamp);
-
-  try {
-    await signIn(page, clientEmail);
-    await gotoAndAssertOk(page, "/stylists");
-
-    const meetCta = page
-      .getByRole("link", { name: new RegExp(`Meet ${stylistFirst}`, "i") })
-      .first();
-    await meetCta.click();
-    await page.waitForLoadState("networkidle");
-    await expect(page).toHaveURL(new RegExp(`/stylists/${profile.id}`));
-    await expectNoErrorBoundary(page);
-
-    // Completed StyleProfile → Continue skips /style-quiz, goes to bookings.
-    const continueCta = page
-      .getByRole("link", { name: new RegExp(`Continue with ${stylistFirst}`, "i") })
-      .first();
-    await expect(continueCta).toHaveAttribute(
-      "href",
-      `/bookings/new?stylistId=${profile.id}`,
-    );
-
-    await continueCta.click();
-    await page.waitForLoadState("networkidle");
-    await expect(page).toHaveURL(
-      new RegExp(`/bookings/new\\?stylistId=${profile.id}`),
-    );
-    await expectNoErrorBoundary(page);
+    await expect(page.getByText(/Choose The Right Plan/i)).toBeVisible();
   } finally {
     await cleanupStylistProfile(stylist.id);
     await cleanupE2EUserByEmail(clientEmail);
