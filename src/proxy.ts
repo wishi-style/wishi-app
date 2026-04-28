@@ -16,7 +16,10 @@ const isPublicRoute = createRouteMatcher([
   "/board/(.*)",
   "/gift-cards",
   "/match-quiz(.*)",
-  "/welcome",
+  // Kept public so the next.config.ts /welcome → /match-quiz redirect can
+  // run for unauthed external traffic (Clerk's auth.protect() would
+  // otherwise intercept first).
+  "/welcome(.*)",
   "/demo",
   "/api/health",
   "/api/webhooks/(.*)",

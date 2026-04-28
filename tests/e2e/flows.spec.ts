@@ -102,7 +102,12 @@ test("style preference quiz populates StyleProfile and BodyProfile", async ({ pa
   }
   // Q22: submit
   await page.getByRole("button", { name: "See My Matches" }).click();
-  await expect(page).toHaveURL(new RegExp(`/sessions/${session.id}$`));
+  // Style-quiz completion redirects to /sessions/[id]/chat (the room).
+  // For the BOOKED+no-Twilio test fixture here, the chat-page status guard
+  // sends the user back to /sessions/[id]; we accept either landing.
+  await expect(page).toHaveURL(
+    new RegExp(`/sessions/${session.id}(?:/chat)?$`),
+  );
 
   const [styleProfile, bodyProfile] = await Promise.all([
     getStyleProfileByUserId(client.id),

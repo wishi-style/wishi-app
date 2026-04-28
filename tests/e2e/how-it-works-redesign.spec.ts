@@ -45,11 +45,11 @@ test("/how-it-works renders the 2-column hero + embedded brand video", async ({
   expect(body.toLowerCase()).not.toContain("virtual fitting");
 });
 
-test("/how-it-works anonymous CTA targets /welcome", async ({ page }) => {
+test("/how-it-works anonymous CTA targets /match-quiz", async ({ page }) => {
   await page.goto("/how-it-works");
   await page.waitForLoadState("networkidle");
 
-  // Anon visitors flow through /welcome before /match-quiz + sign-up.
+  // Anon visitors flow through /match-quiz before /match-quiz + sign-up.
   const cta = page.getByRole("link", { name: /Find Your Best Match/i });
-  await expect(cta).toHaveAttribute("href", "/welcome");
+  await expect(cta).toHaveAttribute("href", "/match-quiz");
 });

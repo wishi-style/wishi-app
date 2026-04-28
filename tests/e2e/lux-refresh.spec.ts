@@ -65,7 +65,7 @@ test("/lux rendered DOM stays free of locked-out capsule + free-shipping copy", 
   expect(body.toLowerCase()).not.toContain("virtual fitting");
 });
 
-test("/lux in-page CTAs route to the funnel-redesign /welcome entry", async ({
+test("/lux in-page CTAs route to the funnel-redesign /match-quiz entry", async ({
   page,
 }) => {
   await page.goto("/lux");
@@ -79,6 +79,6 @@ test("/lux in-page CTAs route to the funnel-redesign /welcome entry", async ({
   const count = await ctas.count();
   expect(count).toBeGreaterThanOrEqual(3);
   for (let i = 0; i < count; i++) {
-    await expect(ctas.nth(i)).toHaveAttribute("href", "/welcome");
+    await expect(ctas.nth(i)).toHaveAttribute("href", "/match-quiz");
   }
 });

@@ -22,12 +22,15 @@ export default async function StyleQuizPage({ params }: Props) {
   });
   if (!session || session.clientId !== user.id) notFound();
 
-  // Check if already completed
+  // Skip when already completed — the chat-page gate sends users here when
+  // quizCompletedAt is null, so the matching condition gates the redirect
+  // back into the session room.
   const existing = await prisma.styleProfile.findUnique({
     where: { userId: user.id },
+    select: { quizCompletedAt: true },
   });
-  if (existing) {
-    redirect(`/sessions/${sessionId}`);
+  if (existing?.quizCompletedAt) {
+    redirect(`/sessions/${sessionId}/chat`);
   }
 
   const quiz = await getQuizWithQuestions("STYLE_PREFERENCE");

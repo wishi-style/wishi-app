@@ -52,6 +52,18 @@ export default async function ClientChatPage({ params }: Props) {
   if (!CHAT_STATUSES.includes(session.status)) redirect(`/sessions/${id}`);
   if (!session.twilioChannelSid) redirect(`/sessions/${id}`);
 
+  // Style-quiz hard gate: this is the first time a client lands in the
+  // session room, so it's the right pinch point to require the style
+  // profile that powers personalization. Pre-booking gates were dropped
+  // — guests shouldn't fill out two quizzes back-to-back before paying.
+  const styleProfile = await prisma.styleProfile.findUnique({
+    where: { userId: user.id },
+    select: { quizCompletedAt: true },
+  });
+  if (!styleProfile?.quizCompletedAt) {
+    redirect(`/sessions/${id}/style-quiz`);
+  }
+
   const stylistName = session.stylist
     ? `${session.stylist.firstName} ${session.stylist.lastName}`
     : "Your Stylist";

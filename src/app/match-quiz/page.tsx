@@ -1,24 +1,20 @@
-import { getQuizWithQuestions } from "@/lib/quiz/engine";
+import type { Metadata } from "next";
+import { auth } from "@clerk/nextjs/server";
+import { SiteHeader } from "@/components/primitives/site-header";
 import { MatchQuizClient } from "./match-quiz-client";
 
-export const dynamic = "force-dynamic";
+export const metadata: Metadata = {
+  title: "Find your stylist — Wishi",
+  description:
+    "Tell us what you're after and your style preferences — we'll match you with a stylist who gets it.",
+};
 
 export default async function MatchQuizPage() {
-  const quiz = await getQuizWithQuestions("MATCH");
-
-  if (!quiz || quiz.questions.length === 0) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-stone-500">Quiz is not available yet.</p>
-      </div>
-    );
-  }
-
+  const { userId } = await auth();
   return (
-    <main className="min-h-screen bg-[#FAF8F5]">
-      <div className="mx-auto max-w-2xl">
-        <MatchQuizClient questions={quiz.questions} />
-      </div>
-    </main>
+    <div className="min-h-screen bg-background">
+      <SiteHeader />
+      <MatchQuizClient signedIn={userId !== null && userId !== undefined} />
+    </div>
   );
 }

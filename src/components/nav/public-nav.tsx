@@ -33,7 +33,7 @@ export function PublicNav() {
               Sign in
             </Link>
             <Link
-              href="/sign-up"
+              href="/match-quiz"
               className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
             >
               Get started

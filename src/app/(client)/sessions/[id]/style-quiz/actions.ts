@@ -24,7 +24,7 @@ export async function submitStyleQuiz(sessionId: string, answers: Record<string,
     where: { userId: user.id },
   });
   if (existing) {
-    redirect(`/sessions/${sessionId}`);
+    redirect(`/sessions/${sessionId}/chat`);
   }
 
   // Persist all answers via field router
@@ -36,5 +36,5 @@ export async function submitStyleQuiz(sessionId: string, answers: Record<string,
     data: { quizCompletedAt: new Date(), quizAnswers: answers as Prisma.InputJsonValue },
   });
 
-  redirect(`/sessions/${sessionId}`);
+  redirect(`/sessions/${sessionId}/chat`);
 }
