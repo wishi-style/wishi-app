@@ -16,6 +16,7 @@ const isPublicRoute = createRouteMatcher([
   "/board/(.*)",
   "/gift-cards",
   "/match-quiz(.*)",
+  "/welcome",
   "/demo",
   "/api/health",
   "/api/webhooks/(.*)",

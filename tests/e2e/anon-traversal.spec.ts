@@ -52,6 +52,47 @@ test.describe("anon traversal — every public route renders without an error bo
     }
   });
 
+  test("'Let's Get Styling' CTA on every marketing page lands on a renderable destination", async ({
+    page,
+  }) => {
+    installFailureGuards(page);
+
+    // Regression cover for /welcome — every primary CTA on the marketing
+    // pages hardcodes href="/welcome", and that route was missing for
+    // months until this PR added a redirect stub. Asserting the CTA is
+    // *visible* (the previous behavior) silently passed even when clicking
+    // it bounced authed users to the global "Try again" boundary. This
+    // test actually clicks each CTA and asserts the destination renders.
+    // Each entry: [path, link-name-regex]. /lux uses "Get Started"; the
+    // others use "Let's Get Styling". Both bind to href="/welcome".
+    const pages: Array<[string, RegExp]> = [
+      ["/", /Let's Get Styling/i],
+      ["/pricing", /Let's Get Styling/i],
+      ["/how-it-works", /Let's Get Styling/i],
+      ["/lux", /Get Started/i],
+    ];
+    for (const [path, ctaName] of pages) {
+      await gotoAndAssertOk(page, path);
+      const cta = page.getByRole("link", { name: ctaName }).first();
+      await expect(cta, `${path} exposes its primary CTA`).toBeVisible();
+      // Sanity: the CTA still binds to /welcome — if a future redesign
+      // changes that, this test should still verify the destination, not
+      // the href specifically.
+      await cta.click();
+      await page.waitForLoadState("networkidle");
+      await expectNoErrorBoundary(page);
+      // The funnel destination is allowed to vary (currently /match-quiz
+      // for anon, /stylists for authed) — what's NOT allowed is the URL
+      // staying on /welcome (which means the redirect didn't fire) or
+      // landing on the root error boundary (which means it crashed).
+      const url = page.url();
+      expect(
+        url,
+        `${path} → primary CTA left the user stranded on /welcome`,
+      ).not.toMatch(/\/welcome(\?|$|#)/);
+    }
+  });
+
   test("/stylists list → click 'Meet [Name]' → profile renders without 'Try again'", async ({
     page,
   }) => {
