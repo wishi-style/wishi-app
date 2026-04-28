@@ -16,7 +16,7 @@ export default defineConfig({
     video: "retain-on-failure",
   },
   webServer: {
-    command: "npm run start:e2e",
+    command: process.env.CI ? "npm run start:e2e:prebuilt" : "npm run start:e2e",
     url: `${baseURL}/sign-in`,
     reuseExistingServer: !process.env.CI,
     timeout: 240_000,
