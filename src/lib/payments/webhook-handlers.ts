@@ -11,7 +11,33 @@ import {
 import { applyUpgradeFromCheckout } from "./session-upgrade.service";
 import { applyBuyMoreLooksFromCheckout } from "./buy-more-looks.service";
 import { applyDirectSaleFromCheckout } from "./direct-sale.service";
+import { applyDirectSalePaymentIntentSucceeded } from "./direct-sale-elements.service";
+import { handleTipPaymentSucceeded } from "./payout-webhooks";
 import { applyGiftCardPurchaseFromCheckout } from "@/lib/promotions/gift-card.service";
+
+/**
+ * Router for `payment_intent.succeeded`. Multiple flows now land here:
+ *   - "tip" → end-session tip flow (existing PaymentElement path)
+ *   - "DIRECT_SALE" → /checkout (Elements) → Order PENDING → ORDERED
+ *
+ * Default branch logs and ignores so legacy or unmetadataed PIs don't crash
+ * the webhook (mirrors `handleCheckoutCompleted` policy).
+ */
+export async function handlePaymentIntentSucceeded(
+  pi: Stripe.PaymentIntent,
+): Promise<void> {
+  const purpose = pi.metadata?.purpose;
+  if (purpose === "tip") {
+    await handleTipPaymentSucceeded(pi);
+    return;
+  }
+  if (purpose === "DIRECT_SALE") {
+    await applyDirectSalePaymentIntentSucceeded(pi);
+    return;
+  }
+  // No-op: PaymentIntents without our metadata (e.g. one-off dashboard
+  // charges, future flows) shouldn't fail the webhook.
+}
 
 export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const purpose = session.metadata?.purpose;

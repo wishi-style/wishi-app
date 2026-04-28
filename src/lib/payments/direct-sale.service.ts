@@ -26,7 +26,7 @@ export interface CreateDirectSaleCheckoutInput {
   };
 }
 
-interface ResolvedLineItem {
+export interface ResolvedLineItem {
   cartItemId: string;
   inventoryProductId: string;
   title: string;
@@ -56,7 +56,7 @@ const LUX_SHIPPING_ELIGIBLE_STATUSES: ReadonlySet<SessionStatus> = new Set<Sessi
  * inventory, or out of stock — direct-sale checkout is finance-sensitive, so
  * we fail loud rather than silently fall back to a stale/wrong listing.
  */
-async function resolveLineItems(
+export async function resolveLineItems(
   userId: string,
   cartItemIds: string[],
 ): Promise<{ items: ResolvedLineItem[]; sessionId: string }> {
@@ -121,7 +121,7 @@ async function resolveLineItems(
  * Lux session entitles the client to free priority shipping on direct-sale
  * orders placed during that session's lifecycle (Phase 9 product decision).
  */
-async function isLuxShippingEligible(sessionId: string): Promise<boolean> {
+export async function isLuxShippingEligible(sessionId: string): Promise<boolean> {
   const session = await prisma.session.findUnique({
     where: { id: sessionId },
     select: { planType: true, status: true },
