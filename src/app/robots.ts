@@ -16,7 +16,7 @@ export default function robots(): MetadataRoute.Robots {
           "/favorites",
           "/orders",
           "/cart",
-          "/closet",
+          "/profile",
           "/matches",
           "/onboarding/",
           "/sign-in",

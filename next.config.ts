@@ -60,6 +60,7 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       { source: "/bag", destination: "/cart", permanent: true },
+      { source: "/closet", destination: "/profile", permanent: true },
     ];
   },
 };

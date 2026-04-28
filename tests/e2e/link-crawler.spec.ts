@@ -225,7 +225,7 @@ test.describe("link crawler — every internal href on canonical pages reaches a
           "/settings",
           "/cart",
           "/orders",
-          "/closet",
+          "/profile",
           "/favorites",
           "/matches",
         ],

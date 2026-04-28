@@ -203,7 +203,7 @@ test("authed client navbar surfaces all render without bouncing to error.tsx", a
       "/settings",
       "/cart",
       "/orders",
-      "/closet",
+      "/profile",
       "/favorites",
       "/matches",
     ];
