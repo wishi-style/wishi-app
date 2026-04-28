@@ -272,14 +272,14 @@ export function MatchQuizClient({ signedIn }: { signedIn: boolean }) {
       try {
         const result = await submitMatchQuiz(answers);
         if (result.signedIn) {
-          router.push("/stylists");
+          router.push("/stylist-match");
           return;
         }
         // Guest — open Clerk's modal sign-up. The guestToken in unsafeMetadata
         // tells the user.created webhook to claim the MatchQuizResult row.
         openSignUp({
           unsafeMetadata: { guestToken: result.guestToken },
-          forceRedirectUrl: "/stylists",
+          forceRedirectUrl: "/stylist-match",
         });
       } catch (err) {
         setSubmitError(

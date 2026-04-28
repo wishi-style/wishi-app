@@ -4,35 +4,37 @@ import { createChatConversation } from "@/lib/chat/create-conversation";
 import { canReassignSession } from "./admin-guards";
 
 /**
- * Auto-matcher: assigns the best-fit stylist to a session.
+ * Pure ranking pipeline — returns scored stylists for a given client without
+ * touching Session state. Shared by:
+ *   - the pre-booking preview (/stylist-match)
+ *   - the post-booking auto-assign (matchStylistForSession)
  *
- * Filter: matchEligible + isAvailable + gender overlap + style overlap + budget overlap
- * Rank: lowest active session count, tie-break by oldest profile (longest tenure)
+ * Filter: matchEligible + isAvailable + gender overlap.
+ * Score: +10 per style overlap.
+ * Rank: highest score → lowest active session count → oldest profile.
  *
- * If no match found, session stays BOOKED and a stub admin alert fires.
+ * Budget is intentionally NOT a match criterion — captured at /select-plan.
  */
-export async function matchStylistForSession(sessionId: string) {
-  const session = await prisma.session.findUniqueOrThrow({
-    where: { id: sessionId },
-    select: {
-      id: true,
-      clientId: true,
-      status: true,
-    },
-  });
+export type RankedStylist = {
+  id: string;
+  userId: string;
+  genderPreference: Gender[];
+  styleSpecialties: string[];
+  createdAt: Date;
+  score: number;
+};
 
-  if (session.status !== "BOOKED") return null;
-
-  // Get client's match quiz result for filtering
+export async function rankStylistsForClient(
+  clientUserId: string,
+): Promise<RankedStylist[]> {
   const quizResult = await prisma.matchQuizResult.findFirst({
-    where: { userId: session.clientId },
+    where: { userId: clientUserId },
     orderBy: { completedAt: "desc" },
   });
 
   const clientGender = quizResult?.genderToStyle ?? null;
   const clientStyles = quizResult?.styleDirection ?? [];
 
-  // Find eligible stylists
   const eligibleStylists = await prisma.stylistProfile.findMany({
     where: {
       matchEligible: true,
@@ -48,61 +50,41 @@ export async function matchStylistForSession(sessionId: string) {
     },
   });
 
-  if (eligibleStylists.length === 0) {
-    console.warn(`[match] No eligible stylists for session ${sessionId}`);
-    // TODO: stub admin alert
-    return null;
-  }
+  if (eligibleStylists.length === 0) return [];
 
-  // Score and filter
-  const scored = eligibleStylists
-    .filter((s) => {
-      // Gender filter: if client specified a gender, stylist must support it
-      if (clientGender && s.genderPreference.length > 0) {
-        return s.genderPreference.includes(clientGender as Gender);
-      }
-      return true;
-    })
-    .map((s) => {
-      let score = 0;
+  const filtered = eligibleStylists.filter((s) => {
+    if (clientGender && s.genderPreference.length > 0) {
+      return s.genderPreference.includes(clientGender as Gender);
+    }
+    return true;
+  });
 
-      // Style overlap
-      if (clientStyles.length > 0 && s.styleSpecialties.length > 0) {
-        const overlap = clientStyles.filter((cs) =>
-          s.styleSpecialties.includes(cs)
-        ).length;
-        score += overlap * 10;
-      }
+  const scored: RankedStylist[] = filtered.map((s) => {
+    let score = 0;
+    if (clientStyles.length > 0 && s.styleSpecialties.length > 0) {
+      const overlap = clientStyles.filter((cs) =>
+        s.styleSpecialties.includes(cs),
+      ).length;
+      score += overlap * 10;
+    }
+    return { ...s, score };
+  });
 
-      // Budget is intentionally NOT a match criterion — the price the client
-      // pays comes from /select-plan after the match is shown, so the matcher
-      // should surface stylists across all budget brackets equally.
+  if (scored.length === 0) return [];
 
-      return { ...s, score };
-    });
-
-  if (scored.length === 0) {
-    console.warn(`[match] No stylists passed filters for session ${sessionId}`);
-    return null;
-  }
-
-  // Get active session counts for each eligible stylist
-  const stylistUserIds = scored.map((s) => s.userId);
+  // Workload tie-break: pull active session counts for the surviving set only.
+  const userIds = scored.map((s) => s.userId);
   const activeCounts = await prisma.session.groupBy({
     by: ["stylistId"],
     where: {
-      stylistId: { in: stylistUserIds },
+      stylistId: { in: userIds },
       status: { in: ["BOOKED", "ACTIVE", "PENDING_END", "PENDING_END_APPROVAL"] },
       deletedAt: null,
     },
     _count: { id: true },
   });
+  const countMap = new Map(activeCounts.map((c) => [c.stylistId, c._count.id]));
 
-  const countMap = new Map(
-    activeCounts.map((c) => [c.stylistId, c._count.id])
-  );
-
-  // Sort: highest match score → lowest workload → oldest profile (tenure)
   scored.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
     const aCount = countMap.get(a.userId) ?? 0;
@@ -111,9 +93,34 @@ export async function matchStylistForSession(sessionId: string) {
     return a.createdAt.getTime() - b.createdAt.getTime();
   });
 
-  const bestMatch = scored[0];
+  return scored;
+}
 
-  // Assign stylist to session
+/**
+ * Auto-matcher: assigns the best-fit stylist to a BOOKED session and
+ * creates the chat conversation. Wraps rankStylistsForClient + Session
+ * + SessionMatchHistory writes. Returns null when no eligible stylists.
+ */
+export async function matchStylistForSession(sessionId: string) {
+  const session = await prisma.session.findUniqueOrThrow({
+    where: { id: sessionId },
+    select: {
+      id: true,
+      clientId: true,
+      status: true,
+    },
+  });
+
+  if (session.status !== "BOOKED") return null;
+
+  const ranked = await rankStylistsForClient(session.clientId);
+  if (ranked.length === 0) {
+    console.warn(`[match] No eligible stylists for session ${sessionId}`);
+    return null;
+  }
+
+  const bestMatch = ranked[0];
+
   await prisma.$transaction([
     prisma.session.update({
       where: { id: sessionId },
@@ -132,11 +139,13 @@ export async function matchStylistForSession(sessionId: string) {
     }),
   ]);
 
-  // Create chat conversation after transaction commits (external API call)
   try {
     await createChatConversation(sessionId);
   } catch (err) {
-    console.error(`[match] Failed to create chat conversation for session ${sessionId}:`, err);
+    console.error(
+      `[match] Failed to create chat conversation for session ${sessionId}:`,
+      err,
+    );
   }
 
   return bestMatch;
