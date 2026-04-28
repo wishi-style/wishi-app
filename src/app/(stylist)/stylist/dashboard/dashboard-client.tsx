@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { getDrafts, deleteDraft, type MoodBoardDraft } from "@/lib/moodboard-drafts";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -88,36 +87,14 @@ interface ChatMessage {
   itemData?: { name: string; brand: string; price: string; imageUrl?: string; note?: string };
 }
 
-const mockChats: Record<string, ChatMessage[]> = {
-  s1: [
-    { id: "1", sender: "client", text: "Friday at 2 would work for me", timestamp: new Date(2026, 1, 24, 11, 22) },
-    { id: "2", sender: "stylist", text: "Perfect! I'll schedule the call via Concierge for us and you should be receiving their email with details for the call by end of the day! 💗 I look forward to our chat!", timestamp: new Date(2026, 1, 24, 12, 41) },
-    { id: "3", sender: "stylist", text: "Hey Feizhen! I'm excited to chat in a few minutes!", timestamp: new Date(2026, 1, 27, 13, 47) },
-    { id: "4", sender: "stylist", text: "Hi Feizhen! I held on the call, but perhaps you weren't able to hop on. I have availability Monday from 9AM-11:30 and 3-5PM. On Tuesday I have availability from 9:30-2PM, and as I mentioned I will be going out of office and returning on March 11. Let me know if these times work for you or if you prefer to wait until March 11 when I return! Very best!", timestamp: new Date(2026, 1, 27, 14, 16) },
-  ],
-  s2: [
-    { id: "1", sender: "client", text: "I like some of the items but the colors aren't quite right for me.", timestamp: new Date(2026, 2, 26, 10, 0) },
-    { id: "2", sender: "stylist", text: "Thanks for the feedback Crystal! I'll adjust the palette. Are you leaning more towards warm or cool tones?", timestamp: new Date(2026, 2, 26, 10, 30) },
-    { id: "3", sender: "client", text: "Warm tones for sure — think burnt orange, olive, warm browns.", timestamp: new Date(2026, 2, 26, 11, 15) },
-  ],
-  s3: [
-    { id: "1", sender: "client", text: "Hi! Just booked a mini session. Looking for casual but polished looks.", timestamp: new Date(2026, 2, 27, 9, 0) },
-  ],
-  s4: [
-    { id: "1", sender: "stylist", text: "Here's your updated style board with the jacket alternatives!", timestamp: new Date(2026, 2, 24, 14, 0) },
-    { id: "2", sender: "client", text: "The style board is perfect! Let me know about alternatives for the jacket.", timestamp: new Date(2026, 2, 25, 9, 30) },
-  ],
-  s5: [
-    { id: "1", sender: "stylist", text: "Your curated pieces are ready! Take a look when you get a chance.", timestamp: new Date(2026, 2, 23, 16, 0) },
-    { id: "2", sender: "client", text: "Thanks for the recommendations! I'll review them tonight.", timestamp: new Date(2026, 2, 24, 18, 0) },
-  ],
-  s6: [
-    { id: "1", sender: "client", text: "Just booked! Need help with work-from-home outfits.", timestamp: new Date(2026, 2, 28, 8, 0) },
-  ],
-  s7: [
-    { id: "1", sender: "client", text: "Looking forward to a full wardrobe overhaul for spring.", timestamp: new Date(2026, 2, 28, 10, 0) },
-  ],
-};
+interface MoodBoardDraft {
+  id: string;
+  sessionId: string | null;
+  clientName: string;
+  images: string[];
+  photoCount: number;
+  updatedAt: string;
+}
 
 /* ─── Priority helpers ─── */
 const priorityOrder: Record<SessionPriority, number> = {
@@ -162,8 +139,10 @@ type StatFilter = "overdue" | "due_today" | "important" | "new" | "active" | "al
 /* ─── Component ─── */
 export default function StylistDashboard({
   sessions: mockSessions,
+  stylistInitials,
 }: {
   sessions: MockSession[];
+  stylistInitials: string;
 }) {
   // Pre-select first session so the right pane isn't empty on desktop. Use
   // a lazy initializer that reads the sessions array directly (no `window`
@@ -182,14 +161,13 @@ export default function StylistDashboard({
   const [itemRecOpen, setItemRecOpen] = useState(false);
   const [itemForm, setItemForm] = useState({ name: "", brand: "", price: "", note: "" });
   const [inputValue, setInputValue] = useState("");
-  // Messages are fetched per-session from /api/sessions/[id]/messages as
-  // soon as a session is selected. The mockChats seed is kept purely as
-  // an aesthetic placeholder while the fetch is in flight on first hover.
-  const [messages, setMessages] = useState<Record<string, ChatMessage[]>>(mockChats);
+  // Messages are fetched per-session from /api/sessions/[id]/messages on
+  // first session selection. Empty until then; never seeded with mock data.
+  const [messages, setMessages] = useState<Record<string, ChatMessage[]>>({});
   const [messagesLoading, setMessagesLoading] = useState<Record<string, boolean>>({});
   const [sending, setSending] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [drafts, setDrafts] = useState<MoodBoardDraft[]>(getDrafts());
+  const [drafts, setDrafts] = useState<MoodBoardDraft[]>([]);
   const router = useRouter();
   const chatEndRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
@@ -241,6 +219,24 @@ export default function StylistDashboard({
       if (sortBy === "name") return a.clientName.localeCompare(b.clientName);
       return b.lastMessageDate.localeCompare(a.lastMessageDate);
     });
+
+  // Hydrate drafts from the server. /api/moodboards?status=draft returns
+  // every unsent moodboard the authed stylist owns, scoped to their account
+  // so drafts roam across devices instead of being trapped in one browser.
+  const reloadDrafts = useCallback(async () => {
+    try {
+      const res = await fetch("/api/moodboards?status=draft", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { drafts: MoodBoardDraft[] };
+      setDrafts(data.drafts ?? []);
+    } catch {
+      /* keep prior list on transient failure */
+    }
+  }, []);
+
+  useEffect(() => {
+    void reloadDrafts();
+  }, [reloadDrafts]);
 
   // Scroll chat on selection or new message
   useEffect(() => {
@@ -574,7 +570,10 @@ export default function StylistDashboard({
                 className="flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors"
               >
                 <button
-                  onClick={() => router.push(`/stylist/sessions/${draft.sessionId ?? ""}/moodboards/new?draftBoardId=${draft.id}`)}
+                  onClick={() =>
+                    draft.sessionId &&
+                    router.push(`/stylist/sessions/${draft.sessionId}/moodboards/new`)
+                  }
                   className="flex items-center gap-3 min-w-0 flex-1 text-left"
                 >
                   <div className="h-10 w-10 rounded-sm bg-muted border border-border flex items-center justify-center shrink-0 overflow-hidden">
@@ -587,14 +586,19 @@ export default function StylistDashboard({
                   <div className="min-w-0">
                     <p className="font-display text-sm font-medium truncate">{draft.clientName}</p>
                     <p className="font-body text-[11px] text-muted-foreground">
-                      {draft.images.length} image{draft.images.length !== 1 ? "s" : ""} · {new Date(draft.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      {draft.photoCount} image{draft.photoCount !== 1 ? "s" : ""} · {new Date(draft.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                     </p>
                   </div>
                 </button>
                 <button
-                  onClick={() => {
-                    deleteDraft(draft.id);
-                    setDrafts(getDrafts());
+                  onClick={async () => {
+                    setDrafts((prev) => prev.filter((d) => d.id !== draft.id));
+                    try {
+                      const res = await fetch(`/api/moodboards/${draft.id}`, { method: "DELETE" });
+                      if (!res.ok) await reloadDrafts();
+                    } catch {
+                      await reloadDrafts();
+                    }
                   }}
                   className="text-muted-foreground hover:text-destructive transition-colors p-1"
                 >
@@ -795,7 +799,7 @@ export default function StylistDashboard({
                 {msg.sender === "stylist" && (
                   <Avatar className="h-7 w-7 shrink-0 mb-5">
                     <AvatarFallback className="bg-accent text-accent-foreground font-body text-[10px]">
-                      SM
+                      {stylistInitials}
                     </AvatarFallback>
                   </Avatar>
                 )}
@@ -950,7 +954,7 @@ export default function StylistDashboard({
             >
               <Avatar className="h-8 w-8 cursor-pointer">
                 <AvatarFallback className="bg-accent text-accent-foreground font-body text-xs">
-                  SM
+                  {stylistInitials}
                 </AvatarFallback>
               </Avatar>
             </DropdownMenuTrigger>
