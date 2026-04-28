@@ -4,7 +4,28 @@ export async function getSessionsByClient(userId: string) {
   return prisma.session.findMany({
     where: { clientId: userId, deletedAt: null },
     include: {
-      stylist: { select: { firstName: true, lastName: true, avatarUrl: true } },
+      stylist: {
+        select: {
+          firstName: true,
+          lastName: true,
+          avatarUrl: true,
+          stylistProfile: { select: { id: true } },
+        },
+      },
+      // Latest message preview powers the Loveable SessionCard's body line.
+      messages: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { text: true, createdAt: true, kind: true },
+      },
+      // Any sent board the client hasn't rated yet flags the session as
+      // "new_board" priority — left-accent bar + "Review Style Board" CTA.
+      boards: {
+        where: { sentAt: { not: null }, rating: null },
+        orderBy: { sentAt: "desc" },
+        take: 1,
+        select: { id: true, type: true },
+      },
     },
     orderBy: { createdAt: "desc" },
   });
