@@ -58,7 +58,7 @@ export function MessageList({
   if (messages.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <p className="text-sm text-stone-400">
+        <p className="text-sm text-muted-foreground">
           No messages yet. Start the conversation!
         </p>
       </div>
@@ -78,7 +78,7 @@ export function MessageList({
           <div key={msg.sid}>
             {showDate && (
               <div className="py-2 text-center">
-                <span className="rounded-full bg-stone-100 px-3 py-1 text-xs text-stone-400">
+                <span className="rounded-full bg-secondary px-3 py-1 text-xs text-muted-foreground">
                   {formatDateSeparator(msg.dateCreated)}
                 </span>
               </div>
@@ -101,7 +101,7 @@ export function MessageList({
                 />
                 {!isSystem && (
                   <span
-                    className={`text-[10px] text-stone-300 ${isOwn ? "text-right" : "text-left"}`}
+                    className={`text-[10px] text-muted-foreground/70 ${isOwn ? "text-right" : "text-left"}`}
                   >
                     {formatTime(msg.dateCreated)}
                   </span>
