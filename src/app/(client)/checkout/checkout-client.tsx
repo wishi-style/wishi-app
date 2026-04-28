@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -390,6 +390,11 @@ function PaymentInner({
   const elements = useElements();
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  // Track the actual amount Stripe will charge (the /intent response is
+  // authoritative — it can differ from the preview quote if Stripe Tax
+  // returns slightly different totals on the recompute). We surface this
+  // on the Pay button label.
+  const [chargedTotalInCents, setChargedTotalInCents] = useState(quote.totalInCents);
 
   async function handlePay() {
     if (!stripe || !elements) return;
@@ -421,10 +426,25 @@ function PaymentInner({
       const intentData = (await intentRes.json()) as {
         clientSecret?: string;
         orderId?: string;
+        totalInCents?: number;
+        taxInCents?: number;
+        shippingInCents?: number;
         error?: string;
       };
       if (!intentRes.ok || !intentData.clientSecret || !intentData.orderId) {
         throw new Error(intentData.error ?? "Could not start payment");
+      }
+
+      // Reconcile Elements + the displayed total with what /intent will
+      // actually charge. Stripe's deferred-mode amount must match the PI
+      // amount on confirmPayment — without this update, a recomputed tax
+      // total would fail confirmPayment with a generic mismatch error.
+      if (
+        typeof intentData.totalInCents === "number" &&
+        intentData.totalInCents !== chargedTotalInCents
+      ) {
+        elements.update({ amount: intentData.totalInCents });
+        setChargedTotalInCents(intentData.totalInCents);
       }
 
       const { error } = await stripe.confirmPayment({
@@ -492,7 +512,7 @@ function PaymentInner({
         ) : (
           <>
             <LockIcon className="h-4 w-4" />
-            Pay {formatCents(quote.totalInCents)}
+            Pay {formatCents(chargedTotalInCents)}
           </>
         )}
       </button>
@@ -718,12 +738,17 @@ function InputField({
   type?: string;
   placeholder?: string;
 }) {
+  const id = useId();
   return (
     <div>
-      <label className="mb-1.5 block font-body text-xs text-muted-foreground">
+      <label
+        htmlFor={id}
+        className="mb-1.5 block font-body text-xs text-muted-foreground"
+      >
         {label}
       </label>
       <input
+        id={id}
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}

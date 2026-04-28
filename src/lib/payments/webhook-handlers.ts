@@ -35,8 +35,14 @@ export async function handlePaymentIntentSucceeded(
     await applyDirectSalePaymentIntentSucceeded(pi);
     return;
   }
-  // No-op: PaymentIntents without our metadata (e.g. one-off dashboard
-  // charges, future flows) shouldn't fail the webhook.
+  // PaymentIntents without our metadata shouldn't fail the webhook —
+  // they may be one-off dashboard charges or a future flow we haven't
+  // wired yet — but they're worth logging so a misconfigured purpose
+  // (e.g. case mismatch) is visible in CloudWatch.
+  console.warn(
+    "[stripe] payment_intent.succeeded ignored — unsupported purpose",
+    { paymentIntentId: pi.id, purpose: purpose ?? null },
+  );
 }
 
 export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {

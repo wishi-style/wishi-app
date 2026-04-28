@@ -24,6 +24,7 @@ import {
   isLuxShippingEligible,
   LUX_PRIORITY_SHIPPING_CENTS,
   STANDARD_SHIPPING_CENTS,
+  type ResolvedLineItem,
 } from "./direct-sale.service";
 
 export interface ShippingAddress {
@@ -79,17 +80,19 @@ function toStripeAddress(address: ShippingAddress): Stripe.AddressParam {
 }
 
 /**
- * Compute the Stripe Tax quote for a cart + address. Returns a
- * `calculationId` valid for ~48h that the PaymentIntent commit later
- * references via `stripe.tax.transactions.createFromCalculation`.
- *
- * Throws on the same conditions as `resolveLineItems` (empty / missing /
- * non-direct-sale / out-of-stock) — callers surface that to the user as a
- * cart error, not a generic checkout failure.
+ * Internal helper — resolves the cart, decides Lux shipping, and runs
+ * Stripe Tax. Returns the public quote AND the resolved line items +
+ * sessionId so callers (createDirectSalePaymentIntent) can reuse them
+ * instead of paying for a second `resolveLineItems` round-trip
+ * (which itself fans out to the inventory service per item).
  */
-export async function calculateDirectSaleTax(
+async function resolveCartAndComputeTax(
   input: CalculateDirectSaleTaxInput,
-): Promise<DirectSaleTaxQuote> {
+): Promise<{
+  quote: DirectSaleTaxQuote;
+  resolvedItems: ResolvedLineItem[];
+  sessionId: string;
+}> {
   const { items, sessionId } = await resolveLineItems(
     input.userId,
     input.cartItemIds,
@@ -144,7 +147,7 @@ export async function calculateDirectSaleTax(
     throw new Error("Stripe Tax did not return a calculation id");
   }
 
-  return {
+  const quote: DirectSaleTaxQuote = {
     calculationId: calculation.id,
     subtotalInCents,
     taxInCents: calculation.tax_amount_exclusive,
@@ -162,6 +165,24 @@ export async function calculateDirectSaleTax(
       quantity: it.quantity,
     })),
   };
+
+  return { quote, resolvedItems: items, sessionId };
+}
+
+/**
+ * Compute the Stripe Tax quote for a cart + address. Returns a
+ * `calculationId` valid for ~48h that the PaymentIntent commit later
+ * references via `stripe.tax.transactions.createFromCalculation`.
+ *
+ * Throws on the same conditions as `resolveLineItems` (empty / missing /
+ * non-direct-sale / out-of-stock) — callers surface that to the user as a
+ * cart error, not a generic checkout failure.
+ */
+export async function calculateDirectSaleTax(
+  input: CalculateDirectSaleTaxInput,
+): Promise<DirectSaleTaxQuote> {
+  const { quote } = await resolveCartAndComputeTax(input);
+  return quote;
 }
 
 export interface CreateDirectSalePaymentIntentInput {
@@ -199,15 +220,15 @@ export interface CreateDirectSalePaymentIntentResult {
  * carries small identifiers, and the webhook flips PENDING → ORDERED with a
  * conditional `updateMany` keyed on `orderId`.
  *
- * Tax is recomputed defensively here even if the caller passed a previous
- * calculationId from `calculateDirectSaleTax` — calculations expire and the
- * cart can be mutated between preview and pay. We always charge what the
- * latest calculation says.
+ * Tax is recomputed defensively here — calculations expire and the cart can
+ * be mutated between preview and pay. We always charge what the latest
+ * calculation says. Cart resolution + tax computation share a single round
+ * trip via `resolveCartAndComputeTax`.
  */
 export async function createDirectSalePaymentIntent(
   input: CreateDirectSalePaymentIntentInput,
 ): Promise<CreateDirectSalePaymentIntentResult> {
-  const quote = await calculateDirectSaleTax({
+  const { quote, resolvedItems: items, sessionId } = await resolveCartAndComputeTax({
     userId: input.userId,
     cartItemIds: input.cartItemIds,
     address: input.address,
@@ -216,10 +237,6 @@ export async function createDirectSalePaymentIntent(
       : undefined,
   });
 
-  const { items, sessionId } = await resolveLineItems(
-    input.userId,
-    input.cartItemIds,
-  );
   const customerId = await getOrCreateStripeCustomer(input.userId);
   const retailer = items.find((i) => i.merchant)?.merchant ?? "wishi";
 
@@ -309,6 +326,12 @@ export async function createDirectSalePaymentIntent(
   }
 
   // Bind the Order to the PaymentIntent so the webhook can flip it.
+  // P2002 here means another Order already binds this PI (the user retried
+  // and Stripe's idempotency returned the same PI; the prior Order won the
+  // race to bind). The Order we just created is now an orphan with no PI
+  // binding and would sit in PENDING forever — so delete it and return the
+  // existing Order's id. The webhook will flip the existing Order.
+  let resolvedOrderId = order.id;
   try {
     await prisma.order.update({
       where: { id: order.id },
@@ -319,8 +342,25 @@ export async function createDirectSalePaymentIntent(
       err instanceof Prisma.PrismaClientKnownRequestError &&
       err.code === "P2002"
     ) {
-      // Lost a race with a retried request that already bound this PI.
-      // Both Orders point at the same PI — webhook will pick one and flip.
+      const existing = await prisma.order.findUnique({
+        where: { stripePaymentIntentId: intent.id },
+        select: { id: true },
+      });
+      // Drop the duplicate Order regardless — the cart snapshot lives on
+      // the prior Order. catch() so a delete failure doesn't mask the
+      // P2002 path; admin can clean up if it ever doesn't delete.
+      await prisma.order
+        .delete({ where: { id: order.id } })
+        .catch(() => undefined);
+      if (!existing) {
+        // Stripe returned an id that no Order in our DB owns. Could happen
+        // under a partial-write that lost data; surface so we don't return
+        // a clientSecret bound to nothing.
+        throw new Error(
+          "PaymentIntent already exists but no matching Order found",
+        );
+      }
+      resolvedOrderId = existing.id;
     } else {
       throw err;
     }
@@ -329,7 +369,7 @@ export async function createDirectSalePaymentIntent(
   return {
     clientSecret: intent.client_secret,
     paymentIntentId: intent.id,
-    orderId: order.id,
+    orderId: resolvedOrderId,
     totalInCents: quote.totalInCents,
     taxInCents: quote.taxInCents,
     shippingInCents: quote.shippingInCents,

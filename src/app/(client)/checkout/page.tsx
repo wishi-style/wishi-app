@@ -57,10 +57,20 @@ export default async function CheckoutPage(props: {
   if (cartRows.length !== cartItemIds.length) {
     return <EmptyState reason="invalid" />;
   }
+  // resolveLineItems (called by /calculate-tax + /intent later) requires a
+  // single session. Catch the mismatch here so the user gets the empty
+  // state up front instead of an ugly error mid-form.
+  if (new Set(cartRows.map((r) => r.sessionId)).size !== 1) {
+    return <EmptyState reason="invalid" />;
+  }
 
   const inventoryIds = [...new Set(cartRows.map((r) => r.inventoryProductId))];
   const merchandisedMap = await getMerchandised(inventoryIds);
 
+  // Strict resolution — every cart row must map to an in-stock direct-sale
+  // listing or we render the empty state. Anything looser would let the
+  // checkout render fewer items than the cart, or with an out-of-stock
+  // listing that resolveLineItems will then refuse to charge.
   const items: CheckoutItem[] = [];
   for (const row of cartRows) {
     const merch = merchandisedMap.get(row.inventoryProductId);
@@ -68,9 +78,13 @@ export default async function CheckoutPage(props: {
       return <EmptyState reason="not-direct-sale" />;
     }
     const product = await getProduct(row.inventoryProductId);
-    if (!product) continue;
-    const listing = product.listings.find((l) => l.in_stock) ?? product.listings[0];
-    if (!listing) continue;
+    if (!product) {
+      return <EmptyState reason="invalid" />;
+    }
+    const listing = product.listings.find((l) => l.in_stock);
+    if (!listing) {
+      return <EmptyState reason="invalid" />;
+    }
     const priceDollars =
       listing.sale_price && listing.sale_price > 0
         ? listing.sale_price
@@ -85,8 +99,6 @@ export default async function CheckoutPage(props: {
       quantity: row.quantity,
     });
   }
-
-  if (items.length === 0) return <EmptyState reason="invalid" />;
 
   const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
 
