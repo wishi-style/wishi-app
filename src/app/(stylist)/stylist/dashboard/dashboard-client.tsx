@@ -24,13 +24,6 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Search,
   Send,
   Mic,
@@ -40,9 +33,6 @@ import {
   Sparkles,
   ChevronDown,
   ArrowLeft,
-  Bell,
-  Calendar,
-  Settings,
   SlidersHorizontal,
   ShoppingBag,
   X,
@@ -993,67 +983,7 @@ export default function StylistDashboard({
       sessionId={selectedId}
       clientId={selected?.clientId ?? null}
     />
-    <div className="min-h-screen flex flex-col bg-background">
-      {/* Top Bar */}
-      <header className="h-14 flex items-center justify-between border-b border-border px-4 md:px-6 bg-background shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-full border-2 border-foreground flex items-center justify-center">
-            <span className="font-display text-xs font-semibold">W</span>
-          </div>
-          <span className="font-display text-sm font-semibold hidden sm:inline">Wishi</span>
-          <span className="text-muted-foreground hidden sm:inline">|</span>
-          <span className="font-body text-sm text-muted-foreground hidden sm:inline">Stylist</span>
-        </div>
-
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
-            <Calendar className="h-5 w-5" />
-          </Button>
-          <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground relative">
-            <Bell className="h-5 w-5" />
-            <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-destructive" />
-          </Button>
-          <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
-            <Settings className="h-5 w-5" />
-          </Button>
-          <button
-            type="button"
-            onClick={() => router.push("/stylist/bookings")}
-            className="ml-1 px-3 py-2 text-sm font-body text-muted-foreground bg-transparent hover:bg-transparent hover:text-foreground hover:font-semibold transition-all"
-          >
-            My bookings
-          </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <button className="ml-2 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-              }
-            >
-              <Avatar className="h-8 w-8 cursor-pointer">
-                <AvatarFallback className="bg-accent text-accent-foreground font-body text-xs">
-                  {stylistInitials}
-                </AvatarFallback>
-              </Avatar>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56 font-body">
-              <DropdownMenuItem onClick={() => router.push("/stylist/profile")}>
-                My Profile
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push("/stylist/dressing-room")}>
-                My Dressing Room
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => router.push("/stylist/settings")}>
-                Settings
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push("/logout")}>
-                Logout
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </header>
-
+    <div className="flex flex-col h-[calc(100vh-3.5rem)] bg-background">
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
         {isMobile ? (

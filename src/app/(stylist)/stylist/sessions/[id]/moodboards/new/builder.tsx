@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { MoodBoardGrid } from "@/components/stylist/moodboard-grid";
 import { SendMoodBoardDialog } from "@/components/stylist/send-moodboard-dialog";
+import ClientDetailPanel from "@/components/stylist/client-detail-panel";
 import { toast } from "sonner";
 import type {
   BoardPhoto,
@@ -55,6 +56,7 @@ export function MoodboardBuilder({
   const router = useRouter();
   const [photos, setPhotos] = useState(initialPhotos);
   const [sendOpen, setSendOpen] = useState(false);
+  const [clientInfoOpen, setClientInfoOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [genderFilter, setGenderFilter] = useState("all");
   const [error, setError] = useState<string | null>(null);
@@ -190,13 +192,14 @@ export function MoodboardBuilder({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Link
-            href={`/stylist/clients/${clientId}`}
+          <button
+            type="button"
+            onClick={() => setClientInfoOpen(true)}
             className="inline-flex items-center gap-1.5 h-8 rounded-sm border border-border px-3 font-body text-xs hover:bg-muted transition-colors"
           >
             <UserIcon className="h-3.5 w-3.5" />
             Client info
-          </Link>
+          </button>
           {photos.length > 0 && (
             <Button
               variant="ghost"
@@ -344,6 +347,13 @@ export function MoodboardBuilder({
         images={canvasImages}
         clientName={clientName}
         onSend={sendBoard}
+      />
+
+      <ClientDetailPanel
+        open={clientInfoOpen}
+        onOpenChange={setClientInfoOpen}
+        sessionId={sessionId}
+        clientId={clientId}
       />
     </div>
   );
