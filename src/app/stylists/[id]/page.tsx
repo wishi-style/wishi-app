@@ -12,7 +12,7 @@ import { listStylistReviews } from "@/lib/stylists/review.service";
 import { WriteReviewDialog } from "@/components/stylist/write-review-dialog";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
-import { PillButton } from "@/components/primitives/pill-button";
+import { ContinueWithStylistButton } from "./continue-with-stylist-button";
 import {
   StarIcon,
   ClockIcon,
@@ -104,28 +104,20 @@ export default async function StylistProfilePage({ params }: Props) {
   let matchScore: number | null = null;
   let favorited = false;
   let canReview = false;
-  let styleQuizCompleted = false;
-  let hasDbUser = false;
   const { userId: clerkId } = await getServerAuth().catch(() => ({
     userId: null as string | null,
   }));
-  // Authed-only enrichment: match score, favorite state, can-review gate,
-  // quiz-gate routing. We swallow failures here on purpose — the public
-  // profile must render for everyone, and a flaky lookup against one of
-  // these four queries would otherwise replace the whole page with the
-  // root error boundary ("Try again" screen). Anything that fails just
-  // degrades back to the unauthed defaults.
+  const signedIn = Boolean(clerkId);
+  // Authed-only enrichment: match score, favorite state, can-review gate.
+  // Swallow failures so a flaky lookup degrades to unauthed defaults rather
+  // than bouncing the public profile to the root error boundary.
   if (clerkId) {
     try {
       const user = await prisma.user.findUnique({
         where: { clerkId },
-        select: {
-          id: true,
-          styleProfile: { select: { quizCompletedAt: true } },
-        },
+        select: { id: true },
       });
       if (user) {
-        hasDbUser = true;
         const [quizResult, isFav, completedCount] = await Promise.all([
           prisma.matchQuizResult
             .findFirst({
@@ -147,21 +139,11 @@ export default async function StylistProfilePage({ params }: Props) {
         if (quizResult) matchScore = cosmeticMatchScore(stylist, quizResult);
         favorited = isFav;
         canReview = completedCount > 0;
-        styleQuizCompleted = !!user.styleProfile?.quizCompletedAt;
       }
     } catch (err) {
       console.error("[stylists/[id]] authed enrichment failed", err);
     }
   }
-
-  // Continue CTA routes to /style-quiz only when we can actually submit it
-  // (clerk session + DB user row + quiz not yet completed). Everything else
-  // — unauth, Clerk-session-without-DB-user, already-completed — falls
-  // through to /bookings/new, which owns its own sign-in bounce.
-  const continueHref =
-    clerkId && hasDbUser && !styleQuizCompleted
-      ? `/style-quiz?stylistId=${stylist.id}`
-      : `/bookings/new?stylistId=${stylist.id}`;
 
   // Reviews are nice-to-have on this page — never block the render. If the
   // aggregation fails (transient DB error, malformed seed data, etc.), the
@@ -318,13 +300,12 @@ export default async function StylistProfilePage({ params }: Props) {
 
               <div className="mt-8 flex gap-4">
                 {stylist.isAvailable ? (
-                  <PillButton
-                    href={continueHref}
-                    variant="solid"
+                  <ContinueWithStylistButton
+                    stylistProfileId={stylist.id}
+                    firstName={firstName}
+                    signedIn={signedIn}
                     size="lg"
-                  >
-                    Continue with {firstName}
-                  </PillButton>
+                  />
                 ) : (
                   <WaitlistButton stylistProfileId={stylist.id} />
                 )}
@@ -594,13 +575,12 @@ export default async function StylistProfilePage({ params }: Props) {
             </div>
           </div>
           {stylist.isAvailable ? (
-            <PillButton
-              href={continueHref}
-              variant="solid"
+            <ContinueWithStylistButton
+              stylistProfileId={stylist.id}
+              firstName={firstName}
+              signedIn={signedIn}
               size="md"
-            >
-              Continue with {firstName}
-            </PillButton>
+            />
           ) : (
             <WaitlistButton stylistProfileId={stylist.id} />
           )}
