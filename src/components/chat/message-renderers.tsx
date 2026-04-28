@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckIcon } from "lucide-react";
+import { CheckIcon, Heart, RefreshCw, ThumbsDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { ChatMessage } from "./use-chat";
 import { boardMessageHref } from "./board-href";
 
@@ -212,6 +213,8 @@ interface StyleBoardSummary {
   photos?: Array<{ id: string; url: string | null; orderIndex: number }>;
 }
 
+type Rating = "LOVE" | "REVISE" | "NOT_MY_STYLE";
+
 function StyleBoardMessage({
   boardId,
   isRestyle,
@@ -227,6 +230,8 @@ function StyleBoardMessage({
 }) {
   const [board, setBoard] = useState<StyleBoardSummary | null>(null);
   const [thumbs, setThumbs] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState<Rating | null>(null);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!boardId) return;
@@ -256,8 +261,41 @@ function StyleBoardMessage({
     };
   }, [boardId]);
 
+  async function submitRating(rating: Rating) {
+    if (!boardId || submitting) return;
+    setSubmitting(rating);
+    setFeedbackError(null);
+    const previous = board;
+    // Optimistic — flip the chip + hide the buttons immediately.
+    setBoard((b) => (b ? { ...b, rating } : b));
+    try {
+      const res = await fetch(`/api/styleboards/${boardId}/feedback`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ rating }),
+      });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        setBoard(previous);
+        setFeedbackError(json.error ?? "Could not save feedback");
+      }
+    } catch {
+      setBoard(previous);
+      setFeedbackError("Could not save feedback");
+    } finally {
+      setSubmitting(null);
+    }
+  }
+
   const label = isRestyle ? "Restyle" : "Styleboard";
   const reviewLabel = viewerRole === "CLIENT" ? "Review look" : "View look";
+  const canRate =
+    viewerRole === "CLIENT" && board != null && !board.rating;
+  const ratingPills: Array<{ key: Rating; label: string; icon: typeof Heart }> = [
+    { key: "LOVE", label: "Love", icon: Heart },
+    { key: "REVISE", label: "Revise", icon: RefreshCw },
+    { key: "NOT_MY_STYLE", label: "Not my style", icon: ThumbsDown },
+  ];
 
   return (
     <div
@@ -306,6 +344,32 @@ function StyleBoardMessage({
         >
           {reviewLabel}
         </Link>
+      )}
+      {canRate && (
+        <div
+          className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4"
+          role="group"
+          aria-label="Rate this style board"
+        >
+          {ratingPills.map(({ key, label: pillLabel, icon: Icon }) => (
+            <button
+              key={key}
+              type="button"
+              disabled={submitting !== null}
+              onClick={() => submitRating(key)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-foreground",
+                submitting === key && "opacity-60",
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {pillLabel}
+            </button>
+          ))}
+        </div>
+      )}
+      {feedbackError && (
+        <p className="mt-2 text-xs text-destructive">{feedbackError}</p>
       )}
     </div>
   );
