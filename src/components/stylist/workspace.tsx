@@ -236,6 +236,7 @@ export function StylistWorkspace({
               otherUserAvatar={clientAvatarUrl}
               sessionStatus={sessionStatus}
               viewerRole={"STYLIST" satisfies ViewerRole}
+              hideHeader
             />
           </div>
         )}

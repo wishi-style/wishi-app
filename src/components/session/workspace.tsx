@@ -2,10 +2,14 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { ArrowLeftIcon, PlusIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { ChatWindow } from "@/components/chat/chat-window";
+import { BuyLooksDialog } from "@/components/billing/buy-looks-dialog";
 import type { ViewerRole } from "@/components/chat/message-renderers";
 import { SuggestedReplies } from "./suggested-replies";
-import { SessionSidebar } from "./session-sidebar";
 
 export interface WorkspaceBoard {
   id: string;
@@ -58,12 +62,28 @@ interface Props {
   curated: WorkspaceItem[];
   cart: WorkspaceCartItem[];
   progress: WorkspaceProgress;
-  /** Override the viewport-locked height when extra chrome (e.g. a session
-   *  header bar) sits between the SiteHeader and the workspace. */
+  /** Optional override; defaults to viewport-locked height */
   heightClass?: string;
 }
 
-type Tab = "chat" | "moodboard" | "styleboards" | "curated" | "cart";
+type Tab = "chat" | "styleboards" | "curated" | "cart";
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: "chat", label: "Chat" },
+  { id: "styleboards", label: "Style Boards" },
+  { id: "curated", label: "Curated Pieces" },
+  { id: "cart", label: "Cart" },
+];
+
+const CLOSED_STATUSES = new Set([
+  "ENDED",
+  "CLOSED",
+  "EXPIRED",
+  "REFUNDED",
+  "CANCELLED",
+  "CANCELED",
+  "COMPLETED",
+]);
 
 const suggestedRepliesEnabled =
   process.env.NEXT_PUBLIC_FEATURE_AI_SUGGESTED_REPLIES === "true";
@@ -81,63 +101,217 @@ export function SessionWorkspace({
   progress,
   heightClass = "h-[calc(100vh-4rem)]",
 }: Props) {
-  const [tab, setTab] = React.useState<Tab>("chat");
+  const [activeTab, setActiveTab] = React.useState<Tab>("chat");
+  const [buyOpen, setBuyOpen] = React.useState(false);
 
-  const moodboards = boards.filter((b) => b.type === "MOODBOARD");
   const styleboards = boards.filter((b) => b.type === "STYLEBOARD");
-
-  const tabs: { id: Tab; label: string; count?: number }[] = [
-    { id: "chat", label: "Chat" },
-    {
-      id: "moodboard",
-      label: "Moodboard",
-      count: moodboards.length || undefined,
-    },
-    {
-      id: "styleboards",
-      label: "Styleboards",
-      count: styleboards.length || undefined,
-    },
-    {
-      id: "curated",
-      label: "Curated",
-      count: curated.length || undefined,
-    },
-    { id: "cart", label: "Cart", count: cart.length || undefined },
-  ];
-
   const cartSubtotal = cart.reduce(
     (acc, c) => acc + c.priceInCents * c.quantity,
     0,
   );
 
+  const planType = (progress.planType ?? "").toUpperCase();
+  const isLux = planType === "LUX";
+  const isMajor = planType === "MAJOR";
+  const badgeLabel = isLux ? "✦ Lux" : isMajor ? "Major" : "Mini";
+  const badgeClass = cn(
+    "rounded-sm text-[10px] font-medium border-0",
+    isLux
+      ? "bg-gradient-to-r from-[hsl(38,40%,50%)] to-[hsl(28,50%,60%)] text-white shadow-sm"
+      : "bg-secondary text-secondary-foreground",
+  );
+
+  const isClosed = CLOSED_STATUSES.has(sessionStatus.toUpperCase());
+
+  const initials =
+    otherUserName
+      .split(" ")
+      .filter(Boolean)
+      .map((n) => n[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "?";
+
+  const looksTotal = progress.boardCount;
+  const looksDone = progress.styleboardsSent;
+  const donePct =
+    looksTotal > 0
+      ? Math.min(100, Math.round((looksDone / looksTotal) * 100))
+      : 0;
+  const additionalLookDollars = Math.round(
+    progress.additionalLookPriceCents / 100,
+  );
+
   return (
-    <div className={`flex ${heightClass} flex-col lg:flex-row`}>
-      <div className="flex flex-1 min-h-0 flex-col">
-        <div className="flex border-b border-border overflow-x-auto">
-          {tabs.map((t) => (
+    <div className={`flex ${heightClass} overflow-hidden bg-background`}>
+      {/* Desktop left rail — Loveable parity (back / stylist info / plan badge /
+       *  progress / vertical tabs / Buy Looks + Upgrade Plan). */}
+      <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-border bg-[hsl(var(--sidebar-background,0_0%_97%))]">
+        <div className="border-b border-border p-5">
+          <Link
+            href="/sessions"
+            className="mb-5 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeftIcon className="h-4 w-4" />
+            Back to Sessions
+          </Link>
+
+          <div className="flex items-center gap-3">
+            <Avatar className="h-11 w-11">
+              {otherUserAvatar ? (
+                <AvatarImage src={otherUserAvatar} alt={otherUserName} />
+              ) : null}
+              <AvatarFallback className="bg-secondary text-secondary-foreground font-display">
+                {initials}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <h2 className="font-display text-lg leading-tight truncate">
+                {otherUserName}
+              </h2>
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-center gap-2">
+            <Badge variant="outline" className={badgeClass}>
+              {badgeLabel}
+            </Badge>
+            {isClosed && (
+              <Badge
+                variant="outline"
+                className="rounded-sm border-muted-foreground/30 text-[10px] text-muted-foreground"
+              >
+                Closed
+              </Badge>
+            )}
+          </div>
+
+          {looksTotal > 0 && (
+            <div className="mt-4">
+              <div className="flex items-baseline justify-between text-[11px]">
+                <span className="text-muted-foreground">Looks delivered</span>
+                <span className="tabular-nums">
+                  {looksDone} / {looksTotal}
+                </span>
+              </div>
+              <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full bg-foreground transition-[width]"
+                  style={{ width: `${donePct}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <nav className="flex-1 px-3 py-3">
+          {TABS.map((tab) => (
             <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`border-b-2 px-4 py-3 text-sm whitespace-nowrap transition-colors ${
-                tab === t.id
-                  ? "border-foreground font-medium"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "mb-0.5 flex w-full items-center gap-3 rounded-md px-4 py-2.5 text-sm transition-colors",
+                activeTab === tab.id
+                  ? "bg-background font-medium text-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-background/50 hover:text-foreground",
+              )}
             >
-              {t.label}
-              {t.count != null && (
-                <span className="ml-1 text-xs text-muted-foreground">
-                  ({t.count})
+              {tab.label}
+              {tab.id === "cart" && cart.length > 0 && (
+                <span className="ml-auto inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-foreground px-1.5 text-[10px] font-medium text-background">
+                  {cart.length}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        <div className="mt-auto space-y-2 border-t border-border p-4">
+          <button
+            type="button"
+            onClick={() => setBuyOpen(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground hover:text-foreground"
+          >
+            <PlusIcon className="h-3.5 w-3.5" />
+            Buy Looks
+            {additionalLookDollars > 0 && (
+              <span className="text-muted-foreground/70">
+                · ${additionalLookDollars}
+              </span>
+            )}
+          </button>
+          {!isLux && (
+            <Link
+              href="/settings"
+              className="flex w-full items-center justify-center rounded-lg px-4 py-2.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Upgrade Plan
+            </Link>
+          )}
+        </div>
+      </aside>
+
+      {/* Mobile header — back / avatar / plan badge + horizontal tab bar. */}
+      <div className="absolute left-0 right-0 top-16 z-20 border-b border-border bg-background md:hidden">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <Link
+            href="/sessions"
+            className="text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeftIcon className="h-5 w-5" />
+          </Link>
+          <Avatar className="h-8 w-8">
+            {otherUserAvatar ? (
+              <AvatarImage src={otherUserAvatar} alt={otherUserName} />
+            ) : null}
+            <AvatarFallback className="bg-secondary text-secondary-foreground font-display text-xs">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 flex-1">
+            <h2 className="font-display text-sm leading-tight truncate">
+              {otherUserName}
+            </h2>
+          </div>
+          <Badge
+            variant="outline"
+            className={cn(badgeClass, "shrink-0 text-[9px]")}
+          >
+            {badgeLabel}
+          </Badge>
+        </div>
+        <div className="flex overflow-x-auto border-t border-border">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "shrink-0 border-b-2 px-4 py-2.5 text-xs transition-colors",
+                activeTab === tab.id
+                  ? "border-foreground font-medium text-foreground"
+                  : "border-transparent text-muted-foreground",
+              )}
+            >
+              {tab.label}
+              {tab.id === "cart" && cart.length > 0 && (
+                <span className="ml-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-foreground px-1 text-[9px] font-medium text-background">
+                  {cart.length}
                 </span>
               )}
             </button>
           ))}
         </div>
+      </div>
 
-        {tab === "chat" && (
-          <div className="flex flex-1 min-h-0 flex-col">
-            <div className="flex-1 min-h-0">
+      {/* Main content */}
+      <div className="flex flex-1 min-w-0 flex-col">
+        <div className="h-[88px] shrink-0 md:hidden" />
+
+        {activeTab === "chat" && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1">
               <ChatWindow
                 sessionId={sessionId}
                 currentIdentity={currentIdentity}
@@ -145,88 +319,51 @@ export function SessionWorkspace({
                 otherUserAvatar={otherUserAvatar}
                 sessionStatus={sessionStatus}
                 viewerRole={viewerRole}
+                hideHeader
               />
             </div>
-            {/* Suggested replies surface for stylists composing responses.
-                Flag-gated; real LLM suggestions land in Phase 7. */}
             {suggestedRepliesEnabled && viewerRole === "STYLIST" ? (
               <SuggestedReplies sessionId={sessionId} />
             ) : null}
           </div>
         )}
 
-        {tab === "moodboard" && (
-          <div className="flex-1 overflow-y-auto p-6">
-            {moodboards.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No moodboards yet.
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {moodboards.map((b) => (
-                  <Link
-                    key={b.id}
-                    href={`/sessions/${sessionId}/moodboards/${b.id}`}
-                    className="overflow-hidden rounded-lg border border-border transition hover:opacity-80"
-                  >
-                    {b.thumbnailUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={b.thumbnailUrl}
-                        alt=""
-                        className="aspect-square w-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex aspect-square items-center justify-center bg-muted text-sm text-muted-foreground">
-                        Draft
-                      </div>
-                    )}
-                    <div className="p-3">
-                      <p className="text-sm font-medium">Moodboard</p>
-                      <p className="text-xs text-muted-foreground">
-                        {b.sentAt ? (b.rating ?? "Awaiting feedback") : "Not sent"}
-                      </p>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {tab === "styleboards" && (
-          <div className="flex-1 overflow-y-auto p-6">
+        {activeTab === "styleboards" && (
+          <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 md:py-6">
             {styleboards.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 No styleboards yet.
               </p>
             ) : (
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {styleboards.map((b) => (
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                {styleboards.map((b, idx) => (
                   <Link
                     key={b.id}
                     href={`/sessions/${sessionId}/styleboards/${b.id}`}
-                    className="overflow-hidden rounded-lg border border-border transition hover:opacity-80"
+                    className="rounded-lg border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md"
                   >
-                    {b.thumbnailUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={b.thumbnailUrl}
-                        alt=""
-                        className="aspect-square w-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex aspect-square items-center justify-center bg-muted text-sm text-muted-foreground">
-                        Draft
-                      </div>
-                    )}
-                    <div className="p-3">
-                      <p className="text-sm font-medium">
-                        {b.isRevision ? "Restyle" : "Styleboard"}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {b.sentAt ? (b.rating ?? "Awaiting feedback") : "Not sent"}
-                      </p>
+                    <h4 className="font-display text-lg leading-tight">
+                      {b.isRevision ? `Restyle ${idx + 1}` : `Board ${idx + 1}`}
+                    </h4>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {b.sentAt
+                        ? `Sent · ${b.rating ?? "Awaiting feedback"}`
+                        : "Draft"}
+                    </p>
+                    <div className="mt-3 aspect-square overflow-hidden rounded-md bg-muted">
+                      {b.thumbnailUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={b.thumbnailUrl}
+                          alt=""
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+                          No preview
+                        </div>
+                      )}
                     </div>
                   </Link>
                 ))}
@@ -235,42 +372,42 @@ export function SessionWorkspace({
           </div>
         )}
 
-        {tab === "curated" && (
-          <div className="flex-1 overflow-y-auto p-6">
+        {activeTab === "curated" && (
+          <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 md:py-6">
+            <h3 className="mb-4 font-display text-xl">All Curated Pieces</h3>
             {curated.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 No items yet. Items from styleboards land here as your stylist
                 sends them.
               </p>
             ) : (
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
+              <div className="grid grid-cols-2 gap-5 md:grid-cols-4">
                 {curated.map((it) => (
                   <div
                     key={it.id}
-                    className="overflow-hidden rounded-lg border border-border"
+                    className="flex flex-col rounded-lg border border-border bg-card p-4"
                   >
-                    {it.imageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={it.imageUrl}
-                        alt=""
-                        className="aspect-square w-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex aspect-square items-center justify-center bg-muted p-2 text-center text-xs text-muted-foreground">
-                        {it.label ?? "Item"}
-                      </div>
-                    )}
-                    <div className="p-2">
-                      {it.brand && (
-                        <p className="truncate text-xs">{it.brand}</p>
-                      )}
-                      {it.label && (
-                        <p className="truncate text-xs text-muted-foreground">
-                          {it.label}
-                        </p>
+                    <div className="mb-3 aspect-[3/4] overflow-hidden rounded-md bg-muted">
+                      {it.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={it.imageUrl}
+                          alt={it.label ?? ""}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center p-2 text-center text-xs text-muted-foreground">
+                          {it.label ?? "Item"}
+                        </div>
                       )}
                     </div>
+                    <p className="truncate text-center text-sm font-medium text-foreground">
+                      {it.brand ?? " "}
+                    </p>
+                    <p className="mt-0.5 truncate text-center text-xs text-muted-foreground">
+                      {it.label ?? ""}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -278,14 +415,27 @@ export function SessionWorkspace({
           </div>
         )}
 
-        {tab === "cart" && (
-          <div className="flex-1 overflow-y-auto p-6">
+        {activeTab === "cart" && (
+          <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 md:py-6">
             {cart.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Your bag is empty. Tap a product in a styleboard to add it.
-              </p>
+              <div className="text-center">
+                <h3 className="font-display text-2xl">Let&rsquo;s fill up your cart</h3>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Browse your curated pieces and add your favorites.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("curated")}
+                  className="mt-4 inline-flex h-10 items-center rounded-full bg-foreground px-5 text-sm font-medium text-background hover:opacity-90 transition-opacity"
+                >
+                  Browse Curated Pieces
+                </button>
+              </div>
             ) : (
               <>
+                <h3 className="mb-4 font-display text-xl">
+                  Your Cart ({cart.length})
+                </h3>
                 <ul className="space-y-3">
                   {cart.map((row) => (
                     <li
@@ -297,16 +447,16 @@ export function SessionWorkspace({
                         <img
                           src={row.imageUrl}
                           alt={row.name}
-                          className="h-16 w-16 rounded-md object-cover bg-muted"
+                          className="h-16 w-16 rounded-md bg-muted object-cover"
                         />
                       ) : (
                         <div className="h-16 w-16 rounded-md bg-muted" />
                       )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs uppercase tracking-widest text-dark-taupe">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs uppercase tracking-widest text-muted-foreground">
                           {row.brand}
                         </p>
-                        <p className="text-sm truncate">{row.name}</p>
+                        <p className="truncate text-sm">{row.name}</p>
                         <p className="text-xs text-muted-foreground">
                           Qty {row.quantity}
                         </p>
@@ -326,9 +476,9 @@ export function SessionWorkspace({
                   </div>
                   <Link
                     href="/cart"
-                    className="inline-flex h-10 items-center rounded-full bg-foreground px-5 text-sm font-medium text-background hover:bg-foreground/90 transition-colors"
+                    className="inline-flex h-10 items-center rounded-full bg-foreground px-5 text-sm font-medium text-background transition-colors hover:bg-foreground/90"
                   >
-                    Review & checkout
+                    Review &amp; checkout
                   </Link>
                 </div>
               </>
@@ -337,9 +487,12 @@ export function SessionWorkspace({
         )}
       </div>
 
-      {viewerRole === "CLIENT" ? (
-        <SessionSidebar sessionId={sessionId} progress={progress} />
-      ) : null}
+      <BuyLooksDialog
+        sessionId={sessionId}
+        additionalLookDollars={additionalLookDollars}
+        open={buyOpen}
+        onOpenChange={setBuyOpen}
+      />
     </div>
   );
 }

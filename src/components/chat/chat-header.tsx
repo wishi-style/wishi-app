@@ -12,8 +12,8 @@ export function ChatHeader({
   sessionStatus,
 }: ChatHeaderProps) {
   return (
-    <div className="flex items-center gap-3 border-b border-stone-200 bg-white px-4 py-3">
-      <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-stone-200">
+    <div className="flex items-center gap-3 border-b border-border bg-card px-4 py-3">
+      <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-muted">
         {otherUserAvatar ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -22,16 +22,16 @@ export function ChatHeader({
             className="h-full w-full object-cover"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-lg text-stone-400">
+          <div className="flex h-full w-full items-center justify-center text-lg text-muted-foreground">
             {otherUserName.charAt(0)}
           </div>
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-stone-900">
+        <p className="truncate text-sm font-medium text-foreground">
           {otherUserName}
         </p>
-        <p className="text-xs capitalize text-stone-400">
+        <p className="text-xs capitalize text-muted-foreground">
           {sessionStatus.toLowerCase().replace(/_/g, " ")}
         </p>
       </div>
