@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import { EndSessionForm } from "./end-session-form";
+import { EndSessionPageClient } from "./end-session-page-client";
 
 export const dynamic = "force-dynamic";
 
@@ -57,24 +57,11 @@ export default async function EndSessionPage({
   if (!plan) notFound();
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-lg px-6 md:px-10 py-16">
-        <header className="mb-8">
-          <h1 className="font-display text-3xl md:text-4xl mb-2">
-            Wrap up your session
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            A quick rating for {session.stylist?.firstName ?? "your stylist"} + an
-            optional tip. Add a note too — reviews help other clients find the
-            right stylist.
-          </p>
-        </header>
-        <EndSessionForm
-          sessionId={session.id}
-          stylistFirstName={session.stylist?.firstName ?? "your stylist"}
-          planPriceCents={plan.priceInCents}
-        />
-      </div>
-    </div>
+    <EndSessionPageClient
+      sessionId={session.id}
+      stylistFirstName={session.stylist?.firstName ?? "your stylist"}
+      planPriceCents={plan.priceInCents}
+      referralCode={user.referralCode}
+    />
   );
 }
