@@ -3,15 +3,24 @@
 import { useCallback, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Heart } from "lucide-react";
 import type { FeedBoard, FeedGender, FeedPage } from "@/lib/feed/feed.service";
 import { PillButton } from "@/components/primitives/pill-button";
+import { cn } from "@/lib/utils";
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
 } from "@/components/ui/avatar";
 
-function FeedCard({ board }: { board: FeedBoard }) {
+function FeedCard({
+  board,
+  onToggleFavorite,
+}: {
+  board: FeedBoard;
+  onToggleFavorite: () => void;
+}) {
   const initials = board.stylist.name
     .split(" ")
     .map((n) => n[0])
@@ -44,26 +53,44 @@ function FeedCard({ board }: { board: FeedBoard }) {
           ) : null}
         </div>
       </Link>
-      <Link
-        href={`/stylists/${board.stylist.profileId}`}
-        className="block group"
-      >
-        <div className="relative aspect-[4/5] overflow-hidden bg-muted">
-          {board.coverImageUrl ? (
-            <Image
-              src={board.coverImageUrl}
-              alt={board.title ?? `Look by ${board.stylist.name}`}
-              fill
-              sizes="(min-width: 768px) 600px, 100vw"
-              className="object-cover transition-transform duration-500 group-hover:scale-105"
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center font-display text-5xl text-muted-foreground">
-              {board.stylist.name.charAt(0)}
-            </div>
-          )}
-        </div>
-      </Link>
+      <div className="relative">
+        <Link
+          href={`/stylists/${board.stylist.profileId}`}
+          className="block group"
+        >
+          <div className="relative aspect-[4/5] overflow-hidden bg-muted">
+            {board.coverImageUrl ? (
+              <Image
+                src={board.coverImageUrl}
+                alt={board.title ?? `Look by ${board.stylist.name}`}
+                fill
+                sizes="(min-width: 768px) 600px, 100vw"
+                className="object-cover transition-transform duration-500 group-hover:scale-105"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center font-display text-5xl text-muted-foreground">
+                {board.stylist.name.charAt(0)}
+              </div>
+            )}
+          </div>
+        </Link>
+        <button
+          type="button"
+          onClick={onToggleFavorite}
+          aria-label={board.isFavorited ? "Remove from favorites" : "Save look"}
+          aria-pressed={board.isFavorited}
+          className="absolute top-3 right-3 h-9 w-9 rounded-full bg-background/85 backdrop-blur flex items-center justify-center shadow-sm hover:bg-background transition-colors"
+        >
+          <Heart
+            className={cn(
+              "h-4 w-4",
+              board.isFavorited
+                ? "fill-foreground text-foreground"
+                : "text-foreground",
+            )}
+          />
+        </button>
+      </div>
       {board.title ? (
         <div className="px-4 py-4">
           <p className="text-sm text-foreground leading-snug">
@@ -106,10 +133,13 @@ function GiftCardPromoBanner() {
 export function FeedList({
   initialPage,
   gender,
+  isAuthed,
 }: {
   initialPage: FeedPage;
   gender: FeedGender;
+  isAuthed: boolean;
 }) {
+  const router = useRouter();
   const [boards, setBoards] = useState<FeedBoard[]>(initialPage.boards);
   const [cursor, setCursor] = useState<string | null>(initialPage.nextCursor);
   const [loading, setLoading] = useState(false);
@@ -134,6 +164,49 @@ export function FeedList({
     }
   }, [cursor, gender, loading]);
 
+  const toggleFavorite = useCallback(
+    async (boardId: string) => {
+      if (!isAuthed) {
+        router.push(`/sign-in?redirect_url=${encodeURIComponent("/feed")}`);
+        return;
+      }
+      const target = boards.find((b) => b.id === boardId);
+      if (!target) return;
+      const nextFavorited = !target.isFavorited;
+      setBoards((bs) =>
+        bs.map((b) =>
+          b.id === boardId ? { ...b, isFavorited: nextFavorited } : b,
+        ),
+      );
+      try {
+        const res = nextFavorited
+          ? await fetch("/api/favorites/boards", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ boardId }),
+            })
+          : await fetch(
+              `/api/favorites/boards?boardId=${encodeURIComponent(boardId)}`,
+              { method: "DELETE" },
+            );
+        if (!res.ok) {
+          setBoards((bs) =>
+            bs.map((b) =>
+              b.id === boardId ? { ...b, isFavorited: !nextFavorited } : b,
+            ),
+          );
+        }
+      } catch {
+        setBoards((bs) =>
+          bs.map((b) =>
+            b.id === boardId ? { ...b, isFavorited: !nextFavorited } : b,
+          ),
+        );
+      }
+    },
+    [boards, isAuthed, router],
+  );
+
   if (boards.length === 0) {
     return (
       <p className="py-16 text-center text-sm text-muted-foreground">
@@ -147,7 +220,10 @@ export function FeedList({
       <div className="mx-auto max-w-2xl flex flex-col gap-8 md:gap-12">
         {boards.map((b, i) => (
           <div key={b.id}>
-            <FeedCard board={b} />
+            <FeedCard
+              board={b}
+              onToggleFavorite={() => toggleFavorite(b.id)}
+            />
             {i === 2 ? (
               <div className="mt-8 md:mt-12">
                 <GiftCardPromoBanner />

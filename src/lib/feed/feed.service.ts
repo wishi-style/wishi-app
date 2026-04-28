@@ -9,6 +9,7 @@ export type FeedBoard = {
   profileStyle: string | null;
   coverImageUrl: string | null;
   createdAt: Date;
+  isFavorited: boolean;
   stylist: {
     profileId: string;
     name: string;
@@ -37,6 +38,7 @@ export async function listFeedBoards(params: {
   gender: FeedGender;
   cursor?: string | null;
   limit?: number;
+  userId?: string | null;
 }): Promise<FeedPage> {
   const limit = Math.min(Math.max(params.limit ?? 24, 1), 48);
   const gender = mapGender(params.gender);
@@ -78,26 +80,39 @@ export async function listFeedBoards(params: {
   const page = hasMore ? boards.slice(0, limit) : boards;
 
   type Row = (typeof boards)[number];
+  const visible = page.filter((b: Row) => b.stylistProfile !== null);
+
+  const favoritedIds = new Set<string>();
+  if (params.userId && visible.length > 0) {
+    const favorites = await prisma.favoriteBoard.findMany({
+      where: {
+        userId: params.userId,
+        boardId: { in: visible.map((b: Row) => b.id) },
+      },
+      select: { boardId: true },
+    });
+    for (const f of favorites) favoritedIds.add(f.boardId);
+  }
+
   return {
-    boards: page
-      .filter((b: Row) => b.stylistProfile !== null)
-      .map((b: Row) => {
-        const sp = b.stylistProfile!;
-        const firstName = sp.user.firstName ?? "";
-        const lastName = sp.user.lastName ?? "";
-        return {
-          id: b.id,
-          title: b.title,
-          profileStyle: b.profileStyle,
-          coverImageUrl: b.photos[0]?.url ?? null,
-          createdAt: b.createdAt,
-          stylist: {
-            profileId: sp.id,
-            name: `${firstName} ${lastName}`.trim(),
-            avatarUrl: sp.user.avatarUrl,
-          },
-        };
-      }),
+    boards: visible.map((b: Row) => {
+      const sp = b.stylistProfile!;
+      const firstName = sp.user.firstName ?? "";
+      const lastName = sp.user.lastName ?? "";
+      return {
+        id: b.id,
+        title: b.title,
+        profileStyle: b.profileStyle,
+        coverImageUrl: b.photos[0]?.url ?? null,
+        createdAt: b.createdAt,
+        isFavorited: favoritedIds.has(b.id),
+        stylist: {
+          profileId: sp.id,
+          name: `${firstName} ${lastName}`.trim(),
+          avatarUrl: sp.user.avatarUrl,
+        },
+      };
+    }),
     nextCursor: hasMore ? page[page.length - 1].id : null,
   };
 }

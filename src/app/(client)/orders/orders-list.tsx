@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   Card,
@@ -10,7 +10,16 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { ClientOrderRow } from "@/lib/orders/client-orders.service";
+
+type OrdersTab = "all" | "active" | "past";
+
+const ACTIVE_STATUSES = new Set<ClientOrderRow["status"]>([
+  "PENDING",
+  "ORDERED",
+  "SHIPPED",
+]);
 
 function fmtMoney(cents: number) {
   return new Intl.NumberFormat("en-US", {
@@ -41,6 +50,18 @@ export function OrdersList({ initialOrders }: { initialOrders: ClientOrderRow[] 
   const [orders, setOrders] = useState(initialOrders);
   const [pending, startTransition] = useTransition();
   const [actingOn, setActingOn] = useState<string | null>(null);
+
+  const [tab, setTab] = useState<OrdersTab>("all");
+
+  const { activeOrders, pastOrders } = useMemo(() => {
+    const active: ClientOrderRow[] = [];
+    const past: ClientOrderRow[] = [];
+    for (const order of orders) {
+      if (ACTIVE_STATUSES.has(order.status)) active.push(order);
+      else past.push(order);
+    }
+    return { activeOrders: active, pastOrders: past };
+  }, [orders]);
 
   if (orders.length === 0) {
     return (
@@ -76,86 +97,117 @@ export function OrdersList({ initialOrders }: { initialOrders: ClientOrderRow[] 
     }
   }
 
-  return (
-    <div className="space-y-4">
-      {orders.map((order) => (
-        <Card key={order.id}>
-          <CardHeader className="flex flex-row items-start justify-between gap-4">
-            <div>
-              <CardTitle className="text-base">
-                {order.retailer}
-                <span className="ml-2 font-mono text-xs text-muted-foreground">
-                  #{order.id.slice(0, 8)}
-                </span>
-              </CardTitle>
-              <div className="mt-1 text-xs text-muted-foreground">
-                Placed {fmtDate(order.createdAt)}
-                {order.shippedAt ? ` · shipped ${fmtDate(order.shippedAt)}` : ""}
-                {order.arrivedAt ? ` · delivered ${fmtDate(order.arrivedAt)}` : ""}
-              </div>
-              {order.trackingNumber ? (
-                <div className="mt-1 text-xs">
-                  Tracking: {order.carrier ?? ""} {order.trackingNumber}
-                </div>
-              ) : null}
+  function renderOrder(order: ClientOrderRow) {
+    return (
+      <Card key={order.id}>
+        <CardHeader className="flex flex-row items-start justify-between gap-4">
+          <div>
+            <CardTitle className="text-base">
+              {order.retailer}
+              <span className="ml-2 font-mono text-xs text-muted-foreground">
+                #{order.id.slice(0, 8)}
+              </span>
+            </CardTitle>
+            <div className="mt-1 text-xs text-muted-foreground">
+              Placed {fmtDate(order.createdAt)}
+              {order.shippedAt ? ` · shipped ${fmtDate(order.shippedAt)}` : ""}
+              {order.arrivedAt ? ` · delivered ${fmtDate(order.arrivedAt)}` : ""}
             </div>
-            <div className="flex flex-col items-end gap-1">
-              {order.isPriorityShipping ? (
-                <Badge variant="outline">Priority (Lux)</Badge>
-              ) : null}
-              <Badge>{STATUS_LABELS[order.status] ?? order.status}</Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-2">
-              {order.items.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-2 text-sm"
-                >
-                  <div>
-                    <div className="font-medium">{item.title}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {item.brand ?? ""}
-                      {item.brand && item.size ? " · " : ""}
-                      {item.size ? `Size ${item.size}` : ""}
-                      {item.quantity > 1 ? ` · qty ${item.quantity}` : ""}
-                    </div>
-                  </div>
-                  <div className="text-right text-sm">
-                    {fmtMoney(item.priceInCents * item.quantity)}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex items-end justify-between">
-              <div className="text-xs text-muted-foreground">
-                Subtotal {fmtMoney(order.totalInCents - order.taxInCents - order.shippingInCents)}{" "}
-                · tax {fmtMoney(order.taxInCents)} · shipping{" "}
-                {fmtMoney(order.shippingInCents)}
-              </div>
-              <div className="text-right">
-                <div className="text-xs uppercase text-muted-foreground">Total</div>
-                <div className="text-base font-semibold">
-                  {fmtMoney(order.totalInCents)}
-                </div>
-              </div>
-            </div>
-            {order.isReturnEligible ? (
-              <div className="flex justify-end">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={pending || actingOn === order.id}
-                  onClick={() => startReturn(order.id)}
-                >
-                  {actingOn === order.id ? "Starting return…" : "Start return"}
-                </Button>
+            {order.trackingNumber ? (
+              <div className="mt-1 text-xs">
+                Tracking: {order.carrier ?? ""} {order.trackingNumber}
               </div>
             ) : null}
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+          </div>
+          <div className="flex flex-col items-end gap-1">
+            {order.isPriorityShipping ? (
+              <Badge variant="outline">Priority (Lux)</Badge>
+            ) : null}
+            <Badge>{STATUS_LABELS[order.status] ?? order.status}</Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="space-y-2">
+            {order.items.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-2 text-sm"
+              >
+                <div>
+                  <div className="font-medium">{item.title}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {item.brand ?? ""}
+                    {item.brand && item.size ? " · " : ""}
+                    {item.size ? `Size ${item.size}` : ""}
+                    {item.quantity > 1 ? ` · qty ${item.quantity}` : ""}
+                  </div>
+                </div>
+                <div className="text-right text-sm">
+                  {fmtMoney(item.priceInCents * item.quantity)}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-end justify-between">
+            <div className="text-xs text-muted-foreground">
+              Subtotal {fmtMoney(order.totalInCents - order.taxInCents - order.shippingInCents)}{" "}
+              · tax {fmtMoney(order.taxInCents)} · shipping{" "}
+              {fmtMoney(order.shippingInCents)}
+            </div>
+            <div className="text-right">
+              <div className="text-xs uppercase text-muted-foreground">Total</div>
+              <div className="text-base font-semibold">
+                {fmtMoney(order.totalInCents)}
+              </div>
+            </div>
+          </div>
+          {order.isReturnEligible ? (
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pending || actingOn === order.id}
+                onClick={() => startReturn(order.id)}
+              >
+                {actingOn === order.id ? "Starting return…" : "Start return"}
+              </Button>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  function emptyState(message: string) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center text-sm text-muted-foreground">
+          {message}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Tabs value={tab} onValueChange={(v) => setTab(v as OrdersTab)} className="w-full">
+      <TabsList className="mb-6">
+        <TabsTrigger value="all">All ({orders.length})</TabsTrigger>
+        <TabsTrigger value="active">Active ({activeOrders.length})</TabsTrigger>
+        <TabsTrigger value="past">Past ({pastOrders.length})</TabsTrigger>
+      </TabsList>
+      <TabsContent value="all" className="space-y-4">
+        {orders.map(renderOrder)}
+      </TabsContent>
+      <TabsContent value="active" className="space-y-4">
+        {activeOrders.length > 0
+          ? activeOrders.map(renderOrder)
+          : emptyState("No active orders.")}
+      </TabsContent>
+      <TabsContent value="past" className="space-y-4">
+        {pastOrders.length > 0
+          ? pastOrders.map(renderOrder)
+          : emptyState("No past orders yet.")}
+      </TabsContent>
+    </Tabs>
   );
 }
