@@ -66,10 +66,12 @@ Before pushing, every PR should have:
 - [x] Typecheck clean
 - [x] Lint clean
 - [x] Unit tests pass with no new failures
-- [x] At least one targeted spec for any new user-facing behaviour — inline DOM scrape, not "I'll verify manually"
+- [x] **Playwright spec for every new user-facing behaviour.** Each new route, redirect, gate, CTA target, dialog, and server action gets at least one spec under `tests/e2e/<feature>.spec.ts`. **A PR description with any `[ ] Local: ...` or `[ ] Manual: ...` checkbox is not done — every line in the test plan must be an automated check that already passed.** Manual checkboxes rot; Playwright catches the regression. (See auto-memory `feedback_playwright_for_major_features.md`.)
 - [x] Price grep gate passes (if JSX changed)
 - [x] Docs updated (see "Docs to keep in sync" below)
 - [x] Copilot (or any) PR review comments addressed before requesting merge
+
+**Self-check before pushing:** open the PR body, search for `[ ]`. For every unchecked box, ask "Could this be a Playwright assertion?" If yes, write the spec before pushing. If you're declaring the PR ready while the test plan reads like a manual to-do list, you're not done.
 
 ### Docs to keep in sync after each phase
 
