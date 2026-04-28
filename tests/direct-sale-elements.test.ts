@@ -136,6 +136,34 @@ async function seedCart(opts: {
   });
 }
 
+// Stub resolveLineItems — the inventory service is unreachable in the
+// test env (mirrors `direct-sale-full-flow.test.ts:154` workaround), so
+// every test in this suite passes a hand-built ResolvedLineItem array.
+function mockResolveLineItems(opts: {
+  cartItemId: string;
+  inventoryProductId: string;
+  sessionId: string;
+  unitAmountInCents?: number;
+  quantity?: number;
+}) {
+  return async (_userId: string, _cartItemIds: string[]) => ({
+    items: [
+      {
+        cartItemId: opts.cartItemId,
+        inventoryProductId: opts.inventoryProductId,
+        title: "Test product",
+        brand: "Test brand",
+        imageUrl: null,
+        unitAmountInCents: opts.unitAmountInCents ?? 5000,
+        quantity: opts.quantity ?? 1,
+        taxCode: "txcd_99999999",
+        merchant: "test-merchant",
+      },
+    ],
+    sessionId: opts.sessionId,
+  });
+}
+
 function mockTaxCalculation(overrides: Partial<Stripe.Tax.Calculation> = {}): Stripe.Tax.Calculation {
   return {
     id: `taxcalc_${randomUUID()}`,
@@ -186,6 +214,11 @@ integrationTest(
       address: ADDRESS,
       deps: {
         createTaxCalculation: async () => taxCalc,
+        resolveLineItems: mockResolveLineItems({
+          cartItemId: cartItem.id,
+          inventoryProductId: STD_INVENTORY_ID,
+          sessionId,
+        }),
       },
     });
 
@@ -214,6 +247,11 @@ integrationTest(
       address: ADDRESS,
       deps: {
         createTaxCalculation: async () => mockTaxCalculation(),
+        resolveLineItems: mockResolveLineItems({
+          cartItemId: cartItem.id,
+          inventoryProductId: LUX_INVENTORY_ID,
+          sessionId: luxSessionId,
+        }),
       },
     });
 
@@ -227,6 +265,12 @@ integrationTest(
 integrationTest(
   "createDirectSalePaymentIntent: pre-creates Order(PENDING) with PI binding",
   async () => {
+    // getOrCreateStripeCustomer otherwise hits Stripe; pre-set it to skip
+    // the call (mirrors direct-sale-full-flow.test.ts:148).
+    await prisma.user.update({
+      where: { id: clientUserId },
+      data: { stripeCustomerId: `cus_test_${randomUUID()}` },
+    });
     const cartItem = await seedCart({
       userId: clientUserId,
       sessionId,
@@ -248,6 +292,11 @@ integrationTest(
           assert.equal(typeof params.metadata?.orderId, "string");
           return { id: piId, client_secret: `${piId}_secret_x`, amount: params.amount ?? 0 };
         },
+        resolveLineItems: mockResolveLineItems({
+          cartItemId: cartItem.id,
+          inventoryProductId: STD_INVENTORY_ID,
+          sessionId,
+        }),
       },
     });
 

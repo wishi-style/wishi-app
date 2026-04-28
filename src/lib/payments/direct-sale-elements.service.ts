@@ -41,11 +41,17 @@ export interface CalculateDirectSaleTaxInput {
   userId: string;
   cartItemIds: string[];
   address: ShippingAddress;
-  // Test seam: integration tests stub the Stripe Tax call.
+  // Test seam: integration tests stub the Stripe Tax call and the
+  // inventory-backed line-item resolver (the inventory service isn't
+  // reachable from unit tests, mirroring direct-sale-full-flow.test.ts).
   deps?: {
     createTaxCalculation?: (
       params: Stripe.Tax.CalculationCreateParams,
     ) => Promise<Stripe.Tax.Calculation>;
+    resolveLineItems?: (
+      userId: string,
+      cartItemIds: string[],
+    ) => Promise<{ items: ResolvedLineItem[]; sessionId: string }>;
   };
 }
 
@@ -93,7 +99,8 @@ async function resolveCartAndComputeTax(
   resolvedItems: ResolvedLineItem[];
   sessionId: string;
 }> {
-  const { items, sessionId } = await resolveLineItems(
+  const resolveImpl = input.deps?.resolveLineItems ?? resolveLineItems;
+  const { items, sessionId } = await resolveImpl(
     input.userId,
     input.cartItemIds,
   );
@@ -199,6 +206,10 @@ export interface CreateDirectSalePaymentIntentInput {
       params: Stripe.PaymentIntentCreateParams,
       options?: { idempotencyKey?: string },
     ) => Promise<{ id: string; client_secret: string | null; amount: number }>;
+    resolveLineItems?: (
+      userId: string,
+      cartItemIds: string[],
+    ) => Promise<{ items: ResolvedLineItem[]; sessionId: string }>;
   };
 }
 
@@ -232,9 +243,13 @@ export async function createDirectSalePaymentIntent(
     userId: input.userId,
     cartItemIds: input.cartItemIds,
     address: input.address,
-    deps: input.deps?.createTaxCalculation
-      ? { createTaxCalculation: input.deps.createTaxCalculation }
-      : undefined,
+    deps:
+      input.deps?.createTaxCalculation || input.deps?.resolveLineItems
+        ? {
+            createTaxCalculation: input.deps?.createTaxCalculation,
+            resolveLineItems: input.deps?.resolveLineItems,
+          }
+        : undefined,
   });
 
   const customerId = await getOrCreateStripeCustomer(input.userId);
