@@ -19,7 +19,7 @@ Tasks like "manual browser QA", "confirm visual fidelity", "test prefers-reduced
 1. **`npm run typecheck`** — `tsc --noEmit`. Runs in seconds. Run before every commit.
 2. **`npm run lint`** — ESLint. Runs in seconds.
 3. **`npm test`** — unit + Prisma-integration suite via `node --test`. ~25s. Existing target: 248+ passing, 0 failing, 31 intentionally skipped (live-Stripe + CI-harness deferrals).
-4. **`npm run test:visual`** — Playwright visual regression against committed baselines. Config: `playwright.visual.config.ts`. Two projects: `desktop-chrome` (1280×800) + `mobile-chrome` (Pixel 7). Baselines under `tests/visual/marketing.spec.ts-snapshots/` with per-platform suffix (`-darwin`, `-linux`). `npm run test:visual:update` regenerates. 0.5% delta budget.
+4. **`npm run test:visual`** — Playwright visual regression against committed baselines (local-only, not enforced in CI). Config: `playwright.visual.config.ts`. Two projects: `desktop-chrome` (1280×800) + `mobile-chrome` (Pixel 7). Baselines under `tests/visual/marketing.spec.ts-snapshots/` with per-platform suffix (`-darwin`, `-linux`). `npm run test:visual:update` regenerates. 0.5% delta budget. Useful as an ad-hoc check during design work — re-add a CI workflow once the design system is locked post-launch.
 5. **`npm run e2e`** — Playwright against `npm run start:e2e` on port 3001 with `E2E_AUTH_MODE=true`. Uses `tests/e2e/global-setup.js` to seed Plans + Quiz tables first. Some tests fail in local environments that lack Twilio / S3 / fresh Clerk rate-limit headroom; CI (nightly) runs it with full env. These failures are NOT blockers for PR merge — the PR CI runs only 1–3 above.
 6. **Dev-server probe** — `npm run dev` boots the app. `curl http://localhost:3000/<route>` checks HTTP status. Useful when you've made a route-level change and want a fast "does it still boot" check before running visual tests.
 7. **Full e2e walkthrough** — `scripts/e2e-full-walkthrough.ts`. Drives the golden path (seed users → Twilio conversation → moodboard + styleboard send + feedback → end session → rating → admin order transitions) against `dev:e2e` with staging integration keys, then polls Klaviyo / Stripe / Twilio read APIs and DB row counts to prove each layer fired. Run as `npm run dev:e2e & npx tsx --env-file=.env scripts/e2e-full-walkthrough.ts`. Use before opening staging to any new cohort or after any phase merge.
@@ -66,7 +66,6 @@ Before pushing, every PR should have:
 - [x] Typecheck clean
 - [x] Lint clean
 - [x] Unit tests pass with no new failures
-- [x] Visual regression passes (or baselines intentionally updated + committed)
 - [x] At least one targeted spec for any new user-facing behaviour — inline DOM scrape, not "I'll verify manually"
 - [x] Price grep gate passes (if JSX changed)
 - [x] Docs updated (see "Docs to keep in sync" below)
@@ -98,7 +97,6 @@ Things that have blocked work in the past. If you hit one, the fix is usually in
 - **Route-group collision** — Route groups like `(client)` and `(stylist)` don't add to the URL. `/(client)/stylists/page.tsx` and `/stylists/page.tsx` both resolve to `/stylists`. Next 16 refuses to boot with a parallel-pages error. Rename one of them (e.g. `/matches`).
 - **Dynamic segment without an index `page.tsx`** — If `foo/[id]/bar/page.tsx` exists but `foo/[id]/page.tsx` does not, the bare `/foo/{id}` path resolves to 404 — Next does not synthesize an index from the children. Whenever a `[id]` directory only has subroutes, add an explicit `page.tsx` (a one-line `redirect()` to the primary child is fine). Fixed in PR #38 for `/stylist/sessions/[id]` → `/workspace`.
 - **Prisma regen per worktree** — A fresh worktree doesn't have `src/generated/prisma/` until you run `npx prisma generate`. Without it you'll see 200+ TS errors like "Cannot find module '@/generated/prisma/client'". Run prisma generate first, always.
-- **Visual baseline platform suffix** — Baselines are per-OS (`-darwin`, `-linux`). When you update a baseline on macOS it doesn't cover Linux CI. If a visual test passes locally but fails in CI, the baseline is missing for the CI platform — either run in Docker with `-linux` or update both.
 - **Lucide 1.x icon renames** — Every icon requires the `*Icon` suffix (`PlusIcon`, not `Plus`). Brand glyphs (Instagram, Facebook, Twitter) were dropped — inline SVGs.
 - **Clerk v7 breaking changes** — `SignedIn` / `SignedOut` components are gone. Use `auth()` from `@clerk/nextjs/server` in Server Components with conditional rendering. `UserButton` from `@clerk/nextjs` still works for authed avatar UI.
 - **Base-UI accordion** — `type="single" collapsible` are Radix-only props. Base-UI accordion is single-open by default; drop those props.
