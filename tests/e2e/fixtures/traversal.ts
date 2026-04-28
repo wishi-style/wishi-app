@@ -39,7 +39,11 @@ export function installFailureGuards(page: Page): void {
     if (status < 500) return;
     const url = response.url();
     if (ALLOWED_5XX_PATTERNS.some((p) => p.test(url))) return;
-    throw new Error(`5xx response from ${url} → ${status}`);
+    // Surface the full request method + URL so failures point at the
+    // exact subresource (RSC payload, /_next/image, API route) and not
+    // just the page URL the response is associated with.
+    const method = response.request().method();
+    throw new Error(`5xx response from ${method} ${url} → ${status}`);
   });
 }
 
