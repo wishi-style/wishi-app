@@ -152,7 +152,16 @@ export async function createSessionForClient({
   amountPaidInCents?: number;
   clientId: string;
   planType?: "MINI" | "MAJOR" | "LUX";
-  status?: "BOOKED" | "ACTIVE" | "COMPLETED";
+  status?:
+    | "BOOKED"
+    | "ACTIVE"
+    | "PENDING_END"
+    | "PENDING_END_APPROVAL"
+    | "END_DECLINED"
+    | "COMPLETED"
+    | "FROZEN"
+    | "REASSIGNED"
+    | "CANCELLED";
   stylistId?: string | null;
 }) {
   const id = generateId();

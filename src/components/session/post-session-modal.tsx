@@ -82,7 +82,7 @@ export function PostSessionModal(props: PostSessionModalProps) {
     <div
       role="dialog"
       aria-modal="true"
-      aria-labelledby="post-session-title"
+      aria-label="Wrap up your session"
       className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 backdrop-blur-sm"
     >
       <div className="relative mx-4 w-full max-w-md overflow-hidden rounded-2xl bg-card shadow-xl">
@@ -186,7 +186,7 @@ function TipStep({
 
   return (
     <div className="text-center">
-      <h2 id="post-session-title" className="font-display text-2xl tracking-tight md:text-3xl">
+      <h2 className="font-display text-2xl tracking-tight md:text-3xl">
         Loved your session?
       </h2>
       <p className="mt-2 text-sm text-muted-foreground">
@@ -413,9 +413,19 @@ function PaymentInner({ onDone }: { onDone: () => void }) {
     if (!stripe || !elements) return;
     setStatus("submitting");
     setErrorMessage(null);
+    // `redirect: "if_required"` only redirects for payment methods that
+    // need a 3DS challenge or off-site flow; most cards confirm inline.
+    // Stripe still requires a return_url for the redirect branch — without
+    // it, 3DS-required cards fail with a runtime error.
     const { error } = await stripe.confirmPayment({
       elements,
       redirect: "if_required",
+      confirmParams: {
+        return_url:
+          typeof window !== "undefined"
+            ? `${window.location.origin}/sessions`
+            : "/sessions",
+      },
     });
     if (error) {
       setStatus("error");
@@ -458,14 +468,28 @@ function ShareStep({
   onDone: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
   const baseUrl =
     typeof window !== "undefined" ? window.location.origin : "https://wishi.me";
   const referralLink = `${baseUrl}/?ref=${referralCode}`;
 
-  function handleCopy() {
-    void navigator.clipboard.writeText(referralLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  async function handleCopy() {
+    // Clipboard API is gated behind a secure context; non-HTTPS origins
+    // (or older browsers) can land here without `navigator.clipboard`.
+    // Surface the failure instead of silently flipping to "Copied".
+    if (!navigator.clipboard?.writeText) {
+      setCopyError(true);
+      setTimeout(() => setCopyError(false), 2000);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(referralLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopyError(true);
+      setTimeout(() => setCopyError(false), 2000);
+    }
   }
 
   return (
@@ -494,7 +518,7 @@ function ShareStep({
           onClick={handleCopy}
           className="flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[10px] font-medium text-background transition-all hover:opacity-90"
         >
-          {copied ? "Copied" : "Copy"}
+          {copyError ? "Copy failed" : copied ? "Copied" : "Copy"}
         </button>
       </div>
 
