@@ -158,7 +158,7 @@ const faqLd = {
 export default async function HomePage() {
   const [{ userId }, prices] = await Promise.all([auth(), getPlanPricesForUi()]);
   const signedIn = userId !== null && userId !== undefined;
-  const matchHref = signedIn ? "/stylists" : "/welcome";
+  const matchHref = signedIn ? "/stylists" : "/match-quiz";
   const priceFor: Record<PlanTier, number> = {
     MINI: prices.mini.displayDollars,
     MAJOR: prices.major.displayDollars,
@@ -187,7 +187,7 @@ export default async function HomePage() {
                   incorporating what you already own to build your perfect wardrobe.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start">
-                  <PillButton href="/welcome" variant="solid" size="lg">
+                  <PillButton href="/match-quiz" variant="solid" size="lg">
                     Let&apos;s Get Styling
                   </PillButton>
                   <PillButton href="/how-it-works" variant="outline" size="lg">
@@ -544,7 +544,7 @@ export default async function HomePage() {
               <p className="text-base text-muted-foreground max-w-md mx-auto mb-8">
                 Take a quick style quiz and get matched with a stylist who truly gets your vibe.
               </p>
-              <PillButton href="/welcome" variant="solid" size="lg">
+              <PillButton href="/match-quiz" variant="solid" size="lg">
                 Let&apos;s Get Styling
               </PillButton>
             </Reveal>

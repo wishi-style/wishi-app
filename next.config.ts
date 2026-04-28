@@ -57,9 +57,12 @@ const nextConfig: NextConfig = {
   },
   // Loveable design contract uses /bag for cart links. Permanent
   // redirect so any /bag link inside or outside the app lands on /cart.
+  // /welcome was the pre-port name for the match-quiz funnel — keep the
+  // redirect so external links and bookmarks land on the live route.
   async redirects() {
     return [
       { source: "/bag", destination: "/cart", permanent: true },
+      { source: "/welcome", destination: "/match-quiz", permanent: true },
     ];
   },
 };

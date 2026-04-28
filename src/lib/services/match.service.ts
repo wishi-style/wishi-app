@@ -31,7 +31,6 @@ export async function matchStylistForSession(sessionId: string) {
 
   const clientGender = quizResult?.genderToStyle ?? null;
   const clientStyles = quizResult?.styleDirection ?? [];
-  const clientBudget = quizResult?.budgetBracket ?? null;
 
   // Find eligible stylists
   const eligibleStylists = await prisma.stylistProfile.findMany({
@@ -45,7 +44,6 @@ export async function matchStylistForSession(sessionId: string) {
       userId: true,
       genderPreference: true,
       styleSpecialties: true,
-      budgetBrackets: true,
       createdAt: true,
     },
   });
@@ -76,10 +74,9 @@ export async function matchStylistForSession(sessionId: string) {
         score += overlap * 10;
       }
 
-      // Budget overlap
-      if (clientBudget && s.budgetBrackets.includes(clientBudget)) {
-        score += 5;
-      }
+      // Budget is intentionally NOT a match criterion — the price the client
+      // pays comes from /select-plan after the match is shown, so the matcher
+      // should surface stylists across all budget brackets equally.
 
       return { ...s, score };
     });

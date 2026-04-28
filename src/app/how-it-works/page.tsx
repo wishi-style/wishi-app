@@ -54,9 +54,10 @@ export default async function HowItWorksPage() {
   const { userId } = await auth();
   const signedIn = userId !== null && userId !== undefined;
   // Logged-in users have already onboarded — send them straight to the
-  // stylist roster. New visitors land in the /welcome funnel, which warms
-  // them up before /match-quiz + sign-up.
-  const ctaHref = signedIn ? "/stylists" : "/welcome";
+  // stylist roster. New visitors land in the /match-quiz funnel, which
+  // ends with a Clerk sign-up modal that captures the guest token so the
+  // answers attach to the new account.
+  const ctaHref = signedIn ? "/stylists" : "/match-quiz";
 
   return (
     <>

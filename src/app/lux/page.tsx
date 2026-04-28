@@ -190,7 +190,7 @@ export default function LuxPage() {
                   The most highly curated digital styling experience — 8 style boards, a dedicated
                   stylist, and a 30-minute video call included.
                 </p>
-                <PillButton href="/welcome" variant="solid" size="lg">
+                <PillButton href="/match-quiz" variant="solid" size="lg">
                   Get Started
                 </PillButton>
               </div>
@@ -244,7 +244,7 @@ export default function LuxPage() {
               ))}
             </div>
             <div className="text-center mt-12">
-              <PillButton href="/welcome" variant="solid" size="lg">
+              <PillButton href="/match-quiz" variant="solid" size="lg">
                 Get Started
               </PillButton>
             </div>
@@ -413,7 +413,7 @@ export default function LuxPage() {
               ))}
             </div>
             <div className="text-center mt-12">
-              <PillButton href="/welcome" variant="solid" size="lg">
+              <PillButton href="/match-quiz" variant="solid" size="lg">
                 Book a Stylist
               </PillButton>
             </div>
@@ -468,7 +468,7 @@ export default function LuxPage() {
                 Schedule a free consultation to discuss your style goals. We&apos;ll help you find
                 the perfect fit for your needs.
               </p>
-              <PillButton href="/welcome" variant="solid" size="lg">
+              <PillButton href="/match-quiz" variant="solid" size="lg">
                 Schedule Your Free Consultation
               </PillButton>
             </Reveal>

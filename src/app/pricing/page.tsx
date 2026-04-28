@@ -208,7 +208,7 @@ export default async function PricingPage() {
                       <h2 className="font-display text-2xl mb-1">{tierName[tier]}</h2>
                       <p className="font-display text-3xl mb-6">{`$${price}`}</p>
                       <PillButton
-                        href="/welcome"
+                        href="/match-quiz"
                         variant="solid"
                         size="md"
                         className="w-full mb-8"
