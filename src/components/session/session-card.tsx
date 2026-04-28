@@ -23,7 +23,8 @@ type CardStatus =
   | "awaiting_reply"
   | "in_progress"
   | "completed"
-  | "booked";
+  | "booked"
+  | "closed";
 
 const planLabel: Record<string, string> = {
   MINI: "Mini",
@@ -38,20 +39,24 @@ const planBadgeClass = (plan: string) =>
 
 function deriveStatus(session: SessionData): CardStatus {
   if (session.boards.length > 0) return "new_board";
-  if (
-    session.status === "PENDING_END" ||
-    session.status === "PENDING_END_APPROVAL"
-  ) {
-    return "awaiting_reply";
-  }
+  // Only an explicit stylist end-request (PENDING_END_APPROVAL) routes to
+  // the end-session flow. PENDING_END is a worker-set "stale" hint that
+  // doesn't yet allow approveEnd to fire — keep it in_progress so the
+  // card lands in chat instead of a 409 from /end-session.
+  if (session.status === "PENDING_END_APPROVAL") return "awaiting_reply";
   if (session.status === "BOOKED") return "booked";
   if (
     session.status === "ACTIVE" ||
+    session.status === "PENDING_END" ||
     session.status === "END_DECLINED"
   ) {
     return "in_progress";
   }
-  return "completed";
+  if (session.status === "COMPLETED") return "completed";
+  // CANCELLED / FROZEN / REASSIGNED — terminal-or-paused but not a happy
+  // path. Don't surface a "Book again" CTA; the detail page is the right
+  // landing spot.
+  return "closed";
 }
 
 function actionLabel(status: CardStatus, stylistFirstName: string): string {
@@ -66,6 +71,8 @@ function actionLabel(status: CardStatus, stylistFirstName: string): string {
       return "Continue";
     case "completed":
       return `Book ${stylistFirstName} Again`;
+    case "closed":
+      return "View Details";
   }
 }
 
@@ -87,8 +94,22 @@ function messagePreview(session: SessionData): string {
   if (latest?.text) return latest.text;
   if (latest?.kind === "MOODBOARD") return "Sent you a moodboard.";
   if (latest?.kind === "STYLEBOARD") return "Sent you a style board.";
-  if (session.status === "BOOKED") return "Booked — your stylist will reach out shortly.";
-  return "Session in progress.";
+  switch (session.status) {
+    case "BOOKED":
+      return "Booked — your stylist will reach out shortly.";
+    case "COMPLETED":
+      return "Session completed.";
+    case "CANCELLED":
+      return "Session cancelled.";
+    case "FROZEN":
+      return "Session paused.";
+    case "REASSIGNED":
+      return "Reassigned to another stylist.";
+    case "PENDING_END_APPROVAL":
+      return "Your stylist requested to wrap up.";
+    default:
+      return "Session in progress.";
+  }
 }
 
 function actionHref(status: CardStatus, session: SessionData): string {
@@ -109,6 +130,8 @@ function actionHref(status: CardStatus, session: SessionData): string {
       return session.stylist?.stylistProfile
         ? `/stylists/${session.stylist.stylistProfile.id}`
         : `/sessions/${session.id}`;
+    case "closed":
+      return `/sessions/${session.id}`;
   }
 }
 
@@ -177,7 +200,7 @@ export function SessionCard({ session }: { session: SessionData }) {
             {planLabel[session.planType] ?? session.planType}
           </span>
         </div>
-        <p className="line-clamp-2 text-sm text-muted-foreground sm:max-w-lg sm:truncate sm:text-base">
+        <p className="line-clamp-2 text-sm text-muted-foreground sm:max-w-lg sm:text-base">
           {messagePreview(session)}
         </p>
         <p className="hidden text-sm text-taupe sm:block">
