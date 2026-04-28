@@ -136,6 +136,21 @@ test("SINGLE_ITEM rejects missing url and invalid url", async ({ page }) => {
     expect(bad.status()).toBe(400);
     const badBody = (await bad.json()) as { error?: string };
     expect(badBody.error).toMatch(/Invalid webUrl/i);
+
+    // Non-http(s) schemes — 400 (closes XSS via javascript: in <a href>).
+    const danger = await page.request.post(
+      `/api/sessions/${session.id}/messages`,
+      {
+        data: {
+          kind: "SINGLE_ITEM",
+          webUrl: "javascript:alert(1)",
+          body: "evil",
+        },
+      },
+    );
+    expect(danger.status()).toBe(400);
+    const dangerBody = (await danger.json()) as { error?: string };
+    expect(dangerBody.error).toMatch(/http or https/i);
   } finally {
     await cleanupStylistProfile(stylist.id);
     await cleanupE2EUserByEmail(clientEmail);

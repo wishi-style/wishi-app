@@ -120,10 +120,19 @@ export async function POST(
         );
       }
       if (webUrl) {
+        let parsed: URL;
         try {
-          new URL(webUrl);
+          parsed = new URL(webUrl);
         } catch {
           return NextResponse.json({ error: "Invalid webUrl" }, { status: 400 });
+        }
+        // SingleItemCard renders this into <a href>; rejecting non-HTTP
+        // schemes here closes the door on `javascript:` / `data:` URLs.
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          return NextResponse.json(
+            { error: "webUrl must use http or https" },
+            { status: 400 },
+          );
         }
       }
       await sendSingleItemMessage(id, {

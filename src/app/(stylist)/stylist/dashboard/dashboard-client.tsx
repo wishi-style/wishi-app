@@ -319,10 +319,19 @@ export default function StylistDashboard({
   const handleSendItem = async () => {
     if (itemSending) return;
     if (!itemForm.name.trim() || !itemForm.url.trim() || !selectedId) return;
+    const trimmedUrl = itemForm.url.trim();
+    let parsedUrl: URL;
     try {
-      new URL(itemForm.url.trim());
+      parsedUrl = new URL(trimmedUrl);
     } catch {
       setItemError("Enter a valid product URL");
+      return;
+    }
+    // Match the server-side guard (and SingleItemCard's `<a href>`): only
+    // accept http(s) so we can't ship `javascript:` / `data:` schemes into
+    // the client's chat.
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      setItemError("Product URL must start with http:// or https://");
       return;
     }
     const sessionIdAtSend = selectedId;
@@ -331,6 +340,7 @@ export default function StylistDashboard({
       itemForm.brand.trim(),
       itemForm.price.trim(),
       itemForm.note.trim() ? `"${itemForm.note.trim()}"` : "",
+      trimmedUrl,
     ].filter(Boolean);
     const summary = summaryLines.join("\n");
     const optimistic: ChatMessage = {
@@ -358,7 +368,7 @@ export default function StylistDashboard({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           kind: "SINGLE_ITEM",
-          webUrl: itemForm.url.trim(),
+          webUrl: trimmedUrl,
           body: summary,
         }),
       });
@@ -908,7 +918,10 @@ export default function StylistDashboard({
             placeholder="Product URL *"
             type="url"
             value={itemForm.url}
-            onChange={(e) => setItemForm((f) => ({ ...f, url: e.target.value }))}
+            onChange={(e) => {
+              setItemForm((f) => ({ ...f, url: e.target.value }));
+              setItemError(null);
+            }}
             className="h-9 font-body text-sm mb-2"
           />
           {itemError && (
