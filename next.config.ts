@@ -63,6 +63,7 @@ const nextConfig: NextConfig = {
     return [
       { source: "/bag", destination: "/cart", permanent: true },
       { source: "/welcome", destination: "/match-quiz", permanent: true },
+      { source: "/closet", destination: "/profile", permanent: true },
     ];
   },
 };

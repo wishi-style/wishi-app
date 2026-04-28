@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 /**
  * Homepage redesign port from Loveable's post-Phase-10 design refresh.
- * - Hero collage replaces 4-image grid; CTA routes to /welcome (funnel-redesign)
+ * - Hero collage replaces 4-image grid; CTA routes to /match-quiz (funnel-redesign)
  * - Press logo strip uses image assets on a dark background
  * - Featured stylist (Karla) bento grid + 6-stylist tile grid
  * - Pricing teaser with accent bars + per-tier short feature list
@@ -84,7 +84,7 @@ test("/ rendered DOM stays free of locked-out copy", async ({ page }) => {
   expect(html.toLowerCase()).not.toContain("virtual fitting");
 });
 
-test("/ hero + final CTAs route to /welcome", async ({ page }) => {
+test("/ hero + final CTAs route to /match-quiz", async ({ page }) => {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
 
@@ -94,14 +94,14 @@ test("/ hero + final CTAs route to /welcome", async ({ page }) => {
   const ctaCount = await ctas.count();
   expect(ctaCount).toBe(2);
   for (let i = 0; i < ctaCount; i++) {
-    await expect(ctas.nth(i)).toHaveAttribute("href", "/welcome");
+    await expect(ctas.nth(i)).toHaveAttribute("href", "/match-quiz");
   }
 });
 
-test("/ Find Your Best Match CTA routes guests to /welcome", async ({ page }) => {
+test("/ Find Your Best Match CTA routes guests to /match-quiz", async ({ page }) => {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
 
   const findMatch = page.getByRole("link", { name: /Find Your Best Match/i });
-  await expect(findMatch).toHaveAttribute("href", "/welcome");
+  await expect(findMatch).toHaveAttribute("href", "/match-quiz");
 });

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { auth } from "@clerk/nextjs/server";
+import { getServerAuth } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
 import { getActivePlans } from "@/lib/plans";
 import { SiteHeader } from "@/components/primitives/site-header";
@@ -20,7 +20,10 @@ interface Props {
 
 export default async function SelectPlanPage({ searchParams }: Props) {
   const params = await searchParams;
-  const { userId: clerkId } = await auth();
+  // getServerAuth() so the E2E_AUTH_MODE cookie path resolves correctly —
+  // plain Clerk auth() returns null for E2E sessions and would bounce
+  // authed test users back to /match-quiz.
+  const { userId: clerkId } = await getServerAuth();
   if (!clerkId) {
     redirect("/match-quiz");
   }

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { StarIcon } from "lucide-react";
-import { auth } from "@clerk/nextjs/server";
+import { getServerAuth } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
 import { rankStylistsForClient } from "@/lib/services/match.service";
 import { SiteHeader } from "@/components/primitives/site-header";
@@ -18,7 +18,11 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function StylistMatchPage() {
-  const { userId: clerkId } = await auth();
+  // getServerAuth() rather than Clerk's auth() so the E2E_AUTH_MODE cookie
+  // backdoor + impersonation paths resolve the same way they do everywhere
+  // else in the app. Plain Clerk auth() returns null for E2E sessions and
+  // would bounce authed test users to /match-quiz.
+  const { userId: clerkId } = await getServerAuth();
   if (!clerkId) {
     redirect("/match-quiz");
   }
@@ -31,11 +35,12 @@ export default async function StylistMatchPage() {
     redirect("/match-quiz");
   }
 
-  // Quiz completion is the precondition for landing here. If the user reached
-  // /stylist-match without a MatchQuizResult, send them back to take it.
+  // Quiz completion is the precondition for landing here. styleDirection
+  // length is also the denominator for the match-percent vanity bar — keep
+  // both in one read.
   const quiz = await prisma.matchQuizResult.findFirst({
     where: { userId: user.id },
-    select: { id: true },
+    select: { id: true, styleDirection: true },
     orderBy: { completedAt: "desc" },
   });
   if (!quiz) {
@@ -111,8 +116,11 @@ export default async function StylistMatchPage() {
     .flatMap((b) => b.photos.map((p) => p.url))
     .filter((url): url is string => Boolean(url));
 
-  const topMaxScore = Math.max(top.score, 10); // avoid /0 when client had no styles
-  const matchPercent = Math.min(99, Math.round((top.score / topMaxScore) * 99));
+  // Max possible score = 10 pts per quiz-selected style (see match.service.ts).
+  // Falls back to top.score so a quiz with zero selected styles still shows
+  // 99% rather than NaN — better-than-perfect matches still cap at 99 below.
+  const maxPossibleScore = quiz.styleDirection.length * 10 || top.score || 1;
+  const matchPercent = Math.min(99, Math.round((top.score / maxPossibleScore) * 99));
 
   const otherProfiles = await prisma.stylistProfile.findMany({
     where: { id: { in: others.map((s) => s.id) } },

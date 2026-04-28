@@ -54,7 +54,7 @@ const FILTER_LABELS: Record<FilterKey, string> = {
   category: "Category",
 };
 
-export function ClosetPageClient({
+export function ProfilePageClient({
   initialItems,
   looks,
   collections: initialCollections,
@@ -118,15 +118,6 @@ export function ClosetPageClient({
 
   return (
     <>
-      <div className="mb-8 flex items-end justify-between">
-        <div>
-          <h1 className="font-serif text-3xl text-stone-900">Your Closet</h1>
-          <p className="mt-1 text-sm text-stone-500">
-            Items you own, looks you love, and collections you&apos;ve curated.
-          </p>
-        </div>
-      </div>
-
       <Tabs defaultValue="items" className="w-full">
         <TabsList className="h-auto w-full justify-start gap-6 rounded-none border-b border-stone-200 bg-transparent p-0">
           <TabsTrigger
@@ -291,7 +282,7 @@ export function ClosetPageClient({
                   href={
                     look.sessionId
                       ? `/sessions/${look.sessionId}`
-                      : `/closet`
+                      : `/profile`
                   }
                   className="group block overflow-hidden rounded-2xl border border-stone-200 bg-white transition-shadow hover:shadow-md"
                 >

@@ -1,5 +1,4 @@
 import { requireRole } from "@/lib/auth";
-import { StylistNav } from "@/components/nav/stylist-nav";
 
 export default async function StylistLayout({
   children,
@@ -10,7 +9,6 @@ export default async function StylistLayout({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <StylistNav />
       <main className="flex-1">{children}</main>
     </div>
   );

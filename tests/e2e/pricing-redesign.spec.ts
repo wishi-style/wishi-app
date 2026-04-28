@@ -84,7 +84,7 @@ test("/pricing rendered DOM stays free of locked-out copy", async ({ page }) => 
   expect(html.toLowerCase()).not.toContain("virtual fitting");
 });
 
-test("/pricing tier CTAs route to the funnel-redesign /welcome entry", async ({
+test("/pricing tier CTAs route to the funnel-redesign /match-quiz entry", async ({
   page,
 }) => {
   await page.goto("/pricing");
@@ -98,6 +98,6 @@ test("/pricing tier CTAs route to the funnel-redesign /welcome entry", async ({
   const count = await ctas.count();
   expect(count).toBe(3);
   for (let i = 0; i < count; i++) {
-    await expect(ctas.nth(i)).toHaveAttribute("href", "/welcome");
+    await expect(ctas.nth(i)).toHaveAttribute("href", "/match-quiz");
   }
 });

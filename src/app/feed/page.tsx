@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { getCurrentUser } from "@/lib/auth";
 import { listFeedBoards, type FeedGender } from "@/lib/feed/feed.service";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
@@ -28,7 +29,12 @@ export default async function FeedPage({ searchParams }: Props) {
   const gender: FeedGender =
     sp.gender === "MEN" ? "MEN" : "WOMEN";
 
-  const firstPage = await listFeedBoards({ gender, limit: 24 });
+  const user = await getCurrentUser();
+  const firstPage = await listFeedBoards({
+    gender,
+    limit: 24,
+    userId: user?.id ?? null,
+  });
 
   return (
     <>
@@ -64,7 +70,11 @@ export default async function FeedPage({ searchParams }: Props) {
 
         <section className="py-10 md:py-14">
           <div className="mx-auto max-w-6xl px-6 md:px-10">
-            <FeedList initialPage={firstPage} gender={gender} />
+            <FeedList
+            initialPage={firstPage}
+            gender={gender}
+            isAuthed={!!user}
+          />
           </div>
         </section>
       </main>

@@ -10,7 +10,7 @@ import {
 
 /**
  * Funnel-redesign verification (Wave A of the post-Phase-10 design refresh):
- * - Public /welcome onboarding flow renders all 4 steps
+ * - Public /match-quiz onboarding flow renders all 4 steps
  * - Authed /matches refactor renders the single-hero "Perfect Match" pattern
  *   (replacing the prior 3-card grid) when a match-quiz result exists
  *
@@ -21,10 +21,10 @@ test.afterAll(async () => {
   await disconnectTestDb();
 });
 
-test("/welcome public onboarding renders step labels and headline", async ({
+test("/match-quiz public onboarding renders step labels and headline", async ({
   page,
 }) => {
-  await page.goto("/welcome");
+  await page.goto("/match-quiz");
   await page.waitForLoadState("networkidle");
 
   // Headline + first step label
@@ -39,10 +39,10 @@ test("/welcome public onboarding renders step labels and headline", async ({
   expect(body.toLowerCase()).not.toContain("free shipping");
 });
 
-test("/welcome step 0 chips advance to step 1 (department)", async ({
+test("/match-quiz step 0 chips advance to step 1 (department)", async ({
   page,
 }) => {
-  await page.goto("/welcome");
+  await page.goto("/match-quiz");
   await page.waitForLoadState("networkidle");
 
   await page.getByRole("button", { name: /Elevated Everyday/i }).click();
