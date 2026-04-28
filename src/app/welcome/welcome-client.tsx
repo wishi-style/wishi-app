@@ -98,29 +98,37 @@ function StepProgress({ current, total }: { current: number; total: number }) {
   );
 }
 
-function CollageGrid({ images, alt }: { images: string[]; alt: string }) {
+function CollageGrid({ images, alt: _alt }: { images: string[]; alt: string }) {
   // Decorative third-party CDN collage; native <img> avoids needing remote
-  // image-domain config. Replace with curated locally-hosted assets in a
-  // follow-up polish pass.
-  /* eslint-disable @next/next/no-img-element */
+  // image-domain config. The container is aria-hidden because the wrapping
+  // department button supplies the accessible name.
   return (
-    <div className="grid grid-cols-3 grid-rows-3 gap-1 w-full aspect-square overflow-hidden rounded-md">
+    <div
+      aria-hidden="true"
+      className="grid grid-cols-3 grid-rows-3 gap-1 w-full aspect-square overflow-hidden rounded-md"
+    >
       <div className="row-span-2 overflow-hidden">
-        <img src={images[0]} alt={`${alt} preview`} className="w-full h-full object-cover" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={images[0]} alt="" className="w-full h-full object-cover" />
       </div>
       <div className="overflow-hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={images[1]} alt="" className="w-full h-full object-cover" />
       </div>
       <div className="overflow-hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={images[2]} alt="" className="w-full h-full object-cover" />
       </div>
       <div className="overflow-hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={images[3]} alt="" className="w-full h-full object-cover" />
       </div>
       <div className="overflow-hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={images[4]} alt="" className="w-full h-full object-cover" />
       </div>
       <div className="row-span-2 col-start-1 overflow-hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={images[5]} alt="" className="w-full h-full object-cover" />
       </div>
     </div>
@@ -236,14 +244,14 @@ export function WelcomeClient({ signedIn }: { signedIn: boolean }) {
   const goNext = () => setStep((s) => Math.min(s + 1, 3));
   const goBack = () => (step === 0 ? router.back() : setStep((s) => s - 1));
 
-  const finishOnboarding = () => {
+  const finishOnboarding = (finalStylePrefs: Record<string, string> = stylePrefs) => {
     try {
       const payload = {
         needs,
         otherNeed: needs.includes("Other") ? otherNeed.trim() : null,
         department,
         bodyTypes,
-        stylePrefs,
+        stylePrefs: finalStylePrefs,
       };
       sessionStorage.setItem("wishi_welcome_prefs", JSON.stringify(payload));
     } catch {
@@ -268,7 +276,8 @@ export function WelcomeClient({ signedIn }: { signedIn: boolean }) {
       if (styleIndex < styleBoards.length - 1) {
         setStyleIndex((i) => i + 1);
       } else {
-        finishOnboarding();
+        // Pass `updated` so the final vote isn't lost to setStylePrefs being async.
+        finishOnboarding(updated);
       }
     }, 500);
   };

@@ -122,11 +122,9 @@ export default async function MatchesPage() {
       <section className="bg-background text-foreground py-14 md:py-20">
         <div className="mx-auto max-w-5xl px-6 md:px-10">
           <Reveal>
-            <h1 className="font-display text-4xl md:text-5xl lg:text-6xl text-center mb-3 tracking-tight">
-              We Found Your
-            </h1>
-            <h1 className="font-display text-4xl md:text-5xl lg:text-6xl italic text-center mb-12 tracking-tight">
-              Perfect Match
+            <h1 className="font-display text-4xl md:text-5xl lg:text-6xl text-center mb-12 tracking-tight">
+              <span className="block">We Found Your</span>
+              <span className="block italic mt-3">Perfect Match</span>
             </h1>
           </Reveal>
 
