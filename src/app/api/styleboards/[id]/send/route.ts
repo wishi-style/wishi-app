@@ -6,7 +6,7 @@ import { sendStyleboard } from "@/lib/boards/styleboard.service";
 export const dynamic = "force-dynamic";
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const user = await getCurrentUser();
@@ -22,8 +22,12 @@ export async function POST(
   if (board.session.stylistId !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  let input: { title?: string; description?: string; tags?: string[] } = {};
+  if (req.headers.get("content-type")?.includes("application/json")) {
+    input = (await req.json().catch(() => ({}))) as typeof input;
+  }
   try {
-    const sent = await sendStyleboard(id);
+    const sent = await sendStyleboard(id, input);
     return NextResponse.json(sent);
   } catch (e) {
     return NextResponse.json(

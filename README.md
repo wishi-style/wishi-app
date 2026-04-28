@@ -38,10 +38,19 @@ npm run typecheck          # tsc --noEmit (strict)
 npm run lint               # eslint
 npm test                   # node --test on tests/**/*.test.ts
 npm run e2e                # Playwright e2e (needs DB + E2E_AUTH_MODE)
-npm run test:visual        # Playwright visual regression (12 baselines)
+npm run test:visual        # Playwright visual regression — marketing baselines (12)
+npm run test:visual:stylist # Playwright visual regression — stylist baselines (8, runs under dev:e2e)
 npm run test:load          # k6 — marketing ramp (100 VUs) — needs BASE_URL
 npm run test:load:feed     # k6 — feed API burst
 npm run test:load:checkout # k6 — Stripe Checkout burst (needs E2E_CLERK_ID_COOKIE)
+
+# Full end-to-end walkthrough (one-command pre-cohort-launch health check)
+npm run dev:e2e &
+npx tsx --env-file=.env scripts/e2e-full-walkthrough.ts
+
+# Phase 12 stylist-authoring walkthrough (dashboard/workspace/canvas/send gate/favorites)
+npm run dev:e2e &
+npx tsx --env-file=.env scripts/e2e-stylist-walkthrough.ts
 ```
 
 ### Local webhooks via ngrok

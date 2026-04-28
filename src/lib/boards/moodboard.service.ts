@@ -48,7 +48,10 @@ export async function removeMoodboardPhoto(photoId: string): Promise<void> {
  * actions (resolve PENDING_MOODBOARD, open PENDING_CLIENT_FEEDBACK),
  * and increments the session counter.
  */
-export async function sendMoodboard(boardId: string): Promise<Board> {
+export async function sendMoodboard(
+  boardId: string,
+  opts: { note?: string | null } = {},
+): Promise<Board> {
   const board = await prisma.board.findUniqueOrThrow({
     where: { id: boardId },
     include: {
@@ -78,10 +81,14 @@ export async function sendMoodboard(boardId: string): Promise<Board> {
 
   // Atomic compare-and-set on sentAt: null. If a concurrent send already
   // transitioned the row, skip counters / pending actions / side effects.
+  const trimmedNote = opts.note?.trim() || null;
   const updated = await prisma.$transaction(async (tx) => {
     const { count } = await tx.board.updateMany({
       where: { id: boardId, sentAt: null },
-      data: { sentAt: new Date() },
+      data: {
+        sentAt: new Date(),
+        ...(trimmedNote != null ? { stylistNote: trimmedNote } : {}),
+      },
     });
     if (count === 0) return null;
     await tx.session.update({

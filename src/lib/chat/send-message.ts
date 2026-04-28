@@ -35,6 +35,24 @@ async function sendTwilioMessage(
 }
 
 /**
+ * Send a plain TEXT message on behalf of a user. Used by the Dashboard
+ * right-rail composer and any other server-side text-send surfaces.
+ */
+export async function sendTextMessage(
+  sessionId: string,
+  options: { authorClerkId: string; body: string },
+): Promise<void> {
+  const body = options.body.trim();
+  if (!body) throw new Error("Empty message");
+  const conversationSid = await getConversationSid(sessionId);
+  await sendTwilioMessage(conversationSid, {
+    author: options.authorClerkId,
+    body,
+    attributes: { kind: "TEXT" satisfies MessageKind },
+  });
+}
+
+/**
  * Send a SYSTEM_AUTOMATED chat message using a named template.
  */
 export async function sendSystemMessage(

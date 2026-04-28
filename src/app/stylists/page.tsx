@@ -10,6 +10,7 @@ import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
 import { PillButton } from "@/components/primitives/pill-button";
 import { Reveal } from "@/components/primitives/reveal";
+import { WhatYouReceiveDialog } from "./what-you-receive-dialog";
 
 export const dynamic = "force-dynamic";
 
@@ -111,6 +112,13 @@ export default function StylistsPage(props: Props) {
     <>
       <SiteHeader />
       <main className="min-h-screen bg-background">
+        {/* Receive-services dialog trigger band */}
+        <div className="border-y border-border">
+          <div className="mx-auto max-w-6xl px-6 md:px-10 py-4 flex items-center justify-center">
+            <WhatYouReceiveDialog />
+          </div>
+        </div>
+
         {/* Hero CTA */}
         <section className="border-b border-border bg-muted/40">
           <div className="mx-auto max-w-3xl px-6 md:px-10 py-12 md:py-16 text-center">

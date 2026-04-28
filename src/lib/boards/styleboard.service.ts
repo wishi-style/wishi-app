@@ -42,6 +42,10 @@ export interface AddItemInput {
   webItemBrand?: string;
   webItemPriceInCents?: number;
   webItemImageUrl?: string;
+  // Phase 12: LookCreator canvas composition.
+  x?: number | null;
+  y?: number | null;
+  zIndex?: number | null;
 }
 
 function validatePolymorphism(input: AddItemInput): void {
@@ -83,6 +87,49 @@ export async function addStyleboardItem(
       webItemBrand: input.webItemBrand ?? null,
       webItemPriceInCents: input.webItemPriceInCents ?? null,
       webItemImageUrl: input.webItemImageUrl ?? null,
+      x: input.x ?? null,
+      y: input.y ?? null,
+      zIndex: input.zIndex ?? null,
+    },
+  });
+}
+
+export interface PatchStyleboardItemInput {
+  x?: number;
+  y?: number;
+  zIndex?: number;
+  flipH?: boolean;
+  flipV?: boolean;
+  cropTop?: number | null;
+  cropRight?: number | null;
+  cropBottom?: number | null;
+  cropLeft?: number | null;
+}
+
+export async function patchStyleboardItem(
+  boardId: string,
+  itemId: string,
+  patch: PatchStyleboardItemInput,
+): Promise<BoardItem> {
+  const existing = await prisma.boardItem.findUnique({
+    where: { id: itemId },
+    select: { boardId: true },
+  });
+  if (!existing || existing.boardId !== boardId) {
+    throw new Error(`Item ${itemId} not found on board ${boardId}`);
+  }
+  return prisma.boardItem.update({
+    where: { id: itemId },
+    data: {
+      ...(patch.x !== undefined ? { x: patch.x } : {}),
+      ...(patch.y !== undefined ? { y: patch.y } : {}),
+      ...(patch.zIndex !== undefined ? { zIndex: patch.zIndex } : {}),
+      ...(patch.flipH !== undefined ? { flipH: patch.flipH } : {}),
+      ...(patch.flipV !== undefined ? { flipV: patch.flipV } : {}),
+      ...(patch.cropTop !== undefined ? { cropTop: patch.cropTop } : {}),
+      ...(patch.cropRight !== undefined ? { cropRight: patch.cropRight } : {}),
+      ...(patch.cropBottom !== undefined ? { cropBottom: patch.cropBottom } : {}),
+      ...(patch.cropLeft !== undefined ? { cropLeft: patch.cropLeft } : {}),
     },
   });
 }
@@ -132,7 +179,16 @@ export async function reorderStyleboardItems(
  * Send a styleboard. Fires the STYLEBOARD (or RESTYLE if isRevision) chat
  * message and increments the counters.
  */
-export async function sendStyleboard(boardId: string): Promise<Board> {
+export interface SendStyleboardInput {
+  title?: string;
+  description?: string;
+  tags?: string[];
+}
+
+export async function sendStyleboard(
+  boardId: string,
+  input: SendStyleboardInput = {},
+): Promise<Board> {
   const board = await prisma.board.findUniqueOrThrow({
     where: { id: boardId },
     include: {
@@ -147,12 +203,18 @@ export async function sendStyleboard(boardId: string): Promise<Board> {
     throw new Error(`Styleboard ${boardId} has no session`);
   }
   if (board.sentAt) return board;
-  if (board.items.length === 0) {
-    throw new Error("Cannot send an empty styleboard");
+  if (board.items.length < 3) {
+    throw new Error("Styleboards require at least 3 items");
   }
 
   const sessionId = board.sessionId;
   const isRevision = board.isRevision;
+  const title = input.title?.trim() || null;
+  const description = input.description?.trim() || null;
+  const tags = (input.tags ?? [])
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .slice(0, 10);
 
   // Atomic compare-and-set on sentAt: null. If a concurrent send already
   // transitioned the row, `updated` is null and we return without
@@ -160,7 +222,12 @@ export async function sendStyleboard(boardId: string): Promise<Board> {
   const updated = await prisma.$transaction(async (tx) => {
     const { count } = await tx.board.updateMany({
       where: { id: boardId, sentAt: null },
-      data: { sentAt: new Date() },
+      data: {
+        sentAt: new Date(),
+        ...(title != null ? { title } : {}),
+        ...(description != null ? { description } : {}),
+        ...(tags.length > 0 ? { tags } : {}),
+      },
     });
     if (count === 0) return null;
     await tx.session.update({

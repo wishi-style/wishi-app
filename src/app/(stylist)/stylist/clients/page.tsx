@@ -2,24 +2,28 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
 
-// Lists every client a stylist has worked with. Pulled from distinct
-// Session.clientId where stylistId = me (any status). Shows session count
-// + last-session-at, links to /stylist/clients/[id].
-
 const OPEN_STATUSES = ["ACTIVE", "PENDING_END", "PENDING_END_APPROVAL"] as const;
+
+function formatRelative(d: Date): string {
+  const ms = Date.now() - d.getTime();
+  const days = Math.floor(ms / (1000 * 60 * 60 * 24));
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+  if (days < 30) return `${Math.floor(days / 7)} wk ago`;
+  return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+}
 
 export default async function StylistClientsPage() {
   await requireRole("STYLIST");
   const user = await getCurrentAuthUser();
   if (!user) return null;
 
-  // Aggregate at the DB level so query cost scales with clients, not with
-  // total sessions. Three queries: session counts per client, the latest
-  // session per client (distinct ON + order by createdAt desc), and the
-  // latest open session per client if one exists.
   const [counts, latestSessions, latestOpenSessions] = await Promise.all([
     prisma.session.groupBy({
       by: ["clientId"],
@@ -59,56 +63,74 @@ export default async function StylistClientsPage() {
       sessionCount: countByClient.get(s.clientId) ?? 1,
       lastActivityAt: s.completedAt ?? s.createdAt,
       openSessionId: openByClient.get(s.clientId) ?? null,
-      latestPlan: s.planType,
+      latestPlan: s.planType as "MINI" | "MAJOR" | "LUX",
     }))
     .sort((a, b) => b.lastActivityAt.getTime() - a.lastActivityAt.getTime());
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
-      <h1 className="mb-6 text-3xl font-semibold">Your clients</h1>
+    <div className="mx-auto max-w-5xl px-6 py-10">
+      <div className="mb-8">
+        <h1 className="font-display text-3xl">Your clients</h1>
+        <p className="font-body text-sm text-muted-foreground mt-1">
+          {clients.length} {clients.length === 1 ? "person" : "people"} styled
+        </p>
+      </div>
 
       {clients.length === 0 ? (
-        <div className="rounded border border-dashed border-muted p-8 text-center text-sm text-muted-foreground">
-          No clients yet. The matcher will send new sessions to you when
-          available.
+        <div className="rounded-lg border border-dashed border-border p-12 text-center font-body text-sm text-muted-foreground">
+          No clients yet. The matcher will send new sessions to you as they come in.
         </div>
       ) : (
-        <div className="divide-y divide-muted rounded-lg border border-muted">
-          {clients.map((c) => (
-            <Link
-              key={c.clientId}
-              href={`/stylist/clients/${c.clientId}`}
-              className="flex items-center justify-between p-4 hover:bg-muted/30"
-            >
-              <div className="flex items-center gap-3">
-                {c.avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={c.avatarUrl}
-                    alt={c.firstName}
-                    className="h-10 w-10 rounded-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-sm font-medium">
-                    {(c.firstName[0] ?? "?").toUpperCase()}
+        <div className="grid gap-3 sm:grid-cols-2">
+          {clients.map((c) => {
+            const initials =
+              `${c.firstName[0] ?? ""}${c.lastName[0] ?? ""}`.toUpperCase() || "?";
+            const planLabel =
+              c.latestPlan === "LUX"
+                ? "✦ Lux"
+                : c.latestPlan === "MAJOR"
+                  ? "Major"
+                  : "Mini";
+            return (
+              <Link
+                key={c.clientId}
+                href={`/stylist/clients/${c.clientId}`}
+                className="rounded-lg border border-border bg-card p-4 hover:shadow-sm transition-shadow flex items-center gap-4"
+              >
+                <Avatar className="h-12 w-12">
+                  {c.avatarUrl ? (
+                    <AvatarImage src={c.avatarUrl} alt={c.firstName} />
+                  ) : null}
+                  <AvatarFallback className="bg-secondary text-secondary-foreground font-display">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-display text-base truncate">
+                      {c.firstName} {c.lastName}
+                    </h3>
+                    <Badge
+                      variant="outline"
+                      className="rounded-sm text-[10px] font-body font-medium border-0 bg-secondary text-secondary-foreground"
+                    >
+                      {planLabel}
+                    </Badge>
                   </div>
-                )}
-                <div>
-                  <div className="font-medium">
-                    {c.firstName} {c.lastName}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {c.sessionCount} session{c.sessionCount === 1 ? "" : "s"} · latest: {c.latestPlan}
-                  </div>
+                  <p className="font-body text-xs text-muted-foreground mt-0.5">
+                    {c.sessionCount} session{c.sessionCount === 1 ? "" : "s"} ·
+                    {" "}
+                    {formatRelative(c.lastActivityAt)}
+                  </p>
                 </div>
-              </div>
-              {c.openSessionId && (
-                <span className="rounded-full border border-foreground px-3 py-1 text-xs">
-                  Active session
-                </span>
-              )}
-            </Link>
-          ))}
+                {c.openSessionId && (
+                  <span className="shrink-0 rounded-full bg-foreground/5 border border-foreground/20 px-2.5 py-1 font-body text-[10px] font-medium text-foreground">
+                    Active
+                  </span>
+                )}
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>
