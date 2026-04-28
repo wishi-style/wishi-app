@@ -32,3 +32,33 @@ export async function GET(
   }
   return NextResponse.json(board);
 }
+
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { id } = await params;
+
+  const board = await prisma.board.findUnique({
+    where: { id },
+    select: {
+      type: true,
+      sentAt: true,
+      session: { select: { stylistId: true } },
+    },
+  });
+  if (!board || board.type !== "MOODBOARD") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (board.session?.stylistId !== user.id && user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (board.sentAt) {
+    return NextResponse.json({ error: "Cannot delete a sent moodboard" }, { status: 409 });
+  }
+
+  await prisma.board.delete({ where: { id } });
+  return NextResponse.json({ ok: true });
+}

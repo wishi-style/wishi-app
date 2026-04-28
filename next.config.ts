@@ -55,6 +55,13 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // Loveable design contract uses /bag for cart links. Permanent
+  // redirect so any /bag link inside or outside the app lands on /cart.
+  async redirects() {
+    return [
+      { source: "/bag", destination: "/cart", permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;
