@@ -159,7 +159,9 @@ export default function StylistDashboard({
   const [sortBy, setSortBy] = useState<"priority" | "name" | "date">("priority");
   const [filterOpen, setFilterOpen] = useState(false);
   const [itemRecOpen, setItemRecOpen] = useState(false);
-  const [itemForm, setItemForm] = useState({ name: "", brand: "", price: "", note: "" });
+  const [itemForm, setItemForm] = useState({ name: "", brand: "", price: "", note: "", url: "" });
+  const [itemSending, setItemSending] = useState(false);
+  const [itemError, setItemError] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState("");
   // Messages are fetched per-session from /api/sessions/[id]/messages on
   // first session selection. Empty until then; never seeded with mock data.
@@ -314,22 +316,84 @@ export default function StylistDashboard({
     }
   };
 
-  const handleSendItem = () => {
-    if (!itemForm.name.trim() || !selectedId) return;
-    const newMsg: ChatMessage = {
-      id: `stylist-item-${Date.now()}`,
+  const handleSendItem = async () => {
+    if (itemSending) return;
+    if (!itemForm.name.trim() || !itemForm.url.trim() || !selectedId) return;
+    const trimmedUrl = itemForm.url.trim();
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(trimmedUrl);
+    } catch {
+      setItemError("Enter a valid product URL");
+      return;
+    }
+    // Match the server-side guard (and SingleItemCard's `<a href>`): only
+    // accept http(s) so we can't ship `javascript:` / `data:` schemes into
+    // the client's chat.
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      setItemError("Product URL must start with http:// or https://");
+      return;
+    }
+    const sessionIdAtSend = selectedId;
+    const summaryLines = [
+      `Recommended: ${itemForm.name.trim()}`,
+      itemForm.brand.trim(),
+      itemForm.price.trim(),
+      itemForm.note.trim() ? `"${itemForm.note.trim()}"` : "",
+      trimmedUrl,
+    ].filter(Boolean);
+    const summary = summaryLines.join("\n");
+    const optimistic: ChatMessage = {
+      id: `pending-item-${Date.now()}`,
       sender: "stylist",
-      text: `Recommended: ${itemForm.name}`,
+      text: summary,
       timestamp: new Date(),
       type: "item_recommendation",
-      itemData: { name: itemForm.name, brand: itemForm.brand, price: itemForm.price, note: itemForm.note },
+      itemData: {
+        name: itemForm.name.trim(),
+        brand: itemForm.brand.trim(),
+        price: itemForm.price.trim(),
+        note: itemForm.note.trim(),
+      },
     };
+    setItemError(null);
+    setItemSending(true);
     setMessages((prev) => ({
       ...prev,
-      [selectedId]: [...(prev[selectedId] || []), newMsg],
+      [sessionIdAtSend]: [...(prev[sessionIdAtSend] || []), optimistic],
     }));
-    setItemForm({ name: "", brand: "", price: "", note: "" });
-    setItemRecOpen(false);
+    try {
+      const res = await fetch(`/api/sessions/${sessionIdAtSend}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind: "SINGLE_ITEM",
+          webUrl: trimmedUrl,
+          body: summary,
+        }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setItemError(data.error ?? "Could not send recommendation");
+        setMessages((prev) => ({
+          ...prev,
+          [sessionIdAtSend]:
+            (prev[sessionIdAtSend] ?? []).filter((m) => m.id !== optimistic.id),
+        }));
+        return;
+      }
+      setItemForm({ name: "", brand: "", price: "", note: "", url: "" });
+      setItemRecOpen(false);
+    } catch (err) {
+      setItemError(err instanceof Error ? err.message : "Network error");
+      setMessages((prev) => ({
+        ...prev,
+        [sessionIdAtSend]:
+          (prev[sessionIdAtSend] ?? []).filter((m) => m.id !== optimistic.id),
+      }));
+    } finally {
+      setItemSending(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -850,12 +914,25 @@ export default function StylistDashboard({
               className="h-9 font-body text-sm"
             />
           </div>
+          <Input
+            placeholder="Product URL *"
+            type="url"
+            value={itemForm.url}
+            onChange={(e) => {
+              setItemForm((f) => ({ ...f, url: e.target.value }));
+              setItemError(null);
+            }}
+            className="h-9 font-body text-sm mb-2"
+          />
+          {itemError && (
+            <p className="font-body text-xs text-destructive mb-2">{itemError}</p>
+          )}
           <Button
             onClick={handleSendItem}
-            disabled={!itemForm.name.trim()}
+            disabled={!itemForm.name.trim() || !itemForm.url.trim() || itemSending}
             className="w-full h-9 rounded-sm bg-accent hover:bg-accent/90 text-accent-foreground font-body text-sm"
           >
-            Send recommendation
+            {itemSending ? "Sending…" : "Send recommendation"}
           </Button>
         </div>
       )}

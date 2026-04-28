@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { sendTextMessage } from "@/lib/chat/send-message";
+import { sendTextMessage, sendSingleItemMessage } from "@/lib/chat/send-message";
 
 export const dynamic = "force-dynamic";
 
@@ -91,10 +91,60 @@ export async function POST(
       { status: 400 },
     );
   }
-  const body = (await req.json().catch(() => ({}))) as { body?: string };
-  const text = (body.body ?? "").trim();
-  if (!text) return NextResponse.json({ error: "Empty" }, { status: 400 });
+  const payload = (await req.json().catch(() => ({}))) as {
+    kind?: "TEXT" | "SINGLE_ITEM";
+    body?: string;
+    webUrl?: string;
+    inventoryProductId?: string;
+  };
+  const kind = payload.kind ?? "TEXT";
+  const text = (payload.body ?? "").trim();
+
   try {
+    if (kind === "SINGLE_ITEM") {
+      // Stylist-only: SINGLE_ITEM message kind is the dashboard's "Item
+      // Recommendation" path. Clients can only send TEXT through this
+      // endpoint — they shop, stylists recommend.
+      if (user.role !== "STYLIST") {
+        return NextResponse.json(
+          { error: "Only stylists can send item recommendations" },
+          { status: 403 },
+        );
+      }
+      const webUrl = payload.webUrl?.trim();
+      const inventoryProductId = payload.inventoryProductId?.trim();
+      if (!webUrl && !inventoryProductId) {
+        return NextResponse.json(
+          { error: "SINGLE_ITEM requires webUrl or inventoryProductId" },
+          { status: 400 },
+        );
+      }
+      if (webUrl) {
+        let parsed: URL;
+        try {
+          parsed = new URL(webUrl);
+        } catch {
+          return NextResponse.json({ error: "Invalid webUrl" }, { status: 400 });
+        }
+        // SingleItemCard renders this into <a href>; rejecting non-HTTP
+        // schemes here closes the door on `javascript:` / `data:` URLs.
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          return NextResponse.json(
+            { error: "webUrl must use http or https" },
+            { status: 400 },
+          );
+        }
+      }
+      await sendSingleItemMessage(id, {
+        authorClerkId: user.clerkId,
+        webUrl,
+        inventoryProductId,
+        body: text || undefined,
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    if (!text) return NextResponse.json({ error: "Empty" }, { status: 400 });
     await sendTextMessage(id, { authorClerkId: user.clerkId, body: text });
   } catch (e) {
     return NextResponse.json(
