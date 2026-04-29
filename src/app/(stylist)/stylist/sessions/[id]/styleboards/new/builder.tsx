@@ -220,6 +220,28 @@ export function StyleboardBuilder({
     })();
   }, []);
 
+  // Auto-populate the Shop tab with a default browse on mount so stylists
+  // see inventory immediately, matching Loveable's behavior (Loveable
+  // hardcodes 12 products; the rebuild's tastegraph proxy supports the
+  // same default browse via an empty-query search).
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/products", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ inStockOnly: true, pageSize: 24 }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as SearchResponse;
+          setInventoryResults(data.results ?? []);
+        }
+      } catch {
+        /* non-fatal; user can hit Search manually */
+      }
+    })();
+  }, []);
+
   // Fetch the stylist's favorited items once so the source-tile heart
   // reflects prior state.
   useEffect(() => {
