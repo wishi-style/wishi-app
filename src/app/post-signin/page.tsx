@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getServerAuth } from "@/lib/auth/server-auth";
 import {
   buildDefaultReconcileDeps,
+  parseRoleClaims,
   reconcileClerkUser,
 } from "@/lib/auth/reconcile-clerk-user";
 
@@ -15,9 +16,10 @@ export const dynamic = "force-dynamic";
  *   STYLIST → /stylist/dashboard   (wishi-reimagined home)
  *   CLIENT  → /                    (smart-spark-craft home)
  *
- * If the JWT claim is missing (the webhook hasn't landed yet), we run
- * `reconcileClerkUser` here too so the Prisma row exists and Clerk metadata
- * is backfilled before the user lands on their home page. This is the
+ * Reconciliation: if the JWT claims are missing OR carry a legacy role
+ * value (e.g. "ADMIN" from pre-migration sessions), we run
+ * `reconcileClerkUser` here so the Prisma row exists and Clerk metadata
+ * is normalized before the user lands on their home page. This is the
  * defense-in-depth layer on top of the `requireRole` self-heal — for users
  * coming through the sign-in funnel, the heal happens before any guard runs.
  *
@@ -46,14 +48,10 @@ export default async function PostSigninPage({
     redirect("/sign-in");
   }
 
-  const metadata = sessionClaims?.metadata as
-    | { role?: "CLIENT" | "STYLIST"; isAdmin?: boolean }
-    | undefined;
-  let role = metadata?.role;
+  const parsed = parseRoleClaims(sessionClaims?.metadata);
+  let role = parsed.role;
 
-  // If the JWT claim is missing, reconcile now so the next page-load has
-  // claims in the JWT. In E2E mode the cookies are the source of truth.
-  if (!role && !isE2E) {
+  if (parsed.needsReconcile && !isE2E) {
     try {
       const deps = await buildDefaultReconcileDeps();
       const result = await reconcileClerkUser(userId, deps);

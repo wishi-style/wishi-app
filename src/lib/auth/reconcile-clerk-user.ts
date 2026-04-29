@@ -32,6 +32,38 @@ interface ClerkUserSnapshot {
 
 export type RoleClaims = { role: UserRole; isAdmin: boolean };
 
+const VALID_ROLES: ReadonlyArray<UserRole> = ["CLIENT", "STYLIST"];
+
+/**
+ * Inspect Clerk session claims and report what we got plus whether we need
+ * to reconcile against the DB. Reconciliation is needed when:
+ *
+ *   - The role claim is missing or not one of the supported enum values
+ *     (e.g. legacy "ADMIN" carried by JWTs issued before the schema change).
+ *   - The isAdmin claim is missing entirely (boolean check, not falsy —
+ *     `false` is fine; `undefined` means the JWT predates the new shape).
+ *
+ * Returning `needsReconcile=true` is the trigger for `requireRole` and
+ * `/post-signin` to call `reconcileClerkUser` and pull fresh `{role,isAdmin}`
+ * from the DB, then opportunistically push them back to Clerk so the next
+ * JWT rotation carries normalized claims.
+ */
+export function parseRoleClaims(metadata: unknown): {
+  role: UserRole | undefined;
+  isAdmin: boolean;
+  needsReconcile: boolean;
+} {
+  const m = (metadata ?? {}) as { role?: unknown; isAdmin?: unknown };
+  const role: UserRole | undefined =
+    typeof m.role === "string" && (VALID_ROLES as readonly string[]).includes(m.role)
+      ? (m.role as UserRole)
+      : undefined;
+  const isAdmin = m.isAdmin === true;
+  const isAdminClaimPresent = typeof m.isAdmin === "boolean";
+  const needsReconcile = role === undefined || !isAdminClaimPresent;
+  return { role, isAdmin, needsReconcile };
+}
+
 export interface ReconcileClerkUserDeps {
   findUserByClerkId(
     clerkId: string,

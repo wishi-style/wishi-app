@@ -2,10 +2,72 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   determineAuthProvider,
+  parseRoleClaims,
   reconcileClerkUser,
   type ReconcileClerkUserDeps,
   type RoleClaims,
 } from "@/lib/auth/reconcile-clerk-user";
+
+// ─── parseRoleClaims ──────────────────────────────────────────────────
+
+test("parseRoleClaims: missing metadata → reconcile", () => {
+  const r = parseRoleClaims(undefined);
+  assert.equal(r.role, undefined);
+  assert.equal(r.isAdmin, false);
+  assert.equal(r.needsReconcile, true);
+});
+
+test("parseRoleClaims: empty object → reconcile", () => {
+  const r = parseRoleClaims({});
+  assert.equal(r.role, undefined);
+  assert.equal(r.needsReconcile, true);
+});
+
+test("parseRoleClaims: valid CLIENT role + isAdmin false → no reconcile", () => {
+  const r = parseRoleClaims({ role: "CLIENT", isAdmin: false });
+  assert.equal(r.role, "CLIENT");
+  assert.equal(r.isAdmin, false);
+  assert.equal(r.needsReconcile, false);
+});
+
+test("parseRoleClaims: valid STYLIST role + isAdmin true → no reconcile", () => {
+  const r = parseRoleClaims({ role: "STYLIST", isAdmin: true });
+  assert.equal(r.role, "STYLIST");
+  assert.equal(r.isAdmin, true);
+  assert.equal(r.needsReconcile, false);
+});
+
+test("parseRoleClaims: legacy ADMIN role → role undefined + reconcile", () => {
+  // Pre-migration JWTs can carry role:"ADMIN". The role is not one of the
+  // current enum values, so we treat it as missing and trigger self-heal —
+  // this prevents the transition-period 403 lockout for existing admins.
+  const r = parseRoleClaims({ role: "ADMIN" });
+  assert.equal(r.role, undefined);
+  assert.equal(r.needsReconcile, true);
+});
+
+test("parseRoleClaims: valid role but isAdmin claim missing → reconcile", () => {
+  // A JWT issued before the new shape carries role:"CLIENT" with no isAdmin
+  // key. The DB row may have isAdmin=true (e.g. for a backfilled admin) so
+  // we must reconcile to pick that up.
+  const r = parseRoleClaims({ role: "CLIENT" });
+  assert.equal(r.role, "CLIENT");
+  assert.equal(r.isAdmin, false);
+  assert.equal(r.needsReconcile, true);
+});
+
+test("parseRoleClaims: non-string role → reconcile", () => {
+  // Defensive: anything weird in the role slot triggers reconcile.
+  const r = parseRoleClaims({ role: 42, isAdmin: false });
+  assert.equal(r.role, undefined);
+  assert.equal(r.needsReconcile, true);
+});
+
+test("parseRoleClaims: non-boolean isAdmin → reconcile", () => {
+  const r = parseRoleClaims({ role: "CLIENT", isAdmin: "true" });
+  assert.equal(r.isAdmin, false);
+  assert.equal(r.needsReconcile, true);
+});
 
 // ─── determineAuthProvider ────────────────────────────────────────────
 

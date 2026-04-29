@@ -1,6 +1,7 @@
 import { unauthorized, forbidden } from "next/navigation";
 import type { UserRole } from "@/generated/prisma/client";
 import { getServerAuth } from "./server-auth";
+import { parseRoleClaims } from "./reconcile-clerk-user";
 
 /**
  * Server-side guard that checks both authentication and role authorization.
@@ -11,12 +12,11 @@ import { getServerAuth } from "./server-auth";
  * Call from Server Components and route group layouts:
  *   const { userId, role, isAdmin } = await requireRole("CLIENT");
  *
- * Self-heal: if the JWT claim is missing (e.g. the Clerk webhook didn't set
- * publicMetadata on signup, or the JWT was issued before metadata was
- * written), we fall back to the Prisma `User` row and opportunistically
- * write claims back into Clerk so future requests get them directly from
- * the JWT. The DB row remains the source of truth for THIS request even if
- * the Clerk backfill itself fails.
+ * Self-heal: if the JWT carries an unknown / legacy role (e.g. "ADMIN" from
+ * before the schema change) or is missing the isAdmin claim entirely, we
+ * pull fresh `{role,isAdmin}` from the DB and write them back to Clerk so
+ * the next JWT rotation has normalized claims. The DB row remains the
+ * source of truth for THIS request even if the Clerk backfill itself fails.
  */
 export async function requireRole(...allowedRoles: UserRole[]) {
   const { userId, sessionClaims, isE2E } = await getServerAuth();
@@ -25,13 +25,11 @@ export async function requireRole(...allowedRoles: UserRole[]) {
     unauthorized();
   }
 
-  const metadata = sessionClaims?.metadata as
-    | { role?: UserRole; isAdmin?: boolean }
-    | undefined;
-  let role = metadata?.role;
-  let isAdmin = metadata?.isAdmin === true;
+  const parsed = parseRoleClaims(sessionClaims?.metadata);
+  let role = parsed.role;
+  let isAdmin = parsed.isAdmin;
 
-  if (!role && !isE2E) {
+  if (parsed.needsReconcile && !isE2E) {
     const healed = await selfHeal(userId);
     if (healed) {
       role = healed.role;
