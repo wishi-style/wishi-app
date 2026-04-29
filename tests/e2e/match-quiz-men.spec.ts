@@ -44,8 +44,10 @@ test.describe("match-quiz men's flow", () => {
       await page.getByRole("button", { name: "Skip" }).click();
       await expect(page.getByText("DEPARTMENT", { exact: true })).toBeVisible();
 
-      // Pick Men. The button has aria-label="Choose Men".
-      await page.getByRole("button", { name: "Choose Men" }).click();
+      // Pick Men. Loveable's pill button has accessible name "Men" (text content,
+      // no aria-label). On current rebuild the button is "Choose Men" — this
+      // assertion fails until match-quiz-client.tsx ports the Loveable pill.
+      await page.getByRole("button", { name: "Men", exact: true }).click();
 
       // Should jump straight to STYLE, never showing BODY TYPE.
       await expect(page.getByText("STYLE", { exact: true })).toBeVisible();
@@ -119,7 +121,7 @@ test.describe("match-quiz men's flow", () => {
 
       await page.goto("/match-quiz");
       await page.getByRole("button", { name: "Skip" }).click();
-      await page.getByRole("button", { name: "Choose Men" }).click();
+      await page.getByRole("button", { name: "Men", exact: true }).click();
       await expect(page.getByText("STYLE", { exact: true })).toBeVisible();
 
       await page.getByRole("button", { name: "Back" }).click();
@@ -147,7 +149,7 @@ test.describe("match-quiz men's flow", () => {
 
       await page.goto("/match-quiz");
       await page.getByRole("button", { name: "Skip" }).click();
-      await page.getByRole("button", { name: "Choose Women" }).click();
+      await page.getByRole("button", { name: "Women", exact: true }).click();
 
       // Body Type should appear for women.
       await expect(page.getByText("BODY TYPE", { exact: true })).toBeVisible();
