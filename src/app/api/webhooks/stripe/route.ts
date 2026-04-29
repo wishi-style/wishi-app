@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import {
   handleCheckoutCompleted,
+  handlePaymentIntentSucceeded,
   handleSubscriptionCreated,
   handleSubscriptionUpdated,
   handleSubscriptionDeleted,
@@ -10,7 +11,6 @@ import {
 } from "@/lib/payments/webhook-handlers";
 import {
   handleAccountUpdated,
-  handleTipPaymentSucceeded,
   handleTransferFailed,
   handleTransferPaid,
 } from "@/lib/payments/payout-webhooks";
@@ -73,7 +73,7 @@ export async function POST(req: Request) {
         await handleAccountUpdated(event.data.object);
         break;
       case "payment_intent.succeeded":
-        await handleTipPaymentSucceeded(event.data.object);
+        await handlePaymentIntentSucceeded(event.data.object);
         break;
       default:
         console.log(`[stripe webhook] Unhandled event type: ${event.type}`);
