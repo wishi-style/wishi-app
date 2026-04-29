@@ -278,6 +278,51 @@ test("stylist moodboard creator visual", async ({ page }) => {
 test("stylist look creator visual", async ({ page }) => {
   const ctx = await seed("lk");
   try {
+    // Stub the inventory auto-search so the Shop tab grid is deterministic —
+    // tastegraph image URLs vary by run/cache and lazy-load on intersection,
+    // which blew the 0.5% diff budget. The fixture proves the auto-search
+    // wiring renders into the grid layout without depending on live CDN
+    // imagery; product cards fall back to their SVG placeholder when
+    // primary_image_url is null.
+    await page.route("**/api/products", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          total: 6,
+          page: 1,
+          pageSize: 24,
+          pages: 1,
+          results: Array.from({ length: 6 }, (_, i) => ({
+            id: `vis-${i}`,
+            canonical_name: `Sample item ${i + 1}`,
+            canonical_description: null,
+            brand_id: "vis-brand",
+            brand_name: "Brand",
+            category_id: "vis-cat",
+            category_slug: "tops",
+            gender: "female",
+            gtin: "",
+            min_price: 100 + i * 10,
+            max_price: 100 + i * 10,
+            currency: "USD",
+            in_stock: true,
+            listing_count: 1,
+            primary_image_url: null,
+            image_urls: [],
+            available_sizes: [],
+            available_colors: [],
+            color_families: [],
+            primary_fabric: null,
+            fabric_tier: null,
+            contains_leather: null,
+            updated_at: "2026-04-29T00:00:00Z",
+            listings: [],
+          })),
+        }),
+      });
+    });
     await signIn(page, ctx.stylistEmail);
     await page.goto(`/stylist/sessions/${ctx.sessionId}/styleboards/new`);
     await page.waitForLoadState("networkidle");
