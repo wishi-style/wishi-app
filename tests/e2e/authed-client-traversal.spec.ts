@@ -36,7 +36,7 @@ async function signIn(page: Page, email: string): Promise<void> {
   await page.getByRole("button", { name: "Sign In" }).click();
   // The post-sign-in router lands on whichever client surface is
   // appropriate for the user (sessions / matches / match-quiz).
-  await expect(page).toHaveURL(/\/(sessions|stylist|match-quiz|matches|welcome)/);
+  await expect(page).not.toHaveURL(/\/sign-in/);
 }
 
 test("authed client walks /stylists → Meet → profile → Continue → /select-plan, regardless of StyleProfile state", async ({

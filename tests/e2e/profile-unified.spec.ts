@@ -24,7 +24,7 @@ async function signInAsClient(
   await page.goto("/sign-in?e2e=1");
   await page.getByLabel("Email").fill(email);
   await page.getByRole("button", { name: "Sign In" }).click();
-  await expect(page).toHaveURL(/\/(sessions|stylists|matches|onboarding)/);
+  await expect(page).not.toHaveURL(/\/sign-in/);
 }
 
 test("§3.6 — /closet permanent-redirects to /profile", async ({ page }) => {

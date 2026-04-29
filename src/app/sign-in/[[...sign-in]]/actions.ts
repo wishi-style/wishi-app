@@ -20,7 +20,7 @@ export async function signInForE2E(formData: FormData) {
 
   const user = await prisma.user.findUnique({
     where: { email },
-    select: { clerkId: true, role: true },
+    select: { clerkId: true, role: true, isAdmin: true },
   });
   if (!user?.clerkId) {
     throw new Error("Test user not found");
@@ -29,7 +29,12 @@ export async function signInForE2E(formData: FormData) {
   await setE2EAuthCookies({
     clerkId: user.clerkId,
     role: user.role,
+    isAdmin: user.isAdmin,
   });
 
-  redirect("/sessions");
+  // Mirror production: Clerk's signInFallbackRedirectUrl points at /post-signin
+  // which resolves role and forwards to the right Loveable home. Sending the
+  // E2E flow through the same route exercises the role-aware redirect end to
+  // end instead of hardcoding /sessions for everyone.
+  redirect("/post-signin");
 }

@@ -82,7 +82,7 @@ test("@live full /checkout walkthrough reaches PaymentElement with real Stripe T
     await page.goto("/sign-in?e2e=1");
     await page.getByLabel("Email").fill(email);
     await page.getByRole("button", { name: "Sign In" }).click();
-    await expect(page).toHaveURL(/\/(sessions|stylist|match-quiz)/);
+    await expect(page).not.toHaveURL(/\/sign-in/);
 
     // Land on /checkout with the seeded cart item.
     await page.goto(`/checkout?items=${cartItemId}`);

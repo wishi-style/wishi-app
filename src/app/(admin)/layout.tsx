@@ -1,4 +1,4 @@
-import { requireRole } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { AdminSidebar } from "@/components/nav/admin-sidebar";
 
 export default async function AdminLayout({
@@ -6,7 +6,7 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  await requireRole("ADMIN");
+  await requireAdmin();
 
   return (
     <div className="flex min-h-screen bg-background">

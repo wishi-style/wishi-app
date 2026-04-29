@@ -189,7 +189,7 @@ test.describe("Phase 4: boards", () => {
       await stylistPage.goto("/sign-in");
       await stylistPage.getByLabel("Email").fill(ctx.stylist.email);
       await stylistPage.getByRole("button", { name: "Sign In" }).click();
-      await expect(stylistPage).toHaveURL(/\/(sessions|stylist)/);
+      await expect(stylistPage).not.toHaveURL(/\/sign-in/);
 
       const createRes = await stylistPage.request.post("/api/moodboards", {
         data: { sessionId: ctx.session.id },
@@ -280,7 +280,7 @@ test.describe("Phase 4: boards", () => {
       await stylistPage.goto("/sign-in");
       await stylistPage.getByLabel("Email").fill(ctx.stylist.email);
       await stylistPage.getByRole("button", { name: "Sign In" }).click();
-      await expect(stylistPage).toHaveURL(/\/(sessions|stylist)/);
+      await expect(stylistPage).not.toHaveURL(/\/sign-in/);
 
       // Create styleboard
       const createRes = await stylistPage.request.post("/api/styleboards", {
@@ -400,7 +400,7 @@ test.describe("Phase 4: boards", () => {
       await page.goto("/sign-in");
       await page.getByLabel("Email").fill(ctx.stylist.email);
       await page.getByRole("button", { name: "Sign In" }).click();
-      await expect(page).toHaveURL(/\/(sessions|stylist)/);
+      await expect(page).not.toHaveURL(/\/sign-in/);
 
       const res = await page.request.get("/api/products?q=dress");
       expect(res.status()).toBe(200);

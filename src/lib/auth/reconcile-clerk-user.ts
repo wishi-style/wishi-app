@@ -9,9 +9,9 @@ import { generateReferralCode } from "./referral-code";
 //   1. Make sure a Prisma `User` row exists for this clerkId. Without this row
 //      the rest of the app (sessions, profile, notifications) silently 404s
 //      because every service joins on `User`.
-//   2. Make sure Clerk `publicMetadata.role` matches the Prisma `User.role`.
-//      Every `requireRole(...)` guard reads the JWT claim, so Clerk has to
-//      know the role.
+//   2. Make sure Clerk `publicMetadata.{role,isAdmin}` matches the Prisma
+//      `User.{role,isAdmin}`. Every `requireRole(...)` / `requireAdmin()`
+//      guard reads JWT claims, so Clerk has to know both.
 //
 // The Clerk `user.created` webhook is the primary writer (success path), but
 // it can fail (URL/secret misconfig, transient DB error, retry race against
@@ -30,8 +30,44 @@ interface ClerkUserSnapshot {
   externalAccounts: ReadonlyArray<{ provider: string }>;
 }
 
+export type RoleClaims = { role: UserRole; isAdmin: boolean };
+
+const VALID_ROLES: ReadonlyArray<UserRole> = ["CLIENT", "STYLIST"];
+
+/**
+ * Inspect Clerk session claims and report what we got plus whether we need
+ * to reconcile against the DB. Reconciliation is needed when:
+ *
+ *   - The role claim is missing or not one of the supported enum values
+ *     (e.g. legacy "ADMIN" carried by JWTs issued before the schema change).
+ *   - The isAdmin claim is missing entirely (boolean check, not falsy —
+ *     `false` is fine; `undefined` means the JWT predates the new shape).
+ *
+ * Returning `needsReconcile=true` is the trigger for `requireRole` and
+ * `/post-signin` to call `reconcileClerkUser` and pull fresh `{role,isAdmin}`
+ * from the DB, then opportunistically push them back to Clerk so the next
+ * JWT rotation carries normalized claims.
+ */
+export function parseRoleClaims(metadata: unknown): {
+  role: UserRole | undefined;
+  isAdmin: boolean;
+  needsReconcile: boolean;
+} {
+  const m = (metadata ?? {}) as { role?: unknown; isAdmin?: unknown };
+  const role: UserRole | undefined =
+    typeof m.role === "string" && (VALID_ROLES as readonly string[]).includes(m.role)
+      ? (m.role as UserRole)
+      : undefined;
+  const isAdmin = m.isAdmin === true;
+  const isAdminClaimPresent = typeof m.isAdmin === "boolean";
+  const needsReconcile = role === undefined || !isAdminClaimPresent;
+  return { role, isAdmin, needsReconcile };
+}
+
 export interface ReconcileClerkUserDeps {
-  findUserByClerkId(clerkId: string): Promise<{ id: string; role: UserRole } | null>;
+  findUserByClerkId(
+    clerkId: string,
+  ): Promise<{ id: string; role: UserRole; isAdmin: boolean } | null>;
   fetchClerkUser(clerkId: string): Promise<ClerkUserSnapshot>;
   generateUniqueReferralCode(): Promise<string>;
   createUser(data: {
@@ -42,14 +78,15 @@ export interface ReconcileClerkUserDeps {
     avatarUrl: string | null;
     authProvider: AuthProvider;
     referralCode: string;
-  }): Promise<{ id: string; role: UserRole }>;
+  }): Promise<{ id: string; role: UserRole; isAdmin: boolean }>;
   seedNotificationPreferences(userId: string): Promise<void>;
-  setClerkRole(clerkId: string, role: UserRole): Promise<void>;
+  setClerkClaims(clerkId: string, claims: RoleClaims): Promise<void>;
 }
 
 export type ReconcileClerkUserResult = {
   userId: string;
   role: UserRole;
+  isAdmin: boolean;
   created: boolean;
 };
 
@@ -71,11 +108,13 @@ export async function reconcileClerkUser(
 
   let userId: string;
   let role: UserRole;
+  let isAdmin: boolean;
   let created = false;
 
   if (existing) {
     userId = existing.id;
     role = existing.role;
+    isAdmin = existing.isAdmin;
   } else {
     const snapshot = await deps.fetchClerkUser(clerkId);
     if (!snapshot.emailAddress) {
@@ -94,15 +133,16 @@ export async function reconcileClerkUser(
     await deps.seedNotificationPreferences(user.id);
     userId = user.id;
     role = user.role;
+    isAdmin = user.isAdmin;
     created = true;
   }
 
   // Always re-write Clerk metadata. Clerk does a deep-merge so this preserves
   // unrelated keys like `onboardingStatus`. The DB row is the source of truth
-  // for role; this line keeps Clerk in sync with it.
-  await deps.setClerkRole(clerkId, role);
+  // for {role, isAdmin}; this line keeps Clerk in sync with it.
+  await deps.setClerkClaims(clerkId, { role, isAdmin });
 
-  return { userId, role, created };
+  return { userId, role, isAdmin, created };
 }
 
 // Default deps wired to real Prisma + Clerk SDK. Lazy-imports the Clerk SDK
@@ -114,7 +154,7 @@ export async function buildDefaultReconcileDeps(): Promise<ReconcileClerkUserDep
     findUserByClerkId: (clerkId) =>
       prisma.user.findUnique({
         where: { clerkId },
-        select: { id: true, role: true },
+        select: { id: true, role: true, isAdmin: true },
       }),
 
     fetchClerkUser: async (clerkId) => {
@@ -146,7 +186,7 @@ export async function buildDefaultReconcileDeps(): Promise<ReconcileClerkUserDep
     createUser: (data) =>
       prisma.user.create({
         data,
-        select: { id: true, role: true },
+        select: { id: true, role: true, isAdmin: true },
       }),
 
     seedNotificationPreferences: async (userId) => {
@@ -164,20 +204,19 @@ export async function buildDefaultReconcileDeps(): Promise<ReconcileClerkUserDep
       await prisma.notificationPreference.createMany({ data: rows });
     },
 
-    setClerkRole: async (clerkId, role) => {
+    setClerkClaims: async (clerkId, { role, isAdmin }) => {
       const client = await clerkClient();
       await client.users.updateUserMetadata(clerkId, {
-        publicMetadata: { role },
+        publicMetadata: { role, isAdmin },
       });
     },
   };
 }
 
 /**
- * Push the current DB `User.role` into Clerk `publicMetadata.role`.
- * Use this after any DB role mutation (e.g. `promoteToStylist`,
- * `demoteToClient`) so the Clerk JWT picks up the new role on the next
- * session-token rotation.
+ * Push the current DB `User.{role,isAdmin}` into Clerk publicMetadata. Use
+ * after any DB role mutation (`promoteToStylist`, `setAdminFlag`, etc.) so
+ * the Clerk JWT picks up the new claims on the next session-token rotation.
  *
  * Failures are logged but not rethrown — callers should treat the DB write
  * as the source of truth and the Clerk write as an opportunistic sync. The
@@ -185,10 +224,10 @@ export async function buildDefaultReconcileDeps(): Promise<ReconcileClerkUserDep
  *
  * No-op for users without a real Clerk ID (e2e fixtures use `e2e_*` IDs).
  */
-export async function syncClerkRoleForUser(userId: string): Promise<void> {
+export async function syncClerkClaimsForUser(userId: string): Promise<void> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { clerkId: true, role: true },
+    select: { clerkId: true, role: true, isAdmin: true },
   });
   if (!user?.clerkId || !user.clerkId.startsWith("user_")) return;
 
@@ -196,10 +235,10 @@ export async function syncClerkRoleForUser(userId: string): Promise<void> {
     const { clerkClient } = await import("@clerk/nextjs/server");
     const client = await clerkClient();
     await client.users.updateUserMetadata(user.clerkId, {
-      publicMetadata: { role: user.role },
+      publicMetadata: { role: user.role, isAdmin: user.isAdmin },
     });
   } catch (err) {
-    console.error("syncClerkRoleForUser failed", {
+    console.error("syncClerkClaimsForUser failed", {
       userId,
       err: err instanceof Error ? err.message : err,
     });

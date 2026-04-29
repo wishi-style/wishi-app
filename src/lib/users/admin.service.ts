@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit/log";
-import { syncClerkRoleForUser } from "@/lib/auth/reconcile-clerk-user";
+import { syncClerkClaimsForUser } from "@/lib/auth/reconcile-clerk-user";
 import type { StylistType, UserRole } from "@/generated/prisma/client";
 
 export type AdminUserRow = {
@@ -81,7 +81,7 @@ export async function promoteToStylist({
   // Push the new role into Clerk so the next JWT rotation picks it up.
   // Without this, the freshly-promoted stylist hits forbidden() on every
   // /stylist/* page until something else writes Clerk metadata.
-  await syncClerkRoleForUser(userId);
+  await syncClerkClaimsForUser(userId);
 
   await writeAudit({
     actorUserId,
@@ -89,6 +89,35 @@ export async function promoteToStylist({
     entityType: "User",
     entityId: userId,
     meta: { stylistType },
+  });
+}
+
+/**
+ * Toggle the `isAdmin` permission on a user. Writes the DB row and re-syncs
+ * Clerk claims so the next JWT rotation reflects the change. Audited.
+ */
+export async function setAdminFlag({
+  userId,
+  isAdmin,
+  actorUserId,
+}: {
+  userId: string;
+  isAdmin: boolean;
+  actorUserId: string;
+}) {
+  await prisma.user.update({
+    where: { id: userId },
+    data: { isAdmin },
+  });
+
+  await syncClerkClaimsForUser(userId);
+
+  await writeAudit({
+    actorUserId,
+    action: isAdmin ? "user.grant_admin" : "user.revoke_admin",
+    entityType: "User",
+    entityId: userId,
+    meta: { isAdmin },
   });
 }
 

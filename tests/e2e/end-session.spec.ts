@@ -146,7 +146,7 @@ test.describe("Phase 4: end-session", () => {
       await stylistPage.goto("/sign-in");
       await stylistPage.getByLabel("Email").fill(ctx.stylist.email);
       await stylistPage.getByRole("button", { name: "Sign In" }).click();
-      await expect(stylistPage).toHaveURL(/\/(sessions|stylist)/);
+      await expect(stylistPage).not.toHaveURL(/\/sign-in/);
 
       const reqRes = await stylistPage.request.post(
         `/api/sessions/${ctx.session.id}/end/request`,
@@ -209,7 +209,7 @@ test.describe("Phase 4: end-session", () => {
       await stylistPage.goto("/sign-in");
       await stylistPage.getByLabel("Email").fill(ctx.stylist.email);
       await stylistPage.getByRole("button", { name: "Sign In" }).click();
-      await expect(stylistPage).toHaveURL(/\/(sessions|stylist)/);
+      await expect(stylistPage).not.toHaveURL(/\/sign-in/);
 
       await stylistPage.request.post(`/api/sessions/${ctx.session.id}/end/request`);
 

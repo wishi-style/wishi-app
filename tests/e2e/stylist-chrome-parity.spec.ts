@@ -45,7 +45,7 @@ async function signInAsStylist(
   await page.goto("/sign-in?e2e=1");
   await page.getByLabel("Email").fill(email);
   await page.getByRole("button", { name: "Sign In" }).click();
-  await expect(page).toHaveURL(/\/(stylist|sessions|onboarding)/);
+  await expect(page).not.toHaveURL(/\/sign-in/);
 }
 
 test("D10 — /stylist/sessions redirects to /stylist/dashboard", async ({

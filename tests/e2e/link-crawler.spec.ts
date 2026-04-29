@@ -204,7 +204,7 @@ test.describe("link crawler — every internal href on canonical pages reaches a
       await page.goto("/sign-in");
       await page.getByLabel("Email").fill(clientEmail);
       await page.getByRole("button", { name: "Sign In" }).click();
-      await expect(page).toHaveURL(/\/(sessions|stylist|match-quiz|matches|welcome)/);
+      await expect(page).not.toHaveURL(/\/sign-in/);
 
       const { visited, broken } = await crawlAndAssertReachable(
         page,

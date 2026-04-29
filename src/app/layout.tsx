@@ -96,8 +96,8 @@ export default async function RootLayout({
         <ClerkProvider
           signInUrl="/sign-in"
           signUpUrl="/sign-up"
-          signInFallbackRedirectUrl="/"
-          signUpFallbackRedirectUrl="/"
+          signInFallbackRedirectUrl="/post-signin"
+          signUpFallbackRedirectUrl="/post-signin"
         >
           <ImpersonationBannerMount />
           <StagingBanner />

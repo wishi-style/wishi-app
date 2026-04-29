@@ -30,10 +30,14 @@ export async function signUpForE2E(formData: FormData) {
 
   const existing = await prisma.user.findUnique({
     where: { email },
-    select: { clerkId: true, role: true },
+    select: { clerkId: true, role: true, isAdmin: true },
   });
   if (existing?.clerkId) {
-    await setE2EAuthCookies({ clerkId: existing.clerkId, role: existing.role });
+    await setE2EAuthCookies({
+      clerkId: existing.clerkId,
+      role: existing.role,
+      isAdmin: existing.isAdmin,
+    });
     redirect("/stylists");
   }
 
@@ -46,7 +50,7 @@ export async function signUpForE2E(formData: FormData) {
       authProvider: "EMAIL",
       referralCode: generateReferralCode(),
     },
-    select: { id: true, clerkId: true, role: true },
+    select: { id: true, clerkId: true, role: true, isAdmin: true },
   });
 
   const guestToken = await readGuestToken();
@@ -55,6 +59,7 @@ export async function signUpForE2E(formData: FormData) {
   await setE2EAuthCookies({
     clerkId: user.clerkId!,
     role: user.role,
+    isAdmin: user.isAdmin,
   });
 
   redirect("/stylists");
