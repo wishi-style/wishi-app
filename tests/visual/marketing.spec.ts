@@ -15,6 +15,9 @@ import { PNG } from "pngjs";
  * asserting <2% pixel delta per the Phase 10 verification gate.
  */
 
+// `loveablePath` overrides the path used when probing the Loveable dev
+// server — only set it when the rebuild renamed the route. The wishi-app
+// path is the source of truth for the committed darwin/linux baselines.
 const routes = [
   { path: "/", name: "landing" },
   { path: "/pricing", name: "pricing" },
@@ -22,13 +25,38 @@ const routes = [
   { path: "/lux", name: "lux" },
   { path: "/stylists", name: "stylists" },
   { path: "/feed", name: "feed" },
+  { path: "/discover", name: "discover" },
+  { path: "/reviews", name: "reviews" },
+  { path: "/gift-cards", name: "gift-cards" },
+  // `/match-quiz` is the rebuild's rename of Loveable's `/onboarding`.
+  { path: "/match-quiz", loveablePath: "/onboarding", name: "match-quiz" },
+  // `/stylist-match` is intentionally NOT here — Loveable's `/stylist-match`
+  // is the authed top-matches results page. The rebuild renames that route
+  // to `/matches` (LOCKED in CLIENT-PIXEL-PARITY-TASK.md). The rebuild's
+  // own `/stylist-match` is a Server Component that 307-redirects to
+  // `/sign-in` when unauthed and to `/matches` when authed — it has no
+  // public-marketing surface to baseline.
 ] as const;
 
 async function waitForReveal(page: Page) {
-  // Reveal primitive fades in over 0.7s; give it a beat past that plus a
-  // moment for next/image to swap from placeholder to final.
+  // The `Reveal` primitive uses Motion's `useInView` with `once: true`,
+  // so any section that hasn't crossed the viewport yet stays at
+  // `opacity: 0, translateY(12px)`. Playwright's `fullPage: true` does
+  // NOT scroll the viewport — it expands the capture canvas at the
+  // current scroll position. So below-the-fold reveals never fire.
+  // Scroll the page through in increments to trigger every observer
+  // and unblock lazy-loaded `next/image` content, then return to top
+  // and let the 0.7s reveal transition settle before capturing.
   await page.waitForLoadState("networkidle");
-  await page.waitForTimeout(1200);
+  const totalHeight = await page.evaluate(
+    () => document.documentElement.scrollHeight,
+  );
+  for (let y = 0; y <= totalHeight; y += 200) {
+    await page.evaluate((y) => window.scrollTo(0, y), y);
+    await page.waitForTimeout(60);
+  }
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(900);
 }
 
 for (const { path, name } of routes) {
@@ -43,7 +71,10 @@ for (const { path, name } of routes) {
 
 const loveableBase = process.env.LOVEABLE_BASE_URL;
 if (loveableBase) {
-  for (const { path, name } of routes) {
+  for (const route of routes) {
+    const { path, name } = route;
+    const lovePath =
+      "loveablePath" in route ? route.loveablePath : path;
     test(`${name}: <2% delta vs Loveable`, async ({ browser, baseURL }) => {
       // Capture wishi-app first.
       const wishiCtx = await browser.newContext();
@@ -58,7 +89,7 @@ if (loveableBase) {
         viewport: wishiPage.viewportSize() ?? undefined,
       });
       const lovePage = await loveCtx.newPage();
-      await lovePage.goto(`${loveableBase}${path === "/" ? "" : path}`);
+      await lovePage.goto(`${loveableBase}${lovePath === "/" ? "" : lovePath}`);
       await waitForReveal(lovePage);
       const loveBuffer = await lovePage.screenshot({ fullPage: true });
       await loveCtx.close();

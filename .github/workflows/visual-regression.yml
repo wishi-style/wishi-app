@@ -1,0 +1,133 @@
+name: Visual regression
+
+# Drift guardrail for the Loveable design contract. **Manual-only** —
+# trigger via `gh workflow run "Visual regression"` (or via the Actions
+# tab) when you want to verify drift after a UI-touching change. Not
+# wired to `pull_request` because the Loveable port is stable and
+# running the suite on every PR was producing more noise than signal
+# (the reason PR #61 originally removed it).
+#
+# Bootstrapping linux baselines: the harness runs Chromium on
+# `ubuntu-latest`, so the committed `*-linux.png` baselines must be
+# captured from a linux runtime. Trigger with `update_snapshots=true`
+# — the run uploads the regenerated PNGs as a `linux-baselines`
+# artifact for download and commit. Subsequent manual runs diff against
+# the committed baselines with a 0.5% delta budget.
+
+on:
+  workflow_dispatch:
+    inputs:
+      update_snapshots:
+        description: "Regenerate baselines instead of diffing"
+        type: boolean
+        default: false
+
+# `pull-requests: write` and `issues: write` are needed for the
+# `actions/github-script` step that posts a comment on snapshot
+# failures. Default `GITHUB_TOKEN` permission is read-only on most
+# repos (this is what bit PR #61 — "Resource not accessible by
+# integration"). Declared explicitly even though the workflow is
+# manual-only today, so a future re-wire to `pull_request` doesn't
+# silently lose the comment step.
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  marketing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: wishi
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: wishi_p5
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U wishi"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DATABASE_URL: postgresql://wishi:password@localhost:5432/wishi_p5?sslmode=disable
+      DIRECT_DATABASE_URL: postgresql://wishi:password@localhost:5432/wishi_p5?sslmode=disable
+      VISUAL_PORT: 3100
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx prisma generate
+
+      - name: Apply migrations + phase4 constraints
+        run: |
+          npx prisma migrate deploy
+          psql "$DATABASE_URL" -f prisma/migrations/phase4_constraints.sql
+
+      - name: Seed DB (plans + quizzes — required by marketing pages)
+        run: npx tsx prisma/seed.ts
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run visual regression
+        run: |
+          if [ "${{ github.event.inputs.update_snapshots }}" = "true" ]; then
+            npm run test:visual:update
+          else
+            npm run test:visual
+          fi
+
+      - name: Upload regenerated linux baselines
+        if: ${{ github.event.inputs.update_snapshots == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-baselines
+          path: tests/visual/marketing.spec.ts-snapshots/*-linux.png
+          retention-days: 30
+
+      - name: Upload diff artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diffs
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14
+
+      - name: Comment on PR with diff-artifact link on failure
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: [
+                "Visual regression failed.",
+                "",
+                `Diffs are attached to the run: ${run}`,
+                "",
+                "If the change was intentional, regenerate baselines locally:",
+                "`npm run test:visual:update` (darwin) or trigger this workflow",
+                "via `workflow_dispatch` with `update_snapshots=true` (linux),",
+                "download the `linux-baselines` artifact, commit, push.",
+              ].join("\n"),
+            });
