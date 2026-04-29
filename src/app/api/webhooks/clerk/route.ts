@@ -1,101 +1,33 @@
 import { verifyWebhook } from "@clerk/nextjs/webhooks";
-import { clerkClient, type UserJSON } from "@clerk/nextjs/server";
+import { type UserJSON } from "@clerk/nextjs/server";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { generateReferralCode } from "@/lib/auth/referral-code";
-import type { AuthProvider, NotificationChannel } from "@/generated/prisma/client";
 import { claimGuestQuizResult } from "@/lib/quiz/claim-guest-quiz";
+import {
+  buildDefaultReconcileDeps,
+  reconcileClerkUser,
+} from "@/lib/auth/reconcile-clerk-user";
 
 export const dynamic = "force-dynamic";
 
-const NOTIFICATION_CATEGORIES = [
-  "session_updates",
-  "marketing",
-  "chat",
-  "promotions",
-] as const;
-
-function determineAuthProvider(
-  externalAccounts: UserJSON["external_accounts"],
-): AuthProvider {
-  if (!externalAccounts?.length) return "EMAIL";
-  const provider = externalAccounts[0].provider;
-  if (provider === "google" || provider === "oauth_google") return "GOOGLE";
-  if (provider === "apple" || provider === "oauth_apple") return "APPLE";
-  return "EMAIL";
-}
-
-async function generateUniqueReferralCode(): Promise<string> {
-  for (let i = 0; i < 5; i++) {
-    const code = generateReferralCode();
-    const existing = await prisma.user.findUnique({
-      where: { referralCode: code },
-      select: { id: true },
-    });
-    if (!existing) return code;
-  }
-  // Extremely unlikely — fall back to longer code
-  return generateReferralCode() + generateReferralCode();
-}
-
-async function seedNotificationPreferences(userId: string) {
-  const rows: Array<{
-    userId: string;
-    channel: NotificationChannel;
-    category: string;
-    isEnabled: boolean;
-  }> = [];
-
-  for (const category of NOTIFICATION_CATEGORIES) {
-    // Email: all ON
-    rows.push({ userId, channel: "EMAIL", category, isEnabled: true });
-    // SMS: all ON (TCPA review flagged for legal before launch)
-    rows.push({ userId, channel: "SMS", category, isEnabled: true });
-    // Push: all OFF until browser/OS permission granted
-    rows.push({ userId, channel: "PUSH", category, isEnabled: false });
-  }
-
-  await prisma.notificationPreference.createMany({ data: rows });
-}
-
 async function handleUserCreated(data: UserJSON) {
   const clerkId = data.id;
-  const email = data.email_addresses?.[0]?.email_address;
-  if (!email) {
-    console.error("Webhook user.created: no email address", { clerkId });
-    return;
+
+  // Reconcile is idempotent: it upserts the Prisma row and re-syncs Clerk
+  // publicMetadata.role. A retry that hits the `clerkId @unique` constraint
+  // on a partially-created user will now fall through to the existing-row
+  // branch and still re-write the role into Clerk, instead of erroring out
+  // and leaving the user permanently role-less.
+  const deps = await buildDefaultReconcileDeps();
+  const { userId, created } = await reconcileClerkUser(clerkId, deps);
+
+  // Guest-quiz claim is signup-only — don't replay it on retries.
+  if (created) {
+    const unsafeMetadata = data.unsafe_metadata as
+      | { guestToken?: string }
+      | undefined;
+    await claimGuestQuizResult(userId, unsafeMetadata?.guestToken);
   }
-
-  const firstName = data.first_name || "";
-  const lastName = data.last_name || "";
-  const imageUrl = data.image_url;
-  const authProvider = determineAuthProvider(data.external_accounts);
-  const referralCode = await generateUniqueReferralCode();
-
-  const unsafeMetadata = data.unsafe_metadata as
-    | { guestToken?: string }
-    | undefined;
-
-  const user = await prisma.user.create({
-    data: {
-      clerkId,
-      email,
-      firstName,
-      lastName,
-      authProvider,
-      avatarUrl: imageUrl || null,
-      referralCode,
-    },
-  });
-
-  // Set role in Clerk publicMetadata so it propagates to session JWTs
-  const client = await clerkClient();
-  await client.users.updateUserMetadata(clerkId, {
-    publicMetadata: { role: "CLIENT" },
-  });
-
-  await seedNotificationPreferences(user.id);
-  await claimGuestQuizResult(user.id, unsafeMetadata?.guestToken);
 }
 
 async function handleUserUpdated(data: UserJSON) {

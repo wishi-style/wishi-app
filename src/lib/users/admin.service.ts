@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit/log";
+import { syncClerkRoleForUser } from "@/lib/auth/reconcile-clerk-user";
 import type { StylistType, UserRole } from "@/generated/prisma/client";
 
 export type AdminUserRow = {
@@ -76,6 +77,11 @@ export async function promoteToStylist({
       data: { userId, stylistType, onboardingStatus: "NOT_STARTED" },
     }),
   ]);
+
+  // Push the new role into Clerk so the next JWT rotation picks it up.
+  // Without this, the freshly-promoted stylist hits forbidden() on every
+  // /stylist/* page until something else writes Clerk metadata.
+  await syncClerkRoleForUser(userId);
 
   await writeAudit({
     actorUserId,
