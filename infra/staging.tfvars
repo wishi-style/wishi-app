@@ -41,4 +41,4 @@ enable_demo_mode = true
 
 # Alarm fan-out. Each recipient must confirm the SNS subscription email AWS
 # sends after the first apply.
-alert_email_recipients = ["dozomatt@gmail.com"]
+alert_email_recipients = ["matthewcar@wishi.me"]
