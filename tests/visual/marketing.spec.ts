@@ -22,6 +22,11 @@ const routes = [
   { path: "/lux", name: "lux" },
   { path: "/stylists", name: "stylists" },
   { path: "/feed", name: "feed" },
+  { path: "/discover", name: "discover" },
+  { path: "/reviews", name: "reviews" },
+  { path: "/gift-cards", name: "gift-cards" },
+  { path: "/match-quiz", name: "match-quiz" },
+  { path: "/stylist-match", name: "stylist-match" },
 ] as const;
 
 async function waitForReveal(page: Page) {
