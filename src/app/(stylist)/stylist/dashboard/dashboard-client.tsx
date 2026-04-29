@@ -75,10 +75,10 @@ interface MockSession {
 
 interface ChatMessage {
   id: string;
-  sender: "stylist" | "client";
+  sender: "stylist" | "client" | "system";
   text: string;
   timestamp: Date;
-  type?: "text" | "item_recommendation";
+  type?: "text" | "item_recommendation" | "end_request" | "end_approved" | "end_declined";
   itemData?: { name: string; brand: string; price: string; imageUrl?: string; note?: string };
 }
 
@@ -156,6 +156,12 @@ export default function StylistDashboard({
   const [itemRecOpen, setItemRecOpen] = useState(false);
   const [itemForm, setItemForm] = useState({ name: "", brand: "", price: "", note: "", url: "" });
   const [itemSending, setItemSending] = useState(false);
+  const [endRequesting, setEndRequesting] = useState(false);
+  // Track sessions where this session has triggered an end-request optimistically
+  // — surfaces the "Awaiting client approval" badge before the chat refetch lands.
+  const [endRequestedLocally, setEndRequestedLocally] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [itemError, setItemError] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState("");
   // Messages are fetched per-session from /api/sessions/[id]/messages on
@@ -274,41 +280,82 @@ export default function StylistDashboard({
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [selectedId, messages]);
 
-  // Fetch real Twilio-mirrored messages from the DB when a session is
-  // selected. Only fires once per session per page-load to avoid pounding
-  // the API as the stylist hops rows; /workspace is the real-time surface.
+  // Fetch real Twilio-mirrored messages from the DB. Extracted into a
+  // callable so handlers (end-request, send) can refetch after writes.
+  const loadMessages = useCallback(async (sid: string) => {
+    try {
+      const res = await fetch(`/api/sessions/${sid}/messages?limit=50`);
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        messages: Array<{
+          id: string;
+          text: string | null;
+          sender: "stylist" | "client" | "system";
+          kind: string;
+          createdAt: string;
+        }>;
+      };
+      // System messages are filtered out EXCEPT END_SESSION_REQUEST, which
+      // Loveable HEAD renders as a dedicated chat card. The webhook persists
+      // it with `kind: "END_SESSION_REQUEST"` so we can detect + reshape
+      // into a typed ChatMessage on the client.
+      const mapped: ChatMessage[] = data.messages
+        .filter(
+          (m) => m.sender !== "system" || m.kind === "END_SESSION_REQUEST",
+        )
+        .map((m) => {
+          let type: ChatMessage["type"] = "text";
+          if (m.kind === "END_SESSION_REQUEST") type = "end_request";
+          else if (m.kind === "SINGLE_ITEM") type = "item_recommendation";
+          return {
+            id: m.id,
+            sender: m.sender,
+            text: m.text ?? "",
+            timestamp: new Date(m.createdAt),
+            type,
+          };
+        });
+      setMessages((prev) => ({ ...prev, [sid]: mapped }));
+    } catch {
+      /* keep mock data on failure — Dashboard is preview-only */
+    }
+  }, []);
+
   useEffect(() => {
     if (!selectedId) return;
     if (messagesLoading[selectedId]) return;
     const sid = selectedId;
     setMessagesLoading((prev) => ({ ...prev, [sid]: true }));
-    void (async () => {
-      try {
-        const res = await fetch(`/api/sessions/${sid}/messages?limit=50`);
-        if (!res.ok) return;
-        const data = (await res.json()) as {
-          messages: Array<{
-            id: string;
-            text: string | null;
-            sender: "stylist" | "client" | "system";
-            createdAt: string;
-          }>;
-        };
-        const mapped: ChatMessage[] = data.messages
-          .filter((m) => m.sender !== "system")
-          .map((m) => ({
-            id: m.id,
-            sender: m.sender === "stylist" ? "stylist" : "client",
-            text: m.text ?? "",
-            timestamp: new Date(m.createdAt),
-          }));
-        setMessages((prev) => ({ ...prev, [sid]: mapped }));
-      } catch {
-        /* keep mock data on failure — Dashboard is preview-only */
-      }
-    })();
+    void loadMessages(sid);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
+
+  const handleRequestEnd = async () => {
+    if (!selectedId || endRequesting) return;
+    setEndRequesting(true);
+    try {
+      const res = await fetch(`/api/sessions/${selectedId}/end/request`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        // Surface server error inline; specific status codes (409 already
+        // requested, 403 not your session) come back from `requestEnd`'s
+        // SessionTransitionError mapping.
+        return;
+      }
+      // Optimistically mark the session as awaiting approval so the chat
+      // header switches to "End requested — awaiting client" without
+      // waiting for the Twilio webhook → DB → refetch round trip.
+      setEndRequestedLocally((prev) => {
+        const next = new Set(prev);
+        next.add(selectedId);
+        return next;
+      });
+      await loadMessages(selectedId);
+    } finally {
+      setEndRequesting(false);
+    }
+  };
 
   const handleSend = async () => {
     if (!inputValue.trim() || !selectedId || sending) return;
@@ -858,6 +905,22 @@ export default function StylistDashboard({
           >
             {selected.actionLabel}
           </Button>
+          {/* Request to end — visible only on still-active sessions where no
+              end request has been raised yet. Loveable HEAD's dashboard exposes
+              the same trigger from the right-pane header. */}
+          {!selected.endedAt &&
+            !selected.endRequestedAt &&
+            !endRequestedLocally.has(selected.id) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="font-body text-xs text-muted-foreground h-8"
+                disabled={endRequesting}
+                onClick={() => void handleRequestEnd()}
+              >
+                {endRequesting ? "Requesting…" : "End session"}
+              </Button>
+            )}
           <Button variant="ghost" size="sm" className="font-body text-xs text-muted-foreground h-8" onClick={() => setDetailOpen(true)}>
             Details
           </Button>
@@ -876,6 +939,33 @@ export default function StylistDashboard({
                   </span>
                 </div>
               )}
+              {msg.type === "end_request" ? (
+                /* End-session request card — centered, full-width-ish, with
+                 * the system body text + an explicit pending/approved badge.
+                 * Matches Loveable HEAD's StylistDashboard:1050-1079. */
+                <div className="flex justify-center mb-3">
+                  <div className="max-w-sm w-full rounded-2xl border border-border bg-background px-4 py-3 text-center space-y-2">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <ArchiveIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="font-body text-[11px] uppercase tracking-wide text-muted-foreground">
+                        End-session request
+                      </span>
+                    </div>
+                    <p className="font-body text-xs text-foreground leading-relaxed">{msg.text}</p>
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "rounded-sm font-body text-[10px]",
+                        selected.endedAt
+                          ? "text-emerald-700 border-emerald-200"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {selected.endedAt ? "Approved · Session completed" : "Awaiting client approval"}
+                    </Badge>
+                  </div>
+                </div>
+              ) : (
               <div className={cn("flex items-end gap-2 mb-3", msg.sender === "stylist" ? "justify-end" : "justify-start")}>
                 {msg.sender === "client" && (
                   <Avatar className="h-7 w-7 shrink-0 mb-5">
@@ -923,6 +1013,7 @@ export default function StylistDashboard({
                   </Avatar>
                 )}
               </div>
+              )}
             </div>
           ))}
           <div ref={chatEndRef} />
@@ -1007,7 +1098,7 @@ export default function StylistDashboard({
           <div className="flex-1 flex items-center gap-2 rounded-full border border-border bg-muted/40 px-4 py-2.5 focus-within:ring-1 focus-within:ring-ring transition-shadow">
             <input
               type="text"
-              placeholder="Type a message..."
+              placeholder={`Message ${selected.clientName.split(" ")[0] || "client"}`}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
