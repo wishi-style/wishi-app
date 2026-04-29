@@ -39,6 +39,9 @@ import {
   Image,
   FileText,
   Trash2 as TrashIcon,
+  Inbox as InboxIcon,
+  Archive as ArchiveIcon,
+  RotateCcw,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import ClientDetailPanel from "@/components/stylist/client-detail-panel";
@@ -66,6 +69,8 @@ interface MockSession {
   actionLabel: string;
   loyaltyTier: LoyaltyTier;
   totalSessions: number;
+  endedAt: string | null;
+  endRequestedAt: string | null;
 }
 
 interface ChatMessage {
@@ -160,18 +165,52 @@ export default function StylistDashboard({
   const [sending, setSending] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [drafts, setDrafts] = useState<MoodBoardDraft[]>([]);
+  const [folder, setFolder] = useState<"inbox" | "archive">("inbox");
+  // Re-evaluate `isArchived` once a minute so a session that just hit its
+  // 24h post-completion mark moves to Archive without a manual refresh.
+  const [, setNowTick] = useState(0);
   const router = useRouter();
   const chatEndRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
 
+  useEffect(() => {
+    const t = setInterval(() => setNowTick((n) => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Auto-select the first session in the current folder when nothing is
+  // selected — keeps the right pane populated when the user switches tabs.
+  useEffect(() => {
+    if (selectedId === null) {
+      const firstVisible = mockSessions.find((s) =>
+        folder === "archive" ? !!s.endedAt && Date.now() - new Date(s.endedAt).getTime() >= ARCHIVE_DELAY_MS : !(s.endedAt && Date.now() - new Date(s.endedAt).getTime() >= ARCHIVE_DELAY_MS),
+      );
+      if (firstVisible) setSelectedId(firstVisible.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [folder, selectedId]);
+
+  // Auto-archive 24h after `endedAt`. Mirrors Loveable HEAD's client-side
+  // predicate so we don't need a worker / column flip on the backend.
+  const ARCHIVE_DELAY_MS = 24 * 60 * 60 * 1000;
+  const isArchived = (s: MockSession) =>
+    !!s.endedAt && Date.now() - new Date(s.endedAt).getTime() >= ARCHIVE_DELAY_MS;
+
+  const visibleSessions = mockSessions.filter((s) =>
+    folder === "archive" ? isArchived(s) : !isArchived(s),
+  );
+
   const selected = mockSessions.find((s) => s.id === selectedId) ?? null;
 
-  // Stats
-  const overdueCount = mockSessions.filter((s) => s.priority === "overdue").length;
-  const dueTodayCount = mockSessions.filter((s) => s.priority === "due_today").length;
-  const newCount = mockSessions.filter((s) => s.priority === "new").length;
-  const activeCount = mockSessions.filter((s) => s.priority === "active").length;
-  const allCount = mockSessions.length;
+  // Stats reflect the visible (current-folder) bucket so e.g. switching to
+  // Archive shows archive-bucket counts, not the full queue.
+  const overdueCount = visibleSessions.filter((s) => s.priority === "overdue").length;
+  const dueTodayCount = visibleSessions.filter((s) => s.priority === "due_today").length;
+  const newCount = visibleSessions.filter((s) => s.priority === "new").length;
+  const activeCount = visibleSessions.filter((s) => s.priority === "active").length;
+  const allCount = visibleSessions.length;
+  const inboxCount = mockSessions.filter((s) => !isArchived(s)).length;
+  const archiveCount = mockSessions.filter(isArchived).length;
 
   const stats: { key: StatFilter; count: number; label: string }[] = [
     { key: "overdue", count: overdueCount, label: "Overdue" },
@@ -193,7 +232,7 @@ export default function StylistDashboard({
     setSortBy("priority");
   };
 
-  const filtered = mockSessions
+  const filtered = visibleSessions
     .filter((s) => {
       const matchesSearch = !searchQuery || s.clientName.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesPriority = !activeFilter || activeFilter === "all" || s.priority === activeFilter;
@@ -412,6 +451,32 @@ export default function StylistDashboard({
             className="pl-9 h-10 font-body text-sm rounded-sm bg-background"
           />
         </div>
+      </div>
+
+      {/* Folder tabs — Active bookings vs Archive (Loveable HEAD parity) */}
+      <div className="flex items-center gap-1 px-4 pt-3 border-b border-border">
+        {[
+          { key: "inbox" as const, label: "Active bookings", count: inboxCount, Icon: InboxIcon },
+          { key: "archive" as const, label: "Archive", count: archiveCount, Icon: ArchiveIcon },
+        ].map(({ key, label, count, Icon }) => (
+          <button
+            key={key}
+            onClick={() => {
+              setFolder(key);
+              setSelectedId(null);
+            }}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-2 -mb-px border-b-2 font-body text-xs transition-colors",
+              folder === key
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            <span>{label}</span>
+            <span className="text-[10px] text-muted-foreground">({count})</span>
+          </button>
+        ))}
       </div>
 
       {/* Stats Grid */}

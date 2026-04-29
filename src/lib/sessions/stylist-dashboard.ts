@@ -30,6 +30,11 @@ export interface DashboardSession {
   actionLabel: string;
   loyaltyTier: DashboardLoyaltyTier;
   totalSessions: number;
+  // ISO timestamps powering the Active bookings vs Archive split. The
+  // dashboard auto-archives a session 24h after `endedAt`; `endRequestedAt`
+  // surfaces the pending-end state in the sessions list.
+  endedAt: string | null;
+  endRequestedAt: string | null;
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -183,6 +188,7 @@ export async function getStylistDashboardData(
       styleboardsAllowed: true,
       startedAt: true,
       completedAt: true,
+      endRequestedAt: true,
       updatedAt: true,
       client: {
         select: {
@@ -258,6 +264,8 @@ export async function getStylistDashboardData(
       actionLabel: isCompleted ? "View Session" : actionLabelFor(nextAction?.type ?? null),
       loyaltyTier: mapLoyaltyTier(s.client.loyaltyTier, totalSessions),
       totalSessions,
+      endedAt: s.completedAt?.toISOString() ?? null,
+      endRequestedAt: s.endRequestedAt?.toISOString() ?? null,
     };
   });
 }
