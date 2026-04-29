@@ -190,16 +190,16 @@ export function MoodboardBuilder({
   const canvasImages = photos.map((p) => ({ id: p.id, url: p.url }));
 
   // Re-flow freestyle items when entering freestyle mode or when the photo
-  // set changes underneath. Loveable HEAD: only seed positions for newly
-  // added images; preserve existing freestyle positions for images that
-  // were already on the canvas.
+  // set changes underneath. Depend on the content signature (id+url) — not
+  // photos.length — so a swap (remove 1 + add 1) or a server refresh that
+  // returns different URLs at the same length still triggers the reflow.
+  // Preserve existing positions for images already on the canvas.
+  const freestyleSignature = photos.map((p) => `${p.id}:${p.url}`).join("|");
   useEffect(() => {
     if (canvasMode !== "freestyle") return;
     setFreestyleItems((prev) => {
       const existing = new Set(prev.map((it) => it.src));
       const seeded = defaultFreestyleLayout(canvasImages.map((i) => i.url));
-      // keep any prior positioned item whose src is still on the canvas;
-      // append seeded positions for newcomers
       const kept = prev.filter((it) =>
         canvasImages.some((c) => c.url === it.src),
       );
@@ -207,7 +207,7 @@ export function MoodboardBuilder({
       return [...kept, ...added];
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canvasMode, photos.length]);
+  }, [canvasMode, freestyleSignature]);
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">

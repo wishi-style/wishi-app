@@ -274,28 +274,6 @@ export function StyleboardBuilder({
     })();
   }, []);
 
-  // Loveable HEAD: keyboard shortcuts 1 / 2 / 3 toggle canvas size. Skip
-  // when focus is in any text input/textarea so typing "1" in the search
-  // box doesn't shrink the canvas mid-search.
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
-      if (e.key === "1") setCanvasSize("min");
-      if (e.key === "2") setCanvasSize("small");
-      if (e.key === "3") setCanvasSize("large");
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, []);
-
   // Auto-populate the Shop tab with a default browse on mount so stylists
   // see inventory immediately, matching Loveable's behavior (Loveable
   // hardcodes 12 products; the rebuild's tastegraph proxy supports the
@@ -507,8 +485,24 @@ export function StyleboardBuilder({
       merchantIds: selectedMerchants.length ? selectedMerchants : undefined,
       colors: selectedColors.length ? selectedColors : undefined,
       sizes: selectedSizes.length ? selectedSizes : undefined,
-      minPrice: priceRange[0] > 0 ? priceRange[0] : undefined,
-      maxPrice: priceRange[1] < 5000 ? priceRange[1] : undefined,
+      // Price preset narrows minPrice/maxPrice via the bucket; falls back to
+      // explicit priceRange when the user has set a custom range too.
+      minPrice:
+        pricePreset === "250-1000"
+          ? Math.max(250, priceRange[0])
+          : pricePreset === "1000+"
+            ? Math.max(1000, priceRange[0])
+            : priceRange[0] > 0
+              ? priceRange[0]
+              : undefined,
+      maxPrice:
+        pricePreset === "u250"
+          ? Math.min(250, priceRange[1])
+          : pricePreset === "250-1000"
+            ? Math.min(1000, priceRange[1])
+            : priceRange[1] < 5000
+              ? priceRange[1]
+              : undefined,
       inStockOnly: inStockOnly || undefined,
       pageSize: 24,
     };
@@ -525,6 +519,31 @@ export function StyleboardBuilder({
     const data = (await res.json()) as SearchResponse;
     setInventoryResults(data.results ?? []);
   }
+
+  // Client-side post-filter applied to whatever tastegraph returned. Backs
+  // up server-side filters defensively + applies the few client-only
+  // dimensions tastegraph can't yet honor (Availability beyond in-stock,
+  // pricePreset bucketing). The remaining hardcoded chips
+  // (Tops subcategories, Inspo Style, Inspo BodyType) target facets the
+  // service does not yet surface (BACKEND-GAP-E/F/G/H) — chips render but
+  // do not narrow product results today; they wire up automatically once
+  // tastegraph exposes those fields.
+  const filteredInventoryResults = useMemo(() => {
+    return inventoryResults.filter((p) => {
+      if (selectedAvailability.length > 0) {
+        // Only "in-stock" is derivable from tastegraph today; the others
+        // (preorder/sale/final-sale) pass through unchanged so the chip
+        // doesn't make the grid empty when the backend can't filter.
+        if (selectedAvailability.includes("in-stock") && !p.in_stock) {
+          return false;
+        }
+      }
+      if (pricePreset === "u250" && p.min_price >= 250) return false;
+      if (pricePreset === "250-1000" && (p.min_price < 250 || p.min_price >= 1000)) return false;
+      if (pricePreset === "1000+" && p.min_price < 1000) return false;
+      return true;
+    });
+  }, [inventoryResults, selectedAvailability, pricePreset]);
 
   function resetFilters() {
     setSelectedMerchants([]);
@@ -979,7 +998,7 @@ export function StyleboardBuilder({
               )}
               <ScrollArea className="flex-1">
                 <div className="grid grid-cols-2 gap-2 p-3">
-                  {inventoryResults.map((p) => (
+                  {filteredInventoryResults.map((p) => (
                     <SourceTile
                       key={p.id}
                       imageUrl={p.primary_image_url ?? null}
@@ -1005,9 +1024,11 @@ export function StyleboardBuilder({
                       }}
                     />
                   ))}
-                  {inventoryResults.length === 0 && (
+                  {filteredInventoryResults.length === 0 && (
                     <p className="col-span-2 px-2 py-6 font-body text-xs text-muted-foreground text-center">
-                      Search the inventory to start adding items.
+                      {inventoryResults.length === 0
+                        ? "Search the inventory to start adding items."
+                        : "No items match the current filters."}
                     </p>
                   )}
                 </div>
@@ -1672,6 +1693,14 @@ function FilterPanel({
         selected={selectedAvailability}
         onToggle={(k) => toggle(selectedAvailability, k, onAvailability)}
       />
+
+      {/* Tops subcats / Inspo Style / Inspo BodyType depend on facets the
+          inventory service does not yet expose (BACKEND-GAP-E/F/G/H). The
+          chips render so stylists can preview the taxonomy, but they
+          don't narrow product results until the backend lands them. */}
+      <p className="font-body text-[10px] italic text-muted-foreground/70">
+        Some filters below preview taxonomy not yet served by inventory.
+      </p>
 
       <ChipGroup
         label="Tops subcategories"

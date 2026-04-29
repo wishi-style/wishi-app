@@ -131,11 +131,17 @@ async function seedWithUsers(prefix: string): Promise<
     ],
   );
   const stylist = rows.find((r) => r.email === base.stylistEmail);
-  const client = rows.find((r) => r.email !== base.stylistEmail);
+  const clientEmail = base.stylistEmail.replace("-stylist-", "-client-");
+  const client = rows.find((r) => r.email === clientEmail);
+  if (!stylist || !client) {
+    throw new Error(
+      `seedWithUsers: expected both rows in users table; got stylist=${!!stylist} client=${!!client}. Looking for emails [${base.stylistEmail}, ${clientEmail}].`,
+    );
+  }
   return {
     ...base,
-    stylistUserId: stylist!.id,
-    clientUserId: client!.id,
+    stylistUserId: stylist.id,
+    clientUserId: client.id,
   };
 }
 

@@ -70,8 +70,14 @@ export function useChat(sessionId: string) {
   const clientRef = useRef<Client | null>(null);
   const conversationRef = useRef<Conversation | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track BOTH attempt completion AND outcome separately so a fast-failing
+  // Twilio (e.g. missing channel) doesn't surface an error before the DB
+  // bootstrap has had a chance to render historical messages. The chat is
+  // "broken" only if BOTH paths have run and BOTH failed.
   const dbBootstrappedRef = useRef(false);
   const twilioSeededRef = useRef(false);
+  const dbAttemptFinishedRef = useRef(false);
+  const twilioAttemptFinishedRef = useRef(false);
 
   const fetchToken = useCallback(async (): Promise<string> => {
     const res = await fetch(`/api/chat/token?sessionId=${sessionId}`);
@@ -98,9 +104,23 @@ export function useChat(sessionId: string) {
           setMessages(data.messages.map(fromDb));
         }
         dbBootstrappedRef.current = true;
+        // Twilio may have set a fast-fail error before us; clear it now that
+        // we have historical messages to render — the realtime gap is
+        // already telegraphed by the existing "Reconnecting…" banner.
+        if (!cancelled) setError(null);
       } catch (err) {
         console.error("[useChat] DB bootstrap failed:", err);
+        // Twilio may have already finished and failed silently (waiting on
+        // us); now that we know we can't help either, surface the error.
+        if (
+          !cancelled &&
+          twilioAttemptFinishedRef.current &&
+          !twilioSeededRef.current
+        ) {
+          setError("Unable to load chat history");
+        }
       } finally {
+        dbAttemptFinishedRef.current = true;
         if (!cancelled) setIsLoading(false);
       }
     }
@@ -160,13 +180,16 @@ export function useChat(sessionId: string) {
       } catch (err) {
         if (cancelled) return;
         console.error("[useChat] Connection failed:", err);
-        // Only surface the error if DB bootstrap also failed — otherwise the
-        // user sees historical messages and the existing "Reconnecting…"
-        // banner indicates the realtime gap.
-        if (!dbBootstrappedRef.current) {
+        // Only surface the error when BOTH paths have finished and BOTH
+        // failed. If DB bootstrap is still in flight, defer the verdict —
+        // when it lands and succeeds it will clear any pending error; if
+        // it fails it'll set the error itself.
+        if (dbAttemptFinishedRef.current && !dbBootstrappedRef.current) {
           setError(err instanceof Error ? err.message : "Failed to connect to chat");
         }
         setIsLoading(false);
+      } finally {
+        twilioAttemptFinishedRef.current = true;
       }
     }
 
