@@ -48,18 +48,32 @@ variable "enable_demo_mode" {
   default     = false
   description = "Staging-only: emit E2E_AUTH_MODE + ENABLE_DEMO_SEED on the web task. Never set on production."
 }
+variable "app_url" {
+  type        = string
+  default     = ""
+  description = "Public URL of the deployed app. Used for SEO (sitemap.xml, robots.txt, OG metadata) and as the canonical base in code paths that don't have access to request headers. Empty string = use the request's x-forwarded-host header fallback."
+}
+variable "inventory_service_url" {
+  type        = string
+  default     = ""
+  description = "Tastegraph inventory service base URL. Empty disables inventory features (board builder Inventory tab degrades to empty array)."
+}
 
 locals {
   name = "${var.project}-${var.env}"
 
   # Base env vars always present on the web task.
-  base_environment = [
-    { name = "NODE_ENV", value = "production" },
-    { name = "PORT", value = "3000" },
-    { name = "S3_UPLOADS_BUCKET", value = "${var.project}-uploads-${var.env}" },
-    { name = "AWS_REGION", value = data.aws_region.current.name },
-    { name = "DEPLOYED_ENV", value = var.env },
-  ]
+  base_environment = concat(
+    [
+      { name = "NODE_ENV", value = "production" },
+      { name = "PORT", value = "3000" },
+      { name = "S3_UPLOADS_BUCKET", value = "${var.project}-uploads-${var.env}" },
+      { name = "AWS_REGION", value = data.aws_region.current.name },
+      { name = "DEPLOYED_ENV", value = var.env },
+    ],
+    var.app_url != "" ? [{ name = "APP_URL", value = var.app_url }] : [],
+    var.inventory_service_url != "" ? [{ name = "INVENTORY_SERVICE_URL", value = var.inventory_service_url }] : [],
+  )
 
   # Extra env vars that only get emitted on demo-enabled envs (staging).
   # The second layer of prod-safety (DEPLOYED_ENV=production short-circuit)
