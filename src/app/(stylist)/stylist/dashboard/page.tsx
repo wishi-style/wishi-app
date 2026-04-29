@@ -12,7 +12,7 @@ function initialsFor(firstName: string | null, lastName: string | null): string 
 }
 
 export default async function StylistDashboardPage() {
-  await requireRole("STYLIST", "ADMIN");
+  await requireRole("STYLIST");
   const user = await getCurrentAuthUser();
   if (!user) return null;
 

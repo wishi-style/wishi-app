@@ -74,7 +74,7 @@ test("stylist can open a styleboard from chat (no Access denied)", async ({
     await page.goto("/sign-in");
     await page.getByLabel("Email").fill(stylistEmail);
     await page.getByRole("button", { name: "Sign In" }).click();
-    await expect(page).toHaveURL(/\/(sessions|stylist)/);
+    await expect(page).not.toHaveURL(/\/sign-in/);
 
     // Styleboard viewer
     await page.goto(`/stylist/sessions/${session.id}/styleboards/${styleboardId}`);

@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 async function authorize(clientId: string) {
   const user = await getCurrentUser();
   if (!user) return { error: "Unauthorized" as const, status: 401 };
-  if (user.role !== "STYLIST" && user.role !== "ADMIN") {
+  if (user.role !== "STYLIST" && !user.isAdmin) {
     return { error: "Forbidden" as const, status: 403 };
   }
   const worked = await stylistHasWorkedWithClient(user.id, clientId);

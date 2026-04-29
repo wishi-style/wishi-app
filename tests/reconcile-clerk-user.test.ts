@@ -4,8 +4,8 @@ import {
   determineAuthProvider,
   reconcileClerkUser,
   type ReconcileClerkUserDeps,
+  type RoleClaims,
 } from "@/lib/auth/reconcile-clerk-user";
-import type { UserRole } from "@/generated/prisma/client";
 
 // ─── determineAuthProvider ────────────────────────────────────────────
 
@@ -44,7 +44,7 @@ interface Spy {
   generateUniqueReferralCodeCalls: number;
   createUserCalls: Array<Parameters<ReconcileClerkUserDeps["createUser"]>[0]>;
   seedNotificationPreferencesCalls: string[];
-  setClerkRoleCalls: Array<{ clerkId: string; role: UserRole }>;
+  setClerkClaimsCalls: Array<{ clerkId: string; claims: RoleClaims }>;
 }
 
 function buildDeps(
@@ -56,7 +56,7 @@ function buildDeps(
     generateUniqueReferralCodeCalls: 0,
     createUserCalls: [],
     seedNotificationPreferencesCalls: [],
-    setClerkRoleCalls: [],
+    setClerkClaimsCalls: [],
   };
 
   const deps: ReconcileClerkUserDeps = {
@@ -80,13 +80,13 @@ function buildDeps(
     },
     createUser: async (data) => {
       spy.createUserCalls.push(data);
-      return { id: "user_db_new", role: "CLIENT" };
+      return { id: "user_db_new", role: "CLIENT", isAdmin: false };
     },
     seedNotificationPreferences: async (userId) => {
       spy.seedNotificationPreferencesCalls.push(userId);
     },
-    setClerkRole: async (clerkId, role) => {
-      spy.setClerkRoleCalls.push({ clerkId, role });
+    setClerkClaims: async (clerkId, claims) => {
+      spy.setClerkClaimsCalls.push({ clerkId, claims });
     },
     ...overrides,
   };
@@ -94,9 +94,13 @@ function buildDeps(
   return { deps, spy };
 }
 
-test("existing row → metadata-only path: no fetch, no create, only setClerkRole", async () => {
+test("existing row → metadata-only path: no fetch, no create, only setClerkClaims", async () => {
   const { deps, spy } = buildDeps({
-    findUserByClerkId: async () => ({ id: "user_db_1", role: "CLIENT" }),
+    findUserByClerkId: async () => ({
+      id: "user_db_1",
+      role: "CLIENT",
+      isAdmin: false,
+    }),
   });
 
   const result = await reconcileClerkUser("user_clerk_1", deps);
@@ -104,19 +108,24 @@ test("existing row → metadata-only path: no fetch, no create, only setClerkRol
   assert.deepEqual(result, {
     userId: "user_db_1",
     role: "CLIENT",
+    isAdmin: false,
     created: false,
   });
   assert.equal(spy.fetchClerkUserCalls.length, 0);
   assert.equal(spy.createUserCalls.length, 0);
   assert.equal(spy.seedNotificationPreferencesCalls.length, 0);
-  assert.deepEqual(spy.setClerkRoleCalls, [
-    { clerkId: "user_clerk_1", role: "CLIENT" },
+  assert.deepEqual(spy.setClerkClaimsCalls, [
+    { clerkId: "user_clerk_1", claims: { role: "CLIENT", isAdmin: false } },
   ]);
 });
 
 test("existing row preserves DB role over default — STYLIST stays STYLIST", async () => {
   const { deps, spy } = buildDeps({
-    findUserByClerkId: async () => ({ id: "user_db_1", role: "STYLIST" }),
+    findUserByClerkId: async () => ({
+      id: "user_db_1",
+      role: "STYLIST",
+      isAdmin: false,
+    }),
   });
 
   const result = await reconcileClerkUser("user_clerk_1", deps);
@@ -124,18 +133,37 @@ test("existing row preserves DB role over default — STYLIST stays STYLIST", as
   assert.equal(result.role, "STYLIST");
   // Critically: we write the existing role back to Clerk, not "CLIENT" default.
   // This is what makes a webhook-retry safe for already-promoted users.
-  assert.deepEqual(spy.setClerkRoleCalls, [
-    { clerkId: "user_clerk_1", role: "STYLIST" },
+  assert.deepEqual(spy.setClerkClaimsCalls, [
+    { clerkId: "user_clerk_1", claims: { role: "STYLIST", isAdmin: false } },
   ]);
 });
 
-test("missing row → full path: fetch + create + seed + setClerkRole", async () => {
+test("existing row preserves isAdmin=true over default — admin stays admin", async () => {
+  const { deps, spy } = buildDeps({
+    findUserByClerkId: async () => ({
+      id: "user_db_1",
+      role: "CLIENT",
+      isAdmin: true,
+    }),
+  });
+
+  const result = await reconcileClerkUser("user_clerk_1", deps);
+
+  assert.equal(result.isAdmin, true);
+  // A webhook retry on an existing admin user must not strip their flag.
+  assert.deepEqual(spy.setClerkClaimsCalls, [
+    { clerkId: "user_clerk_1", claims: { role: "CLIENT", isAdmin: true } },
+  ]);
+});
+
+test("missing row → full path: fetch + create + seed + setClerkClaims", async () => {
   const { deps, spy } = buildDeps();
 
   const result = await reconcileClerkUser("user_clerk_2", deps);
 
   assert.equal(result.userId, "user_db_new");
   assert.equal(result.role, "CLIENT");
+  assert.equal(result.isAdmin, false);
   assert.equal(result.created, true);
 
   assert.deepEqual(spy.fetchClerkUserCalls, ["user_clerk_2"]);
@@ -151,8 +179,8 @@ test("missing row → full path: fetch + create + seed + setClerkRole", async ()
     referralCode: "REF12345",
   });
   assert.deepEqual(spy.seedNotificationPreferencesCalls, ["user_db_new"]);
-  assert.deepEqual(spy.setClerkRoleCalls, [
-    { clerkId: "user_clerk_2", role: "CLIENT" },
+  assert.deepEqual(spy.setClerkClaimsCalls, [
+    { clerkId: "user_clerk_2", claims: { role: "CLIENT", isAdmin: false } },
   ]);
 });
 
@@ -190,10 +218,10 @@ test("missing row + Clerk has no email → throws (does not create row)", async 
     /no primary email address/,
   );
   assert.equal(spy.createUserCalls.length, 0);
-  assert.equal(spy.setClerkRoleCalls.length, 0);
+  assert.equal(spy.setClerkClaimsCalls.length, 0);
 });
 
-test("idempotency: two consecutive calls with the same existing row both setClerkRole", async () => {
+test("idempotency: two consecutive calls with the same existing row both setClerkClaims", async () => {
   // Webhook retries arrive after Clerk's `clerkId @unique` constraint trips.
   // The retry must still write Clerk metadata so a partially-completed first
   // attempt (DB row created, metadata write failed) self-heals on retry.
@@ -201,7 +229,7 @@ test("idempotency: two consecutive calls with the same existing row both setCler
   const { deps, spy } = buildDeps({
     findUserByClerkId: async () => {
       lookupCalls += 1;
-      return { id: "user_db_5", role: "CLIENT" };
+      return { id: "user_db_5", role: "CLIENT", isAdmin: false };
     },
   });
 
@@ -209,6 +237,6 @@ test("idempotency: two consecutive calls with the same existing row both setCler
   await reconcileClerkUser("user_clerk_5", deps);
 
   assert.equal(lookupCalls, 2);
-  assert.equal(spy.setClerkRoleCalls.length, 2);
+  assert.equal(spy.setClerkClaimsCalls.length, 2);
   assert.equal(spy.createUserCalls.length, 0);
 });

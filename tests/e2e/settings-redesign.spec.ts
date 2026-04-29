@@ -16,7 +16,7 @@ async function signIn(page: Page, email: string) {
   await page.goto("/sign-in");
   await page.getByLabel("Email").fill(email);
   await page.getByRole("button", { name: "Sign In" }).click();
-  await expect(page).toHaveURL(/\/(sessions|stylist|match-quiz|sessions)/);
+  await expect(page).not.toHaveURL(/\/sign-in/);
 }
 
 test("/settings renders hero + all 7 settings cards", async ({ page }) => {

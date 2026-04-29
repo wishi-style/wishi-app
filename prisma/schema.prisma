@@ -16,7 +16,6 @@ generator client {
 enum UserRole {
   CLIENT
   STYLIST
-  ADMIN
 }
 
 enum AuthProvider {
@@ -275,6 +274,7 @@ model User {
   firstName        String       @map("first_name")
   lastName         String       @map("last_name")
   role             UserRole     @default(CLIENT)
+  isAdmin          Boolean      @default(false) @map("is_admin")
   gender           Gender?
   birthday         DateTime?    @db.Date
   avatarUrl        String?      @map("avatar_url")

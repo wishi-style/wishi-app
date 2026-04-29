@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { runWorker, WORKER_NAMES, type WorkerName } from "@/workers/entry";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export async function POST(
   _req: Request,
   { params }: { params: Promise<{ name: string }> },
 ) {
-  await requireRole("ADMIN");
+  await requireAdmin();
 
   const { name } = await params;
   if (!WORKER_NAMES.includes(name as WorkerName)) {

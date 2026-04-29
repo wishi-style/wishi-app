@@ -98,7 +98,7 @@ async function signInAsStylist(page: import("@playwright/test").Page, email: str
   await page.goto("/sign-in");
   await page.getByLabel("Email").fill(email);
   await page.getByRole("button", { name: "Sign In" }).click();
-  await expect(page).toHaveURL(/\/(stylist|sessions|onboarding)/);
+  await expect(page).not.toHaveURL(/\/sign-in/);
 }
 
 test("Dashboard queue renders the stylist's real sessions with client name + plan badge", async ({

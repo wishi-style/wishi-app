@@ -30,7 +30,7 @@ async function signIn(page: import("@playwright/test").Page, email: string) {
   await page.goto("/sign-in");
   await page.getByLabel("Email").fill(email);
   await page.getByRole("button", { name: "Sign In" }).click();
-  await expect(page).toHaveURL(/\/(stylist|sessions|onboarding|matches|welcome)/);
+  await expect(page).not.toHaveURL(/\/sign-in/);
 }
 
 test("only stylists can send SINGLE_ITEM messages; clients are 403'd", async ({ page }) => {

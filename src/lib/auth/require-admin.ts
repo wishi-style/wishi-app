@@ -19,15 +19,15 @@ export async function requireAdmin(): Promise<AdminContext> {
   }
 
   const metadata = sessionClaims?.metadata as
-    | { role?: string }
+    | { isAdmin?: boolean }
     | undefined;
 
-  if (metadata?.role !== "ADMIN") {
+  if (metadata?.isAdmin !== true) {
     forbidden();
   }
 
   const user = await prisma.user.findUnique({ where: { clerkId } });
-  if (!user) {
+  if (!user || user.isAdmin !== true) {
     forbidden();
   }
 
