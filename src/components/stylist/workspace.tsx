@@ -360,7 +360,7 @@ function StyleboardsTab({
 function CuratedTab({ curated }: { curated: WorkspaceItem[] }) {
   return (
     <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 md:py-6">
-      <h3 className="font-display text-xl mb-4">All Curated Pieces</h3>
+      <h3 className="font-display text-xl mb-4">All Recommended Pieces</h3>
       {curated.length === 0 ? (
         <p className="text-sm text-muted-foreground font-body">
           No items sent yet. Items from your styleboards land here once they ship.

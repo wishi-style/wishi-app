@@ -39,9 +39,13 @@ import {
   Image,
   FileText,
   Trash2 as TrashIcon,
+  Inbox as InboxIcon,
+  Archive as ArchiveIcon,
+  RotateCcw,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import ClientDetailPanel from "@/components/stylist/client-detail-panel";
+import { toast } from "sonner";
 
 
 /* ─── Types ─── */
@@ -66,14 +70,16 @@ interface MockSession {
   actionLabel: string;
   loyaltyTier: LoyaltyTier;
   totalSessions: number;
+  endedAt: string | null;
+  endRequestedAt: string | null;
 }
 
 interface ChatMessage {
   id: string;
-  sender: "stylist" | "client";
+  sender: "stylist" | "client" | "system";
   text: string;
   timestamp: Date;
-  type?: "text" | "item_recommendation";
+  type?: "text" | "item_recommendation" | "end_request" | "end_approved" | "end_declined";
   itemData?: { name: string; brand: string; price: string; imageUrl?: string; note?: string };
 }
 
@@ -151,6 +157,12 @@ export default function StylistDashboard({
   const [itemRecOpen, setItemRecOpen] = useState(false);
   const [itemForm, setItemForm] = useState({ name: "", brand: "", price: "", note: "", url: "" });
   const [itemSending, setItemSending] = useState(false);
+  const [endRequesting, setEndRequesting] = useState(false);
+  // Track sessions where this session has triggered an end-request optimistically
+  // — surfaces the "Awaiting client approval" badge before the chat refetch lands.
+  const [endRequestedLocally, setEndRequestedLocally] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [itemError, setItemError] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState("");
   // Messages are fetched per-session from /api/sessions/[id]/messages on
@@ -160,18 +172,52 @@ export default function StylistDashboard({
   const [sending, setSending] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [drafts, setDrafts] = useState<MoodBoardDraft[]>([]);
+  const [folder, setFolder] = useState<"inbox" | "archive">("inbox");
+  // Re-evaluate `isArchived` once a minute so a session that just hit its
+  // 24h post-completion mark moves to Archive without a manual refresh.
+  const [, setNowTick] = useState(0);
   const router = useRouter();
   const chatEndRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
 
+  useEffect(() => {
+    const t = setInterval(() => setNowTick((n) => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Auto-select the first session in the current folder when nothing is
+  // selected — keeps the right pane populated when the user switches tabs.
+  useEffect(() => {
+    if (selectedId === null) {
+      const firstVisible = mockSessions.find((s) =>
+        folder === "archive" ? !!s.endedAt && Date.now() - new Date(s.endedAt).getTime() >= ARCHIVE_DELAY_MS : !(s.endedAt && Date.now() - new Date(s.endedAt).getTime() >= ARCHIVE_DELAY_MS),
+      );
+      if (firstVisible) setSelectedId(firstVisible.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [folder, selectedId]);
+
+  // Auto-archive 24h after `endedAt`. Mirrors Loveable HEAD's client-side
+  // predicate so we don't need a worker / column flip on the backend.
+  const ARCHIVE_DELAY_MS = 24 * 60 * 60 * 1000;
+  const isArchived = (s: MockSession) =>
+    !!s.endedAt && Date.now() - new Date(s.endedAt).getTime() >= ARCHIVE_DELAY_MS;
+
+  const visibleSessions = mockSessions.filter((s) =>
+    folder === "archive" ? isArchived(s) : !isArchived(s),
+  );
+
   const selected = mockSessions.find((s) => s.id === selectedId) ?? null;
 
-  // Stats
-  const overdueCount = mockSessions.filter((s) => s.priority === "overdue").length;
-  const dueTodayCount = mockSessions.filter((s) => s.priority === "due_today").length;
-  const newCount = mockSessions.filter((s) => s.priority === "new").length;
-  const activeCount = mockSessions.filter((s) => s.priority === "active").length;
-  const allCount = mockSessions.length;
+  // Stats reflect the visible (current-folder) bucket so e.g. switching to
+  // Archive shows archive-bucket counts, not the full queue.
+  const overdueCount = visibleSessions.filter((s) => s.priority === "overdue").length;
+  const dueTodayCount = visibleSessions.filter((s) => s.priority === "due_today").length;
+  const newCount = visibleSessions.filter((s) => s.priority === "new").length;
+  const activeCount = visibleSessions.filter((s) => s.priority === "active").length;
+  const allCount = visibleSessions.length;
+  const inboxCount = mockSessions.filter((s) => !isArchived(s)).length;
+  const archiveCount = mockSessions.filter(isArchived).length;
 
   const stats: { key: StatFilter; count: number; label: string }[] = [
     { key: "overdue", count: overdueCount, label: "Overdue" },
@@ -193,7 +239,7 @@ export default function StylistDashboard({
     setSortBy("priority");
   };
 
-  const filtered = mockSessions
+  const filtered = visibleSessions
     .filter((s) => {
       const matchesSearch = !searchQuery || s.clientName.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesPriority = !activeFilter || activeFilter === "all" || s.priority === activeFilter;
@@ -235,41 +281,83 @@ export default function StylistDashboard({
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [selectedId, messages]);
 
-  // Fetch real Twilio-mirrored messages from the DB when a session is
-  // selected. Only fires once per session per page-load to avoid pounding
-  // the API as the stylist hops rows; /workspace is the real-time surface.
+  // Fetch real Twilio-mirrored messages from the DB. Extracted into a
+  // callable so handlers (end-request, send) can refetch after writes.
+  const loadMessages = useCallback(async (sid: string) => {
+    try {
+      const res = await fetch(`/api/sessions/${sid}/messages?limit=50`);
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        messages: Array<{
+          id: string;
+          text: string | null;
+          sender: "stylist" | "client" | "system";
+          kind: string;
+          createdAt: string;
+        }>;
+      };
+      // System messages are filtered out EXCEPT END_SESSION_REQUEST, which
+      // Loveable HEAD renders as a dedicated chat card. The webhook persists
+      // it with `kind: "END_SESSION_REQUEST"` so we can detect + reshape
+      // into a typed ChatMessage on the client.
+      const mapped: ChatMessage[] = data.messages
+        .filter(
+          (m) => m.sender !== "system" || m.kind === "END_SESSION_REQUEST",
+        )
+        .map((m) => {
+          let type: ChatMessage["type"] = "text";
+          if (m.kind === "END_SESSION_REQUEST") type = "end_request";
+          else if (m.kind === "SINGLE_ITEM") type = "item_recommendation";
+          return {
+            id: m.id,
+            sender: m.sender,
+            text: m.text ?? "",
+            timestamp: new Date(m.createdAt),
+            type,
+          };
+        });
+      setMessages((prev) => ({ ...prev, [sid]: mapped }));
+    } catch {
+      /* keep mock data on failure — Dashboard is preview-only */
+    }
+  }, []);
+
   useEffect(() => {
     if (!selectedId) return;
     if (messagesLoading[selectedId]) return;
     const sid = selectedId;
     setMessagesLoading((prev) => ({ ...prev, [sid]: true }));
-    void (async () => {
-      try {
-        const res = await fetch(`/api/sessions/${sid}/messages?limit=50`);
-        if (!res.ok) return;
-        const data = (await res.json()) as {
-          messages: Array<{
-            id: string;
-            text: string | null;
-            sender: "stylist" | "client" | "system";
-            createdAt: string;
-          }>;
-        };
-        const mapped: ChatMessage[] = data.messages
-          .filter((m) => m.sender !== "system")
-          .map((m) => ({
-            id: m.id,
-            sender: m.sender === "stylist" ? "stylist" : "client",
-            text: m.text ?? "",
-            timestamp: new Date(m.createdAt),
-          }));
-        setMessages((prev) => ({ ...prev, [sid]: mapped }));
-      } catch {
-        /* keep mock data on failure — Dashboard is preview-only */
-      }
-    })();
+    void loadMessages(sid);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
+
+  const handleRequestEnd = async (sessionIdArg?: string) => {
+    const sid = sessionIdArg ?? selectedId;
+    if (!sid || endRequesting) return;
+    setEndRequesting(true);
+    try {
+      const res = await fetch(`/api/sessions/${sid}/end/request`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        // Surface server error inline; specific status codes (409 already
+        // requested, 403 not your session) come back from `requestEnd`'s
+        // SessionTransitionError mapping.
+        return;
+      }
+      // Optimistically mark the session as awaiting approval so the chat
+      // header switches to "End requested — awaiting client" without
+      // waiting for the Twilio webhook → DB → refetch round trip.
+      setEndRequestedLocally((prev) => {
+        const next = new Set(prev);
+        next.add(sid);
+        return next;
+      });
+      await loadMessages(sid);
+    } finally {
+      setEndRequesting(false);
+    }
+  };
 
   const handleSend = async () => {
     if (!inputValue.trim() || !selectedId || sending) return;
@@ -412,6 +500,32 @@ export default function StylistDashboard({
             className="pl-9 h-10 font-body text-sm rounded-sm bg-background"
           />
         </div>
+      </div>
+
+      {/* Folder tabs — Active bookings vs Archive (Loveable HEAD parity) */}
+      <div className="flex items-center gap-1 px-4 pt-3 border-b border-border">
+        {[
+          { key: "inbox" as const, label: "Active bookings", count: inboxCount, Icon: InboxIcon },
+          { key: "archive" as const, label: "Archive", count: archiveCount, Icon: ArchiveIcon },
+        ].map(({ key, label, count, Icon }) => (
+          <button
+            key={key}
+            onClick={() => {
+              setFolder(key);
+              setSelectedId(null);
+            }}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-2 -mb-px border-b-2 font-body text-xs transition-colors",
+              folder === key
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            <span>{label}</span>
+            <span className="text-[10px] text-muted-foreground">({count})</span>
+          </button>
+        ))}
       </div>
 
       {/* Stats Grid */}
@@ -711,29 +825,80 @@ export default function StylistDashboard({
                 </p>
 
                 <div className="mt-2.5 pl-10">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedId(session.id);
-                      if (session.actionLabel === "Create Moodboard") {
-                        router.push(`/stylist/sessions/${session.id}/moodboards/new`);
-                        return;
-                      }
-                      if (session.actionLabel === "Create Look") {
-                        router.push(`/stylist/sessions/${session.id}/styleboards/new`);
-                        return;
-                      }
-                      router.push(`/stylist/sessions/${session.id}/workspace`);
-                    }}
-                    className={cn(
-                      "w-full rounded-sm py-2 text-xs font-body font-medium text-center transition-colors",
-                      session.priority === "overdue"
-                        ? "bg-destructive text-destructive-foreground"
-                        : "bg-foreground text-background"
-                    )}
-                  >
-                    {session.actionLabel}
-                  </button>
+                  {isArchived(session) ? (
+                    /* Archived row: single Reopen action. Reopen transition
+                       isn't yet implemented backend-side — see BACKEND-GAP-J
+                       in STYLIST-PARITY-AUDIT.md. Toasted placeholder keeps
+                       the UI faithful to Loveable HEAD without silently
+                       stubbing functionality. */
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toast.info("Reopen coming soon", {
+                          description:
+                            "Reopening archived sessions requires a server-side transition (BACKEND-GAP-J).",
+                        });
+                      }}
+                      className="w-full rounded-sm py-2 text-xs font-body font-medium text-center border border-border bg-background text-foreground hover:bg-muted transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Reopen session
+                    </button>
+                  ) : session.boardsDelivered >= session.boardsTotal && session.boardsTotal > 0 ? (
+                    /* Loveable HEAD: when all boards delivered, surface a
+                       horizontal pair — Create look (primary) + End session
+                       (secondary, disabled if already requested). */
+                    <div className="flex gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedId(session.id);
+                          router.push(`/stylist/sessions/${session.id}/styleboards/new`);
+                        }}
+                        className="flex-1 rounded-sm py-2 text-xs font-body font-medium text-center bg-foreground text-background transition-colors"
+                      >
+                        Create look
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (session.endRequestedAt || endRequestedLocally.has(session.id)) return;
+                          setSelectedId(session.id);
+                          void handleRequestEnd(session.id);
+                        }}
+                        disabled={!!session.endRequestedAt || endRequestedLocally.has(session.id)}
+                        className="flex-1 rounded-sm py-2 text-xs font-body font-medium text-center border border-border bg-background text-foreground hover:bg-muted transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {session.endRequestedAt || endRequestedLocally.has(session.id)
+                          ? "Awaiting approval"
+                          : "End session"}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedId(session.id);
+                        if (session.actionLabel === "Create Moodboard") {
+                          router.push(`/stylist/sessions/${session.id}/moodboards/new`);
+                          return;
+                        }
+                        if (session.actionLabel === "Create Look") {
+                          router.push(`/stylist/sessions/${session.id}/styleboards/new`);
+                          return;
+                        }
+                        router.push(`/stylist/sessions/${session.id}/workspace`);
+                      }}
+                      className={cn(
+                        "w-full rounded-sm py-2 text-xs font-body font-medium text-center transition-colors",
+                        session.priority === "overdue"
+                          ? "bg-destructive text-destructive-foreground"
+                          : "bg-foreground text-background"
+                      )}
+                    >
+                      {session.actionLabel}
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex justify-center mt-2">
@@ -793,6 +958,22 @@ export default function StylistDashboard({
           >
             {selected.actionLabel}
           </Button>
+          {/* Request to end — visible only on still-active sessions where no
+              end request has been raised yet. Loveable HEAD's dashboard exposes
+              the same trigger from the right-pane header. */}
+          {!selected.endedAt &&
+            !selected.endRequestedAt &&
+            !endRequestedLocally.has(selected.id) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="font-body text-xs text-muted-foreground h-8"
+                disabled={endRequesting}
+                onClick={() => void handleRequestEnd()}
+              >
+                {endRequesting ? "Requesting…" : "End session"}
+              </Button>
+            )}
           <Button variant="ghost" size="sm" className="font-body text-xs text-muted-foreground h-8" onClick={() => setDetailOpen(true)}>
             Details
           </Button>
@@ -811,6 +992,33 @@ export default function StylistDashboard({
                   </span>
                 </div>
               )}
+              {msg.type === "end_request" ? (
+                /* End-session request card — centered, full-width-ish, with
+                 * the system body text + an explicit pending/approved badge.
+                 * Matches Loveable HEAD's StylistDashboard:1050-1079. */
+                <div className="flex justify-center mb-3">
+                  <div className="max-w-sm w-full rounded-2xl border border-border bg-background px-4 py-3 text-center space-y-2">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <ArchiveIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="font-body text-[11px] uppercase tracking-wide text-muted-foreground">
+                        End-session request
+                      </span>
+                    </div>
+                    <p className="font-body text-xs text-foreground leading-relaxed">{msg.text}</p>
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "rounded-sm font-body text-[10px]",
+                        selected.endedAt
+                          ? "text-emerald-700 border-emerald-200"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {selected.endedAt ? "Approved · Session completed" : "Awaiting client approval"}
+                    </Badge>
+                  </div>
+                </div>
+              ) : (
               <div className={cn("flex items-end gap-2 mb-3", msg.sender === "stylist" ? "justify-end" : "justify-start")}>
                 {msg.sender === "client" && (
                   <Avatar className="h-7 w-7 shrink-0 mb-5">
@@ -858,6 +1066,7 @@ export default function StylistDashboard({
                   </Avatar>
                 )}
               </div>
+              )}
             </div>
           ))}
           <div ref={chatEndRef} />
@@ -942,7 +1151,7 @@ export default function StylistDashboard({
           <div className="flex-1 flex items-center gap-2 rounded-full border border-border bg-muted/40 px-4 py-2.5 focus-within:ring-1 focus-within:ring-ring transition-shadow">
             <input
               type="text"
-              placeholder="Type a message..."
+              placeholder={`Message ${selected.clientName.split(" ")[0] || "client"}`}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}

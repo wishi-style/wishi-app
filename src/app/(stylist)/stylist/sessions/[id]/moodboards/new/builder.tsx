@@ -5,7 +5,7 @@
 // with an AI-drafted note. Wires to the existing moodboard service + photos
 // API (no localStorage drafts — draft state is the DB row with sentAt null).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -28,6 +28,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { MoodBoardGrid } from "@/components/stylist/moodboard-grid";
+import {
+  MoodBoardFreestyle,
+  defaultFreestyleLayout,
+  type FreestyleItem,
+} from "@/components/stylist/moodboard-freestyle";
 import { SendMoodBoardDialog } from "@/components/stylist/send-moodboard-dialog";
 import ClientDetailPanel from "@/components/stylist/client-detail-panel";
 import { toast } from "sonner";
@@ -58,8 +63,15 @@ export function MoodboardBuilder({
   const [sendOpen, setSendOpen] = useState(false);
   const [clientInfoOpen, setClientInfoOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [genderFilter, setGenderFilter] = useState("all");
+  const [genderFilter, setGenderFilter] = useState("female");
   const [error, setError] = useState<string | null>(null);
+  // Loveable HEAD adds a Template / Freestyle toggle. Template is the
+  // existing curated MoodBoardGrid; Freestyle drops items onto a
+  // free-positioning canvas with drag + resize handles.
+  const [canvasMode, setCanvasMode] = useState<"template" | "freestyle">(
+    "template",
+  );
+  const [freestyleItems, setFreestyleItems] = useState<FreestyleItem[]>([]);
 
   const addedInspirationIds = new Set(
     photos
@@ -164,12 +176,38 @@ export function MoodboardBuilder({
       toast.error(body.error ?? "Send failed");
       return;
     }
+    // Loveable HEAD pattern: success toast lands first, then a 900ms grace
+    // period before navigation so the stylist sees confirmation before the
+    // page shifts. Redirect goes to the stylist's home (the dashboard) —
+    // the rebuild's perspective inversion of Loveable's "/" target.
     toast.success(`Mood board sent to ${clientName}`);
-    router.push(`/stylist/sessions/${sessionId}/workspace`);
-    router.refresh();
+    setTimeout(() => {
+      router.push(`/stylist/dashboard`);
+      router.refresh();
+    }, 900);
   }
 
   const canvasImages = photos.map((p) => ({ id: p.id, url: p.url }));
+
+  // Re-flow freestyle items when entering freestyle mode or when the photo
+  // set changes underneath. Depend on the content signature (id+url) — not
+  // photos.length — so a swap (remove 1 + add 1) or a server refresh that
+  // returns different URLs at the same length still triggers the reflow.
+  // Preserve existing positions for images already on the canvas.
+  const freestyleSignature = photos.map((p) => `${p.id}:${p.url}`).join("|");
+  useEffect(() => {
+    if (canvasMode !== "freestyle") return;
+    setFreestyleItems((prev) => {
+      const existing = new Set(prev.map((it) => it.src));
+      const seeded = defaultFreestyleLayout(canvasImages.map((i) => i.url));
+      const kept = prev.filter((it) =>
+        canvasImages.some((c) => c.url === it.src),
+      );
+      const added = seeded.filter((s) => !existing.has(s.src));
+      return [...kept, ...added];
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvasMode, freestyleSignature]);
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">
@@ -315,6 +353,34 @@ export function MoodboardBuilder({
                 {photos.length}/9 images
               </span>
             </div>
+
+            {/* Mode toggle (Loveable HEAD): Template = curated grid;
+                Freestyle = drag-positioned canvas. */}
+            <div className="flex items-center gap-1 mb-3 p-0.5 bg-muted rounded-sm w-fit">
+              <button
+                onClick={() => setCanvasMode("template")}
+                className={cn(
+                  "px-2.5 py-1 rounded-sm font-body text-[11px] transition-colors",
+                  canvasMode === "template"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                Template
+              </button>
+              <button
+                onClick={() => setCanvasMode("freestyle")}
+                className={cn(
+                  "px-2.5 py-1 rounded-sm font-body text-[11px] transition-colors",
+                  canvasMode === "freestyle"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                Freestyle
+              </button>
+            </div>
+
             <div className="aspect-square w-full rounded-sm border-2 border-dashed border-border bg-background overflow-hidden">
               {photos.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center px-6">
@@ -325,18 +391,37 @@ export function MoodboardBuilder({
                     Click images to add
                   </p>
                   <p className="font-body text-xs text-muted-foreground/60 mt-1">
-                    Select up to 9 inspiration photos
+                    {canvasMode === "template"
+                      ? "Photos will snap into a curated layout"
+                      : "Drag photos freely on the canvas"}
                   </p>
                 </div>
-              ) : (
+              ) : canvasMode === "template" ? (
                 <MoodBoardGrid
                   images={canvasImages}
                   editable
                   onRemove={(id) => void removePhoto(id)}
                   className="h-full"
                 />
+              ) : (
+                <MoodBoardFreestyle
+                  items={freestyleItems}
+                  onChange={setFreestyleItems}
+                  onRemove={(i) => {
+                    const src = freestyleItems[i]?.src;
+                    if (!src) return;
+                    const photo = canvasImages.find((c) => c.url === src);
+                    if (photo) void removePhoto(photo.id);
+                  }}
+                  className="h-full"
+                />
               )}
             </div>
+            {canvasMode === "freestyle" && photos.length > 0 && (
+              <p className="font-body text-[10px] text-muted-foreground/70 mt-2 text-center">
+                Drag to position · drag bottom-right corner to resize
+              </p>
+            )}
           </div>
         </div>
       </div>

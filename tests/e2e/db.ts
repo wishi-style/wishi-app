@@ -177,6 +177,84 @@ export async function createSessionForClient({
   return rows[0];
 }
 
+// ---------------------------------------------------------------------------
+// Message seed (visual-regression chat-body fixture)
+// ---------------------------------------------------------------------------
+
+interface SeedMessageSpec {
+  kind: "TEXT" | "MOODBOARD" | "STYLEBOARD" | "RESTYLE" | "SINGLE_ITEM" | "PHOTO";
+  authorUserId: string;
+  text?: string | null;
+  /** Required for MOODBOARD / STYLEBOARD / RESTYLE. */
+  boardId?: string;
+  singleItemWebUrl?: string;
+  mediaUrl?: string;
+}
+
+/**
+ * Bulk-insert Message rows for a session via direct pg writes — bypasses
+ * Twilio for deterministic fixture seeding. The chat hook (use-chat.ts)
+ * bootstraps from `/api/sessions/[id]/messages` so these rows render in the
+ * workspace chat body without needing a live Twilio connection.
+ *
+ * Use the optional offsetMinutes to space messages chronologically — the
+ * MessageList component groups by date separator.
+ */
+export async function seedSessionMessages(
+  sessionId: string,
+  messages: SeedMessageSpec[],
+): Promise<void> {
+  if (messages.length === 0) return;
+  const p = getPool();
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    const id = generateId();
+    const sid = `IM_seed_${id}`;
+    const offsetMin = messages.length - i; // older first
+    await p.query(
+      `INSERT INTO messages
+       (id, session_id, user_id, kind, text, media_url, board_id, single_item_web_url, twilio_message_sid, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW() - ($10 || ' minutes')::interval, NOW())`,
+      [
+        id,
+        sessionId,
+        m.authorUserId,
+        m.kind,
+        m.text ?? null,
+        m.mediaUrl ?? null,
+        m.boardId ?? null,
+        m.singleItemWebUrl ?? null,
+        sid,
+        offsetMin,
+      ],
+    );
+  }
+}
+
+/**
+ * Create a Board row for a session — used to back MOODBOARD / STYLEBOARD
+ * messages so the inline renderers have a real row to fetch.
+ */
+export async function createBoardFixture({
+  sessionId,
+  type,
+  title = null,
+  sentMinutesAgo = 5,
+}: {
+  sessionId: string;
+  type: "MOODBOARD" | "STYLEBOARD";
+  title?: string | null;
+  sentMinutesAgo?: number;
+}): Promise<{ id: string }> {
+  const id = generateId();
+  await getPool().query(
+    `INSERT INTO boards (id, type, session_id, title, sent_at, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, NOW() - ($5 || ' minutes')::interval, NOW(), NOW())`,
+    [id, type, sessionId, title, sentMinutesAgo],
+  );
+  return { id };
+}
+
 export async function createStyleProfileFixture(userId: string): Promise<void> {
   const id = generateId();
   const quizAnswers = JSON.stringify({
