@@ -100,3 +100,9 @@ variable "enable_demo_mode" {
   description = "Staging-only: surfaces /demo login UI, seeds demo accounts, schedules nightly demo-reset worker. NEVER enable on production."
   default     = false
 }
+
+variable "alert_email_recipients" {
+  type        = list(string)
+  description = "Email addresses to subscribe to the per-env alerts SNS topic. Each address must confirm the SES subscription email after the first apply."
+  default     = []
+}

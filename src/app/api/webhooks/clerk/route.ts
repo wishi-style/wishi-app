@@ -28,6 +28,17 @@ async function handleUserCreated(data: UserJSON) {
       | undefined;
     await claimGuestQuizResult(userId, unsafeMetadata?.guestToken);
   }
+
+  // Structured success log so CloudWatch metric filters can count successful
+  // signups and correlate timing of new users with downstream activity.
+  console.log(
+    JSON.stringify({
+      event: "clerk_webhook_user_created",
+      userId,
+      clerkId,
+      created,
+    }),
+  );
 }
 
 async function handleUserUpdated(data: UserJSON) {
