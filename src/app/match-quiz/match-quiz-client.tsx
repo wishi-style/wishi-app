@@ -388,6 +388,12 @@ export function MatchQuizClient({ signedIn }: { signedIn: boolean }) {
                   onClick={() => {
                     setDepartment(value);
                     setStyleIndex(0);
+                    // Reset department-dependent state so a Women → Back →
+                    // Men switch doesn't leak women's body_types or style
+                    // votes into the MEN submission. Loveable has the same
+                    // latent bug but doesn't persist the result.
+                    setBodyTypes([]);
+                    setStylePrefs({});
                     try {
                       localStorage.setItem("wishi_department", value);
                     } catch {

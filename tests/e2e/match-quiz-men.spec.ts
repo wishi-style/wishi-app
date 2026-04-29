@@ -163,4 +163,79 @@ test.describe("match-quiz men's flow", () => {
       await cleanupE2EUserByEmail(email);
     }
   });
+
+  test("Switching Women → Men mid-flow drops stale body_types and style votes", async ({
+    page,
+  }) => {
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const email = `mens-switch-${stamp}@e2e.wishi.test`;
+    await ensureClientUser({
+      clerkId: `e2e_mens_switch_${stamp}`,
+      email,
+      firstName: "Switch",
+      lastName: "Walker",
+    });
+
+    try {
+      await signInAsClient(page, email);
+      await page.goto("/match-quiz");
+
+      // Skip Needs.
+      await page.getByRole("button", { name: "Skip" }).click();
+      // Pick Women, fill body type, vote LOVE IT for Minimal.
+      await page.getByRole("button", { name: "Women", exact: true }).click();
+      await page.getByRole("button", { name: "Average", exact: true }).click();
+      await page.getByRole("button", { name: /^Continue$/ }).click();
+      await page.getByRole("button", { name: "LOVE IT for Minimal" }).click();
+      await page.waitForTimeout(600);
+
+      // Click Back until we're at DEPARTMENT — verifying the route between
+      // Style and Department for Women goes via Body Type (proves the
+      // bodyTypes state was set above).
+      await page.getByRole("button", { name: "Back" }).click();
+      await expect(page.getByText("BODY TYPE", { exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Back" }).click();
+      await expect(page.getByText("DEPARTMENT", { exact: true })).toBeVisible();
+
+      // Switch to Men and finish the men's flow voting NO for everything.
+      await page.getByRole("button", { name: "Men", exact: true }).click();
+      for (const name of MEN_BOARD_ORDER) {
+        await expect(
+          page.getByRole("heading", { name: `Do you like ${name} style?` }),
+        ).toBeVisible();
+        await page.getByRole("button", { name: `NO for ${name}` }).click();
+        await page.waitForTimeout(600);
+      }
+
+      await page.waitForURL(/\/stylist-match(\?|$|\/)/, { timeout: 10000 });
+
+      // Verify the persisted payload has NOTHING from the abandoned women's
+      // path: body_types must be empty, style_direction must not contain
+      // "Minimal" (or any women's style name).
+      const pool = getPool();
+      const { rows } = await pool.query(
+        `SELECT gender_to_style, style_direction, raw_answers
+           FROM match_quiz_results
+          WHERE user_id = (SELECT id FROM users WHERE email = $1)
+       ORDER BY completed_at DESC
+          LIMIT 1`,
+        [email],
+      );
+      expect(rows.length).toBe(1);
+      expect(rows[0].gender_to_style).toBe("MALE");
+
+      const styleDirection: string[] = rows[0].style_direction ?? [];
+      expect(styleDirection).not.toContain("Minimal");
+      expect(styleDirection).not.toContain("Feminine");
+      expect(styleDirection).not.toContain("Chic");
+
+      const raw = rows[0].raw_answers as Record<string, unknown>;
+      expect(raw.body_types).toEqual([]);
+      // style_votes should also have been cleared on dept switch.
+      const styleVotes = raw.style_votes as Record<string, string>;
+      expect(styleVotes).not.toHaveProperty("Minimal");
+    } finally {
+      await cleanupE2EUserByEmail(email);
+    }
+  });
 });
