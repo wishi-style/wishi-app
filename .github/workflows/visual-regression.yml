@@ -22,6 +22,18 @@ on:
         type: boolean
         default: false
 
+# `pull-requests: write` and `issues: write` are needed for the
+# `actions/github-script` step that posts a comment on snapshot
+# failures. Default `GITHUB_TOKEN` permission is read-only on most
+# repos (this is what bit PR #61 — "Resource not accessible by
+# integration"). Declared explicitly even though the workflow is
+# manual-only today, so a future re-wire to `pull_request` doesn't
+# silently lose the comment step.
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 jobs:
   marketing:
     runs-on: ubuntu-latest

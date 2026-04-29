@@ -159,8 +159,14 @@ export default async function DiscoverPage({ searchParams }: Props) {
               Take a quick style quiz and we&apos;ll match you with the stylists
               who truly get your vibe.
             </p>
+            {/* Loveable's `/discover` points this CTA at `/how-it-works`,
+                but its sibling page `/stylists` (rebuild-only addition)
+                already routes the same "Take Your Style Match" copy at
+                `/match-quiz`. Aligning here so both stylist-discovery
+                surfaces send the user straight to the quiz, since the
+                CTA copy promises the quiz, not the explainer. */}
             <Link
-              href="/how-it-works"
+              href="/match-quiz"
               className="inline-flex items-center gap-2 rounded-full bg-foreground text-background px-8 py-3 text-sm font-body font-medium hover:bg-foreground/90 transition-colors"
             >
               <SparklesIcon className="h-4 w-4" />
@@ -222,8 +228,14 @@ export default async function DiscoverPage({ searchParams }: Props) {
               Take a 2-minute style quiz and get matched with your ideal
               stylist.
             </p>
+            {/* Loveable's `/discover` points this CTA at `/how-it-works`,
+                but its sibling page `/stylists` (rebuild-only addition)
+                already routes the same "Take Your Style Match" copy at
+                `/match-quiz`. Aligning here so both stylist-discovery
+                surfaces send the user straight to the quiz, since the
+                CTA copy promises the quiz, not the explainer. */}
             <Link
-              href="/how-it-works"
+              href="/match-quiz"
               className="inline-flex items-center gap-2 rounded-full bg-foreground text-background px-8 py-3 text-sm font-body font-medium hover:bg-foreground/90 transition-colors"
             >
               <SparklesIcon className="h-4 w-4" />
