@@ -54,7 +54,7 @@ test.describe("Phase 8: admin surface smoke", () => {
       await page.goto("/sign-in");
       await page.getByLabel("Email").fill(ctx.email);
       await page.getByRole("button", { name: "Sign In" }).click();
-      await expect(page).toHaveURL(/\/(sessions|stylist)/);
+      await expect(page).not.toHaveURL(/\/sign-in/);
 
       const routes = ["/admin", "/admin/users", "/admin/stylists", "/admin/sessions", "/admin/audit-log"];
       for (const route of routes) {

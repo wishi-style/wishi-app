@@ -13,12 +13,12 @@ export async function GET(
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (user.role !== "STYLIST" && user.role !== "ADMIN") {
+  if (user.role !== "STYLIST" && !user.isAdmin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { clientId } = await params;
   const worked = await stylistHasWorkedWithClient(user.id, clientId);
-  if (!worked && user.role !== "ADMIN") {
+  if (!worked && !user.isAdmin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const profile = await resolveClientProfileView(clientId, user.id);

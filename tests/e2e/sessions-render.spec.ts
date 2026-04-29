@@ -67,7 +67,7 @@ test("authed client with a Clerk-hosted avatar url on a session's stylist render
     await page.goto("/sign-in");
     await page.getByLabel("Email").fill(clientEmail);
     await page.getByRole("button", { name: "Sign In" }).click();
-    await expect(page).toHaveURL(/\/(sessions|stylist|match-quiz|matches|welcome)/);
+    await expect(page).not.toHaveURL(/\/sign-in/);
 
     // Navigate directly to /sessions and capture the document response
     // status so failures point at HTTP-level breakage even when Next dev

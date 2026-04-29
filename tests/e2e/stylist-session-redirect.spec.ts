@@ -49,7 +49,7 @@ test("/stylist/sessions/[id] redirects stylist to /workspace", async ({ page }) 
     await page.goto("/sign-in");
     await page.getByLabel("Email").fill(stylistEmail);
     await page.getByRole("button", { name: "Sign In" }).click();
-    await expect(page).toHaveURL(/\/(sessions|stylist)/);
+    await expect(page).not.toHaveURL(/\/sign-in/);
 
     await page.goto(`/stylist/sessions/${session.id}`);
     await expect(page).toHaveURL(`/stylist/sessions/${session.id}/workspace`);

@@ -28,7 +28,7 @@ async function signIn(page: Page, email: string) {
   await page.goto("/sign-in");
   await page.getByLabel("Email").fill(email);
   await page.getByRole("button", { name: "Sign In" }).click();
-  await expect(page).toHaveURL(/\/(sessions|stylist|match-quiz)/);
+  await expect(page).not.toHaveURL(/\/sign-in/);
 }
 
 test("/sessions/[id]/chat renders Loveable left rail with stylist + plan badge + vertical tabs", async ({

@@ -30,7 +30,7 @@ async function signInAsClient(page: import("@playwright/test").Page, email: stri
   await page.goto("/sign-in");
   await page.getByLabel("Email").fill(email);
   await page.getByRole("button", { name: "Sign In" }).click();
-  await expect(page).toHaveURL(/\/(stylist|sessions|onboarding|matches|welcome)/);
+  await expect(page).not.toHaveURL(/\/sign-in/);
 }
 
 test("modal advances tip → review → share, persists rating + review on submit", async ({

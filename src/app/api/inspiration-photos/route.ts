@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireRole } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { getServerAuth } from "@/lib/auth/server-auth";
 import {
   createInspirationPhoto,
@@ -34,7 +34,7 @@ export async function GET(req: Request) {
  * to issue a presigned PUT URL instead.
  */
 export async function POST(req: Request) {
-  await requireRole("ADMIN");
+  await requireAdmin();
   const url = new URL(req.url);
   if (url.searchParams.get("presign") === "1") {
     const filename = url.searchParams.get("filename");

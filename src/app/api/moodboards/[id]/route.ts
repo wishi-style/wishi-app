@@ -26,7 +26,7 @@ export async function GET(
     !board.session ||
     (board.session.clientId !== user.id &&
       board.session.stylistId !== user.id &&
-      user.role !== "ADMIN")
+      !user.isAdmin)
   ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -52,7 +52,7 @@ export async function DELETE(
   if (!board || board.type !== "MOODBOARD") {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  if (board.session?.stylistId !== user.id && user.role !== "ADMIN") {
+  if (board.session?.stylistId !== user.id && !user.isAdmin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   if (board.sentAt) {

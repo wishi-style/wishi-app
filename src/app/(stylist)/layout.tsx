@@ -5,7 +5,7 @@ export default async function StylistLayout({
 }: {
   children: React.ReactNode;
 }) {
-  await requireRole("STYLIST", "ADMIN");
+  await requireRole("STYLIST");
 
   return (
     <div className="flex min-h-screen flex-col">

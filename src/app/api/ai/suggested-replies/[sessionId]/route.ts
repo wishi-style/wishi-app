@@ -34,7 +34,7 @@ export async function GET(
   // a lightweight user lookup since we need the internal id for the match.
   const user = await prisma.user.findUnique({
     where: { clerkId },
-    select: { id: true, role: true },
+    select: { id: true, isAdmin: true },
   });
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -47,7 +47,7 @@ export async function GET(
   if (!session) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
-  if (user.role !== "ADMIN" && session.stylistId !== user.id) {
+  if (!user.isAdmin && session.stylistId !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

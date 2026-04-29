@@ -43,7 +43,7 @@ export async function GET(
     !board.session ||
     (board.session.clientId !== user.id &&
       board.session.stylistId !== user.id &&
-      user.role !== "ADMIN")
+      !user.isAdmin)
   ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

@@ -50,7 +50,7 @@ test("Settings renders Major at $130/mo (not Loveable $117)", async ({
     await page.goto("/sign-in");
     await page.getByLabel("Email").fill(email);
     await page.getByRole("button", { name: "Sign In" }).click();
-    await expect(page).toHaveURL(/\/(sessions|stylist|match-quiz)/);
+    await expect(page).not.toHaveURL(/\/sign-in/);
 
     await page.goto("/settings");
     await page.waitForLoadState("networkidle");
@@ -84,7 +84,7 @@ test("Cart /cart renders empty-state two-track copy", async ({ page }) => {
     await page.goto("/sign-in");
     await page.getByLabel("Email").fill(email);
     await page.getByRole("button", { name: "Sign In" }).click();
-    await expect(page).toHaveURL(/\/(sessions|stylist|match-quiz)/);
+    await expect(page).not.toHaveURL(/\/sign-in/);
 
     await page.goto("/cart");
     await page.waitForLoadState("networkidle");

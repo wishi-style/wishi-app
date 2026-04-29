@@ -1,4 +1,4 @@
-type ViewerRole = "CLIENT" | "STYLIST" | "ADMIN";
+type ViewerRole = "CLIENT" | "STYLIST";
 
 type BoardMessageKind = "MOODBOARD" | "STYLEBOARD" | "RESTYLE";
 

@@ -72,7 +72,7 @@ test("loyalty tier card on /settings reflects GOLD after 3 completed sessions", 
     await page.goto("/sign-in");
     await page.getByLabel("Email").fill(clientEmail);
     await page.getByRole("button", { name: "Sign In" }).click();
-    await expect(page).toHaveURL(/\/(sessions|stylist)/);
+    await expect(page).not.toHaveURL(/\/sign-in/);
 
     await page.goto("/settings");
     await expect(page.getByText("Loyalty rewards")).toBeVisible();

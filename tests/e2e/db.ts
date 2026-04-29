@@ -134,8 +134,8 @@ export async function ensureAdminUser(params: UserParams) {
   const referralCode = `E2E-${params.clerkId.toUpperCase()}`;
 
   const { rows } = await getPool().query(
-    `INSERT INTO users (id, clerk_id, auth_provider, email, first_name, last_name, role, referral_code, created_at, updated_at)
-     VALUES ($1, $2, 'EMAIL', $3, $4, $5, 'ADMIN', $6, NOW(), NOW())
+    `INSERT INTO users (id, clerk_id, auth_provider, email, first_name, last_name, role, is_admin, referral_code, created_at, updated_at)
+     VALUES ($1, $2, 'EMAIL', $3, $4, $5, 'CLIENT', TRUE, $6, NOW(), NOW())
      RETURNING *`,
     [id, params.clerkId, params.email, params.firstName, params.lastName, referralCode],
   );

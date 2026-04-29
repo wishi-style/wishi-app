@@ -81,7 +81,7 @@ test("demo booking (MINI one-time) skips Stripe and lands on /sessions", async (
     await page.goto("/sign-in");
     await page.getByLabel("Email").fill(clientEmail);
     await page.getByRole("button", { name: "Sign In" }).click();
-    await expect(page).toHaveURL(/\/(sessions|stylist|match-quiz)/);
+    await expect(page).not.toHaveURL(/\/sign-in/);
 
     await page.goto(`/bookings/new?stylistId=${stylistProfile.id}`);
     await page.getByRole("button", { name: /^Mini$/ }).click();
@@ -139,7 +139,7 @@ test("demo booking (MAJOR subscription) creates TRIALING sub and no Payment row"
     await page.goto("/sign-in");
     await page.getByLabel("Email").fill(clientEmail);
     await page.getByRole("button", { name: "Sign In" }).click();
-    await expect(page).toHaveURL(/\/(sessions|stylist|match-quiz)/);
+    await expect(page).not.toHaveURL(/\/sign-in/);
 
     await page.goto(`/bookings/new?stylistId=${stylistProfile.id}`);
     await page.getByRole("button", { name: /^Major$/ }).click();

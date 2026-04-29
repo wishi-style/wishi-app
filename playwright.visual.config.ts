@@ -21,9 +21,12 @@ const baseURL = `http://localhost:${port}`;
 
 export default defineConfig({
   testDir: "./tests/visual",
-  // Stylist specs are behind requireRole("STYLIST") and need E2E_AUTH_MODE.
-  // They run under playwright.visual-stylist.config.ts, which boots dev:e2e.
-  testIgnore: [/stylist\.spec\.ts$/],
+  // Stylist + authed-client specs are behind auth guards and need
+  // E2E_AUTH_MODE. They run under their own configs:
+  //   playwright.visual-stylist.config.ts (stylist role)
+  //   playwright.visual-client.config.ts  (client role)
+  // Both boot dev:e2e and seed users via tests/e2e/db.ts.
+  testIgnore: [/stylist\.spec\.ts$/, /client\.spec\.ts$/],
   fullyParallel: true,
   retries: 0,
   reporter: [["list"]],

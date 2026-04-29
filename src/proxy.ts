@@ -12,6 +12,7 @@ const isPublicRoute = createRouteMatcher([
   "/how-it-works",
   "/stylists",
   "/stylists/(.*)",
+  "/discover",
   "/feed",
   "/reviews",
   "/board/(.*)",
@@ -47,6 +48,27 @@ const isOnboardingRoute = createRouteMatcher([
 const isStylistRoute = createRouteMatcher([
   "/stylist/(.*)",
   "/api/stylist/(.*)",
+]);
+
+// Authed *client* surfaces — pages a STYLIST shouldn't be on. If a stylist
+// somehow lands here (cached link, returning user, post-signin race), bounce
+// them to /stylist/dashboard. Public marketing pages stay accessible to
+// stylists who want to browse (/stylists, /feed, /pricing, etc.) — those are
+// in `isPublicRoute` above so they never even reach this branch.
+const isClientOnlyRoute = createRouteMatcher([
+  "/sessions(.*)",
+  "/favorites(.*)",
+  "/cart(.*)",
+  "/orders(.*)",
+  "/profile(.*)",
+  "/settings(.*)",
+  "/checkout(.*)",
+  "/bookings(.*)",
+  "/matches(.*)",
+  "/closet(.*)",
+  "/select-plan(.*)",
+  "/session-checkout(.*)",
+  "/style-quiz(.*)",
 ]);
 
 // Statuses that mean "wizard complete — stylist can use the full app".
@@ -90,6 +112,24 @@ export default clerkMiddleware(async (auth, req) => {
         url.search = "";
         return NextResponse.redirect(url);
       }
+    }
+  }
+
+  // Stylist-on-client-surface gate: a STYLIST who lands on a client-only
+  // authed surface (e.g. /sessions, /cart) should bounce to their Loveable
+  // home (/stylist/dashboard). Admins (isAdmin=true) are exempt — they need
+  // to support both surfaces. This complements the /post-signin redirect for
+  // any case where the user navigates manually after sign-in.
+  if (isClientOnlyRoute(req)) {
+    const { sessionClaims } = await auth();
+    const metadata = sessionClaims?.metadata as
+      | { role?: string; isAdmin?: boolean }
+      | undefined;
+    if (metadata?.role === "STYLIST" && metadata?.isAdmin !== true) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/stylist/dashboard";
+      url.search = "";
+      return NextResponse.redirect(url);
     }
   }
 });

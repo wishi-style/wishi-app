@@ -30,7 +30,7 @@ export async function GET(req: Request) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (user.role !== "STYLIST" && user.role !== "ADMIN") {
+  if (user.role !== "STYLIST" && !user.isAdmin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const url = new URL(req.url);
