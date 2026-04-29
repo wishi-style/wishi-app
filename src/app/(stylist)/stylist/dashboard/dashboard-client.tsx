@@ -45,6 +45,7 @@ import {
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import ClientDetailPanel from "@/components/stylist/client-detail-panel";
+import { toast } from "sonner";
 
 
 /* ─── Types ─── */
@@ -330,11 +331,12 @@ export default function StylistDashboard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
-  const handleRequestEnd = async () => {
-    if (!selectedId || endRequesting) return;
+  const handleRequestEnd = async (sessionIdArg?: string) => {
+    const sid = sessionIdArg ?? selectedId;
+    if (!sid || endRequesting) return;
     setEndRequesting(true);
     try {
-      const res = await fetch(`/api/sessions/${selectedId}/end/request`, {
+      const res = await fetch(`/api/sessions/${sid}/end/request`, {
         method: "POST",
       });
       if (!res.ok) {
@@ -348,10 +350,10 @@ export default function StylistDashboard({
       // waiting for the Twilio webhook → DB → refetch round trip.
       setEndRequestedLocally((prev) => {
         const next = new Set(prev);
-        next.add(selectedId);
+        next.add(sid);
         return next;
       });
-      await loadMessages(selectedId);
+      await loadMessages(sid);
     } finally {
       setEndRequesting(false);
     }
@@ -823,29 +825,80 @@ export default function StylistDashboard({
                 </p>
 
                 <div className="mt-2.5 pl-10">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedId(session.id);
-                      if (session.actionLabel === "Create Moodboard") {
-                        router.push(`/stylist/sessions/${session.id}/moodboards/new`);
-                        return;
-                      }
-                      if (session.actionLabel === "Create Look") {
-                        router.push(`/stylist/sessions/${session.id}/styleboards/new`);
-                        return;
-                      }
-                      router.push(`/stylist/sessions/${session.id}/workspace`);
-                    }}
-                    className={cn(
-                      "w-full rounded-sm py-2 text-xs font-body font-medium text-center transition-colors",
-                      session.priority === "overdue"
-                        ? "bg-destructive text-destructive-foreground"
-                        : "bg-foreground text-background"
-                    )}
-                  >
-                    {session.actionLabel}
-                  </button>
+                  {isArchived(session) ? (
+                    /* Archived row: single Reopen action. Reopen transition
+                       isn't yet implemented backend-side — see BACKEND-GAP-J
+                       in STYLIST-PARITY-AUDIT.md. Toasted placeholder keeps
+                       the UI faithful to Loveable HEAD without silently
+                       stubbing functionality. */
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toast.info("Reopen coming soon", {
+                          description:
+                            "Reopening archived sessions requires a server-side transition (BACKEND-GAP-J).",
+                        });
+                      }}
+                      className="w-full rounded-sm py-2 text-xs font-body font-medium text-center border border-border bg-background text-foreground hover:bg-muted transition-colors flex items-center justify-center gap-1.5"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Reopen session
+                    </button>
+                  ) : session.boardsDelivered >= session.boardsTotal && session.boardsTotal > 0 ? (
+                    /* Loveable HEAD: when all boards delivered, surface a
+                       horizontal pair — Create look (primary) + End session
+                       (secondary, disabled if already requested). */
+                    <div className="flex gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedId(session.id);
+                          router.push(`/stylist/sessions/${session.id}/styleboards/new`);
+                        }}
+                        className="flex-1 rounded-sm py-2 text-xs font-body font-medium text-center bg-foreground text-background transition-colors"
+                      >
+                        Create look
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (session.endRequestedAt || endRequestedLocally.has(session.id)) return;
+                          setSelectedId(session.id);
+                          void handleRequestEnd(session.id);
+                        }}
+                        disabled={!!session.endRequestedAt || endRequestedLocally.has(session.id)}
+                        className="flex-1 rounded-sm py-2 text-xs font-body font-medium text-center border border-border bg-background text-foreground hover:bg-muted transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {session.endRequestedAt || endRequestedLocally.has(session.id)
+                          ? "Awaiting approval"
+                          : "End session"}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedId(session.id);
+                        if (session.actionLabel === "Create Moodboard") {
+                          router.push(`/stylist/sessions/${session.id}/moodboards/new`);
+                          return;
+                        }
+                        if (session.actionLabel === "Create Look") {
+                          router.push(`/stylist/sessions/${session.id}/styleboards/new`);
+                          return;
+                        }
+                        router.push(`/stylist/sessions/${session.id}/workspace`);
+                      }}
+                      className={cn(
+                        "w-full rounded-sm py-2 text-xs font-body font-medium text-center transition-colors",
+                        session.priority === "overdue"
+                          ? "bg-destructive text-destructive-foreground"
+                          : "bg-foreground text-background"
+                      )}
+                    >
+                      {session.actionLabel}
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex justify-center mt-2">
