@@ -58,23 +58,13 @@ const styleBoards = [
   { name: "Sexy", board: "/img/style-sexy.png" },
 ] as const;
 
-const womenImages = [
-  "https://images.unsplash.com/photo-1581044777550-4cfa60707998?w=200&h=260&fit=crop",
-  "https://images.unsplash.com/photo-1509631179647-0177331693ae?w=200&h=200&fit=crop",
-  "https://images.unsplash.com/photo-1487222477894-8943e31ef7b2?w=200&h=200&fit=crop",
-  "https://images.unsplash.com/photo-1485968579580-b6d095142e6e?w=200&h=200&fit=crop",
-  "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=200&h=200&fit=crop",
-  "https://images.unsplash.com/photo-1496747611176-843222e1e57c?w=200&h=260&fit=crop",
-];
-
-const menImages = [
-  "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=260&fit=crop",
-  "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=200&h=200&fit=crop",
-  "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200&h=200&fit=crop",
-  "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop",
-  "https://images.unsplash.com/photo-1480455624313-e29b44bbfde1?w=200&h=200&fit=crop",
-  "https://images.unsplash.com/photo-1488161628813-04466f872be2?w=200&h=260&fit=crop",
-];
+const menStyleBoards = [
+  { name: "Streetwear", board: "/img/men-streetwear.png" },
+  { name: "Rugged", board: "/img/men-rugged.png" },
+  { name: "Edgy", board: "/img/men-edgy.png" },
+  { name: "Cool", board: "/img/men-cool.png" },
+  { name: "Elegant", board: "/img/men-elegant.png" },
+] as const;
 
 function StepProgress({ current, total }: { current: number; total: number }) {
   return (
@@ -96,40 +86,6 @@ function StepProgress({ current, total }: { current: number; total: number }) {
       <p className="text-[10px] tracking-widest text-foreground/50 text-center mt-3">
         {current + 1} / {total}
       </p>
-    </div>
-  );
-}
-
-function CollageGrid({ images, alt: _alt }: { images: string[]; alt: string }) {
-  return (
-    <div
-      aria-hidden="true"
-      className="grid grid-cols-3 grid-rows-3 gap-1 w-full aspect-square overflow-hidden rounded-md"
-    >
-      <div className="row-span-2 overflow-hidden">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={images[0]} alt="" className="w-full h-full object-cover" />
-      </div>
-      <div className="overflow-hidden">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={images[1]} alt="" className="w-full h-full object-cover" />
-      </div>
-      <div className="overflow-hidden">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={images[2]} alt="" className="w-full h-full object-cover" />
-      </div>
-      <div className="overflow-hidden">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={images[3]} alt="" className="w-full h-full object-cover" />
-      </div>
-      <div className="overflow-hidden">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={images[4]} alt="" className="w-full h-full object-cover" />
-      </div>
-      <div className="row-span-2 col-start-1 overflow-hidden">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={images[5]} alt="" className="w-full h-full object-cover" />
-      </div>
     </div>
   );
 }
@@ -240,8 +196,21 @@ export function MatchQuizClient({ signedIn }: { signedIn: boolean }) {
   const toggleList = (list: string[], item: string) =>
     list.includes(item) ? list.filter((o) => o !== item) : [...list, item];
 
+  const activeStyleBoards =
+    department === "MEN" ? menStyleBoards : styleBoards;
+
   const goNext = () => setStep((s) => Math.min(s + 1, 3));
-  const goBack = () => (step === 0 ? router.back() : setStep((s) => s - 1));
+  const goBack = () => {
+    if (step === 0) {
+      router.back();
+      return;
+    }
+    if (step === 3 && department === "MEN") {
+      setStep(1);
+      return;
+    }
+    setStep((s) => s - 1);
+  };
 
   const finishOnboarding = (
     finalStylePrefs: Record<string, string> = stylePrefs,
@@ -294,13 +263,13 @@ export function MatchQuizClient({ signedIn }: { signedIn: boolean }) {
   const handleStyleVote = (vote: string) => {
     if (selectedVote || isPending) return;
     setSelectedVote(vote);
-    const styleName = styleBoards[styleIndex].name;
+    const styleName = activeStyleBoards[styleIndex].name;
     setTimeout(() => {
       const updated = { ...stylePrefs, [styleName]: vote };
       setStylePrefs(updated);
       setSelectedVote(null);
 
-      if (styleIndex < styleBoards.length - 1) {
+      if (styleIndex < activeStyleBoards.length - 1) {
         setStyleIndex((i) => i + 1);
       } else {
         finishOnboarding(updated);
@@ -408,32 +377,32 @@ export function MatchQuizClient({ signedIn }: { signedIn: boolean }) {
             What&apos;s your preferred shopping department?
           </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-3xl w-full mb-8">
-            {(
-              [
-                { key: "WOMEN" as const, label: "Women", images: womenImages },
-                { key: "MEN" as const, label: "Men", images: menImages },
-              ]
-            ).map(({ key, label, images }) => {
-              const active = department === key;
+          <div className="flex flex-col sm:flex-row gap-4 max-w-md w-full">
+            {(["WOMEN", "MEN"] as const).map((value) => {
+              const label = value === "WOMEN" ? "Women" : "Men";
+              const active = department === value;
               return (
                 <button
-                  key={key}
+                  key={value}
                   type="button"
                   onClick={() => {
-                    setDepartment(key);
-                    goNext();
+                    setDepartment(value);
+                    setStyleIndex(0);
+                    try {
+                      localStorage.setItem("wishi_department", value);
+                    } catch {
+                      // localStorage unavailable (private mode, etc.) — proceed silently.
+                    }
+                    setStep(value === "MEN" ? 3 : 2);
                   }}
                   className={cn(
-                    "group flex flex-col items-stretch gap-4 rounded-2xl border-2 p-4 text-left transition-all duration-200",
+                    "flex-1 rounded-full border-2 py-6 font-body text-lg font-normal tracking-wide transition-all duration-200",
                     active
-                      ? "border-foreground bg-foreground/5"
-                      : "border-foreground/15 hover:border-foreground/40",
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-foreground/80 bg-transparent text-foreground hover:bg-foreground hover:text-background",
                   )}
-                  aria-label={`Choose ${label}`}
                 >
-                  <CollageGrid images={images} alt={label} />
-                  <span className="font-display text-2xl text-center">{label}</span>
+                  {label}
                 </button>
               );
             })}
@@ -457,12 +426,12 @@ export function MatchQuizClient({ signedIn }: { signedIn: boolean }) {
       {step === 3 && (
         <>
           <h1 className="font-display text-2xl md:text-3xl text-center mb-6 transition-opacity duration-300">
-            Do you like {styleBoards[styleIndex].name} style?
+            Do you like {activeStyleBoards[styleIndex].name} style?
           </h1>
 
           <StyleMoodBoard
-            src={styleBoards[styleIndex].board}
-            name={styleBoards[styleIndex].name}
+            src={activeStyleBoards[styleIndex].board}
+            name={activeStyleBoards[styleIndex].name}
           />
 
           <div className="flex items-center justify-center gap-10 mt-6">
@@ -477,7 +446,7 @@ export function MatchQuizClient({ signedIn }: { signedIn: boolean }) {
                   onClick={() => handleStyleVote(vote)}
                   className="group flex flex-col items-center gap-2"
                   disabled={!!selectedVote || isPending}
-                  aria-label={`${vote} for ${styleBoards[styleIndex].name}`}
+                  aria-label={`${vote} for ${activeStyleBoards[styleIndex].name}`}
                 >
                   <div
                     className={cn(
@@ -519,10 +488,6 @@ export function MatchQuizClient({ signedIn }: { signedIn: boolean }) {
               );
             })}
           </div>
-
-          <p className="mt-8 text-xs text-muted-foreground tracking-wider">
-            {styleIndex + 1} / {styleBoards.length} styles
-          </p>
 
           {(isPending || submitError) && (
             <p
