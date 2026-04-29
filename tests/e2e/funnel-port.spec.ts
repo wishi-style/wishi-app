@@ -88,8 +88,9 @@ test("/match-quiz authed walkthrough lands on /stylist-match", async ({
     await page.getByRole("button", { name: "Elevated Everyday" }).click();
     await page.getByRole("button", { name: /^Continue$/ }).click();
 
-    // Step 1 — DEPARTMENT: clicking advances automatically.
-    await page.getByRole("button", { name: "Choose Women" }).click();
+    // Step 1 — DEPARTMENT: clicking advances automatically. Loveable's
+    // pill button has accessible name "Women" (text content, no aria-label).
+    await page.getByRole("button", { name: "Women", exact: true }).click();
 
     // Step 2 — BODY TYPE: pick one and continue.
     await page.getByRole("button", { name: "Average", exact: true }).click();
