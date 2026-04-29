@@ -118,6 +118,52 @@ const MIN_ITEMS = 3;
 const MAX_ITEMS = 12;
 const TILE_PERCENT = 22; // item tile width/height as % of canvas
 
+// Loveable HEAD filter taxonomies. Hardcoded here because tastegraph's
+// FilterValuesResponse doesn't expose Style / BodyType / Tops subcats /
+// Availability facets yet — logged as BACKEND-GAP-E/F/G/H in the audit.
+const TOPS_SUBCATEGORIES = [
+  "Active", "Black", "Blouses", "Boho", "Bralette", "Button Up Shirts",
+  "Camisole", "Cropped", "Embellished & Sequined", "Floral", "Graphic Tees",
+  "Halter", "Lace", "Leather", "Off The Shoulder", "One Shoulder", "Polo",
+  "Puff Sleeve", "Tanks", "Tees", "White",
+];
+
+const AVAILABILITY_OPTIONS = [
+  { key: "in-stock", label: "In stock" },
+  { key: "preorder", label: "Preorder" },
+  { key: "sale", label: "Sale" },
+  { key: "final-sale", label: "Final sale" },
+];
+
+const INSPO_STYLE_OPTIONS = [
+  { key: "boho", label: "Boho" },
+  { key: "classic", label: "Classic" },
+  { key: "chic", label: "Chic" },
+  { key: "minimal", label: "Minimal" },
+  { key: "edgy", label: "Edgy" },
+  { key: "romantic", label: "Romantic" },
+  { key: "streetwear", label: "Streetwear" },
+  { key: "preppy", label: "Preppy" },
+];
+
+const INSPO_BODY_TYPE_OPTIONS = [
+  { key: "petite", label: "Petite" },
+  { key: "tall", label: "Tall" },
+  { key: "curvy", label: "Curvy" },
+  { key: "plus-size", label: "Plus size" },
+  { key: "athletic", label: "Athletic" },
+  { key: "pear", label: "Pear" },
+  { key: "hourglass", label: "Hourglass" },
+  { key: "apple", label: "Apple" },
+];
+
+const PRICE_PRESETS: { key: "any" | "u250" | "250-1000" | "1000+"; label: string }[] = [
+  { key: "any", label: "Any" },
+  { key: "u250", label: "Under $250" },
+  { key: "250-1000", label: "$250 – $1K" },
+  { key: "1000+", label: "$1K+" },
+];
+
 function toCanvasItem(item: BoardItem, fallbackIndex: number): CanvasItem {
   const crop =
     item.cropTop != null ||
@@ -205,6 +251,14 @@ export function StyleboardBuilder({
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 5000]);
   const [inStockOnly, setInStockOnly] = useState(true);
   const [filtersOpen, setFiltersOpen] = useState(true);
+  // Loveable HEAD adds rebuild-side filter taxonomies that tastegraph
+  // doesn't expose as facets (logged as BACKEND-GAP-E/F/G/H). Hardcoding
+  // them here keeps parity until tastegraph exposes them.
+  const [selectedAvailability, setSelectedAvailability] = useState<string[]>([]);
+  const [selectedInspoStyles, setSelectedInspoStyles] = useState<string[]>([]);
+  const [selectedInspoBodyTypes, setSelectedInspoBodyTypes] = useState<string[]>([]);
+  const [selectedTopsSubs, setSelectedTopsSubs] = useState<string[]>([]);
+  const [pricePreset, setPricePreset] = useState<"any" | "u250" | "250-1000" | "1000+">("any");
 
   useEffect(() => {
     void (async () => {
@@ -218,6 +272,28 @@ export function StyleboardBuilder({
         /* non-fatal; filters just won't populate */
       }
     })();
+  }, []);
+
+  // Loveable HEAD: keyboard shortcuts 1 / 2 / 3 toggle canvas size. Skip
+  // when focus is in any text input/textarea so typing "1" in the search
+  // box doesn't shrink the canvas mid-search.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === "1") setCanvasSize("min");
+      if (e.key === "2") setCanvasSize("small");
+      if (e.key === "3") setCanvasSize("large");
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
   }, []);
 
   // Auto-populate the Shop tab with a default browse on mount so stylists
@@ -454,7 +530,12 @@ export function StyleboardBuilder({
     setSelectedMerchants([]);
     setSelectedColors([]);
     setSelectedSizes([]);
+    setSelectedAvailability([]);
+    setSelectedInspoStyles([]);
+    setSelectedInspoBodyTypes([]);
+    setSelectedTopsSubs([]);
     setPriceRange([0, 5000]);
+    setPricePreset("any");
     setInStockOnly(true);
   }
 
@@ -462,8 +543,95 @@ export function StyleboardBuilder({
     selectedMerchants.length +
     selectedColors.length +
     selectedSizes.length +
+    selectedAvailability.length +
+    selectedTopsSubs.length +
+    selectedInspoStyles.length +
+    selectedInspoBodyTypes.length +
     (priceRange[0] > 0 || priceRange[1] < 5000 ? 1 : 0) +
+    (pricePreset !== "any" ? 1 : 0) +
     (inStockOnly ? 0 : 1); // in-stock default is ON, so only count off as "changed"
+
+  // Active filter chip bar — Loveable HEAD shows applied filters as
+  // dismissible chips below the search row with a "Clear all" affordance.
+  // Each chip lists the human-readable label + an X handler that removes
+  // just that one filter; the parent "Reset" still clears everything.
+  type ActiveChip = { key: string; label: string; remove: () => void };
+  const activeChips: ActiveChip[] = [];
+  for (const m of selectedMerchants) {
+    const meta = filterValues?.merchants.find((x) => x.id === m);
+    activeChips.push({
+      key: `m-${m}`,
+      label: meta?.name ?? m,
+      remove: () => setSelectedMerchants((s) => s.filter((x) => x !== m)),
+    });
+  }
+  for (const c of selectedColors) {
+    activeChips.push({
+      key: `c-${c}`,
+      label: c,
+      remove: () => setSelectedColors((s) => s.filter((x) => x !== c)),
+    });
+  }
+  for (const s of selectedSizes) {
+    activeChips.push({
+      key: `sz-${s}`,
+      label: s,
+      remove: () => setSelectedSizes((p) => p.filter((x) => x !== s)),
+    });
+  }
+  for (const a of selectedAvailability) {
+    const meta = AVAILABILITY_OPTIONS.find((x) => x.key === a);
+    activeChips.push({
+      key: `av-${a}`,
+      label: meta?.label ?? a,
+      remove: () => setSelectedAvailability((p) => p.filter((x) => x !== a)),
+    });
+  }
+  for (const t of selectedTopsSubs) {
+    activeChips.push({
+      key: `t-${t}`,
+      label: t,
+      remove: () => setSelectedTopsSubs((p) => p.filter((x) => x !== t)),
+    });
+  }
+  for (const v of selectedInspoStyles) {
+    const meta = INSPO_STYLE_OPTIONS.find((x) => x.key === v);
+    activeChips.push({
+      key: `is-${v}`,
+      label: meta?.label ?? v,
+      remove: () => setSelectedInspoStyles((p) => p.filter((x) => x !== v)),
+    });
+  }
+  for (const v of selectedInspoBodyTypes) {
+    const meta = INSPO_BODY_TYPE_OPTIONS.find((x) => x.key === v);
+    activeChips.push({
+      key: `ib-${v}`,
+      label: meta?.label ?? v,
+      remove: () => setSelectedInspoBodyTypes((p) => p.filter((x) => x !== v)),
+    });
+  }
+  if (pricePreset !== "any") {
+    const meta = PRICE_PRESETS.find((x) => x.key === pricePreset);
+    activeChips.push({
+      key: `pp-${pricePreset}`,
+      label: meta?.label ?? "Price",
+      remove: () => setPricePreset("any"),
+    });
+  }
+  if (priceRange[0] > 0 || priceRange[1] < 5000) {
+    activeChips.push({
+      key: "pr",
+      label: `$${priceRange[0]} – $${priceRange[1]}`,
+      remove: () => setPriceRange([0, 5000]),
+    });
+  }
+  if (!inStockOnly) {
+    activeChips.push({
+      key: "is",
+      label: "Including out-of-stock",
+      remove: () => setInStockOnly(true),
+    });
+  }
 
   function findFreeSlot(): { x: number; y: number } {
     const occupied = (px: number, py: number) =>
@@ -757,18 +925,49 @@ export function StyleboardBuilder({
                   Search
                 </Button>
               </div>
+              {/* Active filters chip bar — Loveable HEAD parity */}
+              {activeChips.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2 border-b border-border">
+                  {activeChips.map((c) => (
+                    <button
+                      key={c.key}
+                      onClick={c.remove}
+                      className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 font-body text-[11px] hover:bg-foreground hover:text-background transition-colors"
+                    >
+                      <span>{c.label}</span>
+                      <XIcon className="h-3 w-3" />
+                    </button>
+                  ))}
+                  <button
+                    onClick={resetFilters}
+                    className="font-body text-[10px] text-muted-foreground hover:text-foreground underline ml-1"
+                  >
+                    Clear all
+                  </button>
+                </div>
+              )}
               {filtersOpen && filterValues && (
                 <FilterPanel
                   filterValues={filterValues}
                   selectedMerchants={selectedMerchants}
                   selectedColors={selectedColors}
                   selectedSizes={selectedSizes}
+                  selectedAvailability={selectedAvailability}
+                  selectedTopsSubs={selectedTopsSubs}
+                  selectedInspoStyles={selectedInspoStyles}
+                  selectedInspoBodyTypes={selectedInspoBodyTypes}
+                  pricePreset={pricePreset}
                   priceRange={priceRange}
                   inStockOnly={inStockOnly}
                   activeFilterCount={activeFilterCount}
                   onMerchants={setSelectedMerchants}
                   onColors={setSelectedColors}
                   onSizes={setSelectedSizes}
+                  onAvailability={setSelectedAvailability}
+                  onTopsSubs={setSelectedTopsSubs}
+                  onInspoStyles={setSelectedInspoStyles}
+                  onInspoBodyTypes={setSelectedInspoBodyTypes}
+                  onPricePreset={setPricePreset}
                   onPriceRange={setPriceRange}
                   onInStockOnly={setInStockOnly}
                   onReset={resetFilters}
@@ -1365,19 +1564,32 @@ function ToolButton({
   );
 }
 
-// Inventory filter panel — retailer chips, color swatches, size chips, and
-// a simple numeric budget range wired to tastegraph's SearchQueryDto.
+// Inventory filter panel — retailer chips, color swatches, size chips, plus
+// the Loveable HEAD additions (Availability, Style/BodyType for Inspo, Tops
+// subcategories, Price preset). Tastegraph doesn't expose all these as
+// facets yet (BACKEND-GAP-E/F/G/H); the rebuild ships them from hardcoded
+// option lists for now.
 function FilterPanel({
   filterValues,
   selectedMerchants,
   selectedColors,
   selectedSizes,
+  selectedAvailability,
+  selectedTopsSubs,
+  selectedInspoStyles,
+  selectedInspoBodyTypes,
+  pricePreset,
   priceRange,
   inStockOnly,
   activeFilterCount,
   onMerchants,
   onColors,
   onSizes,
+  onAvailability,
+  onTopsSubs,
+  onInspoStyles,
+  onInspoBodyTypes,
+  onPricePreset,
   onPriceRange,
   onInStockOnly,
   onReset,
@@ -1387,12 +1599,22 @@ function FilterPanel({
   selectedMerchants: string[];
   selectedColors: string[];
   selectedSizes: string[];
+  selectedAvailability: string[];
+  selectedTopsSubs: string[];
+  selectedInspoStyles: string[];
+  selectedInspoBodyTypes: string[];
+  pricePreset: "any" | "u250" | "250-1000" | "1000+";
   priceRange: [number, number];
   inStockOnly: boolean;
   activeFilterCount: number;
   onMerchants: (v: string[]) => void;
   onColors: (v: string[]) => void;
   onSizes: (v: string[]) => void;
+  onAvailability: (v: string[]) => void;
+  onTopsSubs: (v: string[]) => void;
+  onInspoStyles: (v: string[]) => void;
+  onInspoBodyTypes: (v: string[]) => void;
+  onPricePreset: (v: "any" | "u250" | "250-1000" | "1000+") => void;
   onPriceRange: (v: [number, number]) => void;
   onInStockOnly: (v: boolean) => void;
   onReset: () => void;
@@ -1443,6 +1665,56 @@ function FilterPanel({
           onToggle={(k) => toggle(selectedSizes, k, onSizes)}
         />
       )}
+
+      <ChipGroup
+        label="Availability"
+        options={AVAILABILITY_OPTIONS}
+        selected={selectedAvailability}
+        onToggle={(k) => toggle(selectedAvailability, k, onAvailability)}
+      />
+
+      <ChipGroup
+        label="Tops subcategories"
+        options={TOPS_SUBCATEGORIES.map((s) => ({ key: s, label: s }))}
+        selected={selectedTopsSubs}
+        onToggle={(k) => toggle(selectedTopsSubs, k, onTopsSubs)}
+      />
+
+      <ChipGroup
+        label="Inspo style"
+        options={INSPO_STYLE_OPTIONS}
+        selected={selectedInspoStyles}
+        onToggle={(k) => toggle(selectedInspoStyles, k, onInspoStyles)}
+      />
+
+      <ChipGroup
+        label="Inspo body type"
+        options={INSPO_BODY_TYPE_OPTIONS}
+        selected={selectedInspoBodyTypes}
+        onToggle={(k) => toggle(selectedInspoBodyTypes, k, onInspoBodyTypes)}
+      />
+
+      <div>
+        <label className="block font-display text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+          Price preset
+        </label>
+        <div className="flex flex-wrap gap-1">
+          {PRICE_PRESETS.map((p) => (
+            <button
+              key={p.key}
+              onClick={() => onPricePreset(p.key)}
+              className={cn(
+                "rounded-sm border px-2 py-1 font-body text-[11px] transition-colors",
+                pricePreset === p.key
+                  ? "bg-foreground text-background border-foreground"
+                  : "border-border text-foreground hover:bg-muted",
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div>
         <label className="block font-display text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
