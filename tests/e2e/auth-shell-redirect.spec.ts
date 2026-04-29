@@ -15,13 +15,25 @@ import {
  *   STYLIST → /stylist/dashboard  (wishi-reimagined home)
  *
  * And a STYLIST who tries to navigate to a client-only authed surface
- * (e.g. /sessions, /cart) gets bounced to /stylist/dashboard by the proxy.
+ * (e.g. /sessions, /cart) gets rejected — by the proxy redirect under real
+ * Clerk auth, or by the layout's requireRole forbid under E2E auth where
+ * the proxy short-circuits.
  *
  * Runs against `npm run dev:e2e` (port 3001, E2E_AUTH_MODE=true).
  */
 
 test.afterAll(async () => {
   await disconnectTestDb();
+});
+
+test("/post-signin route exists (catches running-stale-worktree-without-#84 regressions)", async ({
+  page,
+}) => {
+  // If this 404s, the running dev server is on a branch that predates the
+  // role-aware redirect. The other tests would still appear to pass with
+  // misleading messages — this is the canary.
+  const response = await page.goto("/post-signin");
+  expect(response?.status(), "post-signin must exist").not.toBe(404);
 });
 
 test("client sign-in lands on smart-spark-craft home (/)", async ({ page }) => {
@@ -35,14 +47,12 @@ test("client sign-in lands on smart-spark-craft home (/)", async ({ page }) => {
   });
 
   try {
-    await page.goto("/sign-in");
+    await page.goto("/sign-in?e2e=1");
     await page.getByLabel("Email").fill(email);
     await page.getByRole("button", { name: "Sign In" }).click();
     // signInForE2E redirects to /post-signin, which resolves role and
-    // forwards CLIENT users to / (smart-spark-craft home). The smoke check
-    // is "we're no longer on /sign-in"; the exact destination depends on
-    // whether redirect_url was passed.
-    await expect(page).not.toHaveURL(/\/sign-in/);
+    // forwards CLIENT users to / (smart-spark-craft home).
+    await expect(page).toHaveURL("/");
   } finally {
     await cleanupE2EUserByEmail(email);
   }
@@ -68,7 +78,7 @@ test("stylist sign-in lands on wishi-reimagined home (/stylist/dashboard)", asyn
   );
 
   try {
-    await page.goto("/sign-in");
+    await page.goto("/sign-in?e2e=1");
     await page.getByLabel("Email").fill(email);
     await page.getByRole("button", { name: "Sign In" }).click();
     // /post-signin resolves role=STYLIST and redirects to /stylist/dashboard.
@@ -78,7 +88,7 @@ test("stylist sign-in lands on wishi-reimagined home (/stylist/dashboard)", asyn
   }
 });
 
-test("stylist visiting /sessions is bounced to /stylist/dashboard", async ({
+test("stylist visiting a client-only surface is rejected (proxy redirect in real auth, requireRole forbid in E2E)", async ({
   page,
 }) => {
   const email = `auth-shell-bounce-${Date.now()}@e2e.wishi.test`;
@@ -96,20 +106,22 @@ test("stylist visiting /sessions is bounced to /stylist/dashboard", async ({
   );
 
   try {
-    await page.goto("/sign-in");
+    await page.goto("/sign-in?e2e=1");
     await page.getByLabel("Email").fill(email);
     await page.getByRole("button", { name: "Sign In" }).click();
     await expect(page).toHaveURL("/stylist/dashboard");
 
-    // Now manually navigate to a client-only surface — proxy must redirect.
-    await page.goto("/sessions");
-    await expect(page).toHaveURL("/stylist/dashboard");
-
-    await page.goto("/cart");
-    await expect(page).toHaveURL("/stylist/dashboard");
-
-    await page.goto("/favorites");
-    await expect(page).toHaveURL("/stylist/dashboard");
+    // proxy.ts short-circuits when E2E_CLERK_ID_COOKIE is present (otherwise
+    // every fixture-driven spec would fight Clerk middleware), so the
+    // STYLIST→/stylist/dashboard bounce can't fire under E2E auth. Instead,
+    // the (client) layout's requireRole("CLIENT") forbids the stylist and
+    // returns 403 — we assert that contract here. Real-Clerk traffic gets
+    // the proxy redirect; that path is exercised via unit tests on the
+    // proxy matcher and by manual smoke checks on staging.
+    for (const route of ["/sessions", "/cart", "/favorites"]) {
+      const response = await page.goto(route);
+      expect(response?.status(), `${route} should 403 stylists`).toBe(403);
+    }
   } finally {
     await cleanupE2EUserByEmail(email);
   }
@@ -128,10 +140,10 @@ test("client visiting /stylist/dashboard hits forbidden() (existing requireRole)
   });
 
   try {
-    await page.goto("/sign-in");
+    await page.goto("/sign-in?e2e=1");
     await page.getByLabel("Email").fill(email);
     await page.getByRole("button", { name: "Sign In" }).click();
-    await expect(page).not.toHaveURL(/\/sign-in/);
+    await expect(page).toHaveURL("/");
 
     const response = await page.goto("/stylist/dashboard");
     // requireRole("STYLIST") in the (stylist) layout forbids non-stylists.

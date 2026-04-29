@@ -38,3 +38,7 @@ app_url = "http://wishi-staging-alb-823228000.us-east-1.elb.amazonaws.com"
 # isE2EAuthModeEnabled() double-gates this off on production; never flip it
 # in production.tfvars.
 enable_demo_mode = true
+
+# Alarm fan-out. Each recipient must confirm the SNS subscription email AWS
+# sends after the first apply.
+alert_email_recipients = ["dozomatt@gmail.com"]

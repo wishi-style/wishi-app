@@ -121,15 +121,31 @@ export async function reconcileClerkUser(
       throw new Error(`Clerk user ${clerkId} has no primary email address`);
     }
     const referralCode = await deps.generateUniqueReferralCode();
-    const user = await deps.createUser({
-      clerkId,
-      email: snapshot.emailAddress,
-      firstName: snapshot.firstName ?? "",
-      lastName: snapshot.lastName ?? "",
-      avatarUrl: snapshot.imageUrl,
-      authProvider: determineAuthProvider(snapshot.externalAccounts),
-      referralCode,
-    });
+    let user;
+    try {
+      user = await deps.createUser({
+        clerkId,
+        email: snapshot.emailAddress,
+        firstName: snapshot.firstName ?? "",
+        lastName: snapshot.lastName ?? "",
+        avatarUrl: snapshot.imageUrl,
+        authProvider: determineAuthProvider(snapshot.externalAccounts),
+        referralCode,
+      });
+    } catch (err) {
+      // Tag email-collision failures so CloudWatch can alarm on them
+      // distinctly from generic Clerk SDK / DB errors. The Prisma P2002 with
+      // target=["email"] means a different clerkId already owns this email
+      // — the user can authenticate via Clerk but can't get a DB row, and
+      // every authed page will forbid them until the collision is resolved.
+      const e = err as { code?: string; meta?: { target?: string[] } };
+      if (e.code === "P2002" && e.meta?.target?.includes("email")) {
+        throw new Error(
+          `email_collision: Clerk user ${clerkId} email '${snapshot.emailAddress}' already exists in DB under a different clerkId`,
+        );
+      }
+      throw err;
+    }
     await deps.seedNotificationPreferences(user.id);
     userId = user.id;
     role = user.role;

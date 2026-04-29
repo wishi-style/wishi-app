@@ -128,14 +128,16 @@ module "service" {
 # -----------------------------------------------------------------------------
 
 module "observability" {
-  source             = "./modules/observability"
-  project            = var.project
-  env                = var.env
-  log_retention_days = var.log_retention_days
-  cluster_name       = module.service.cluster_name
-  service_name       = module.service.service_name
-  alb_arn            = module.service.alb_arn
-  rds_identifier     = "wishi-${var.env}-db"
+  source                 = "./modules/observability"
+  project                = var.project
+  env                    = var.env
+  log_retention_days     = var.log_retention_days
+  cluster_name           = module.service.cluster_name
+  service_name           = module.service.service_name
+  alb_arn                = module.service.alb_arn
+  rds_identifier         = "wishi-${var.env}-db"
+  web_log_group_name     = aws_cloudwatch_log_group.web.name
+  alert_email_recipients = var.alert_email_recipients
 }
 
 # -----------------------------------------------------------------------------
