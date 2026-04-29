@@ -1,6 +1,6 @@
 "use server";
 
-import { auth } from "@clerk/nextjs/server";
+import { getServerAuth } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
 import { persistMatchQuizAnswers } from "@/lib/quiz/engine";
 import { mintGuestToken, readGuestToken } from "@/lib/auth/guest-token";
@@ -12,7 +12,11 @@ export type SubmitMatchQuizResult =
 export async function submitMatchQuiz(
   answers: Record<string, unknown>,
 ): Promise<SubmitMatchQuizResult> {
-  const { userId: clerkId } = await auth();
+  // getServerAuth() rather than Clerk's auth() so the E2E_AUTH_MODE cookie
+  // resolves the same way as in /stylist-match. Without this, an authed e2e
+  // user falls through to the guest path and submitMatchQuiz returns
+  // signedIn=false, opening the Clerk sign-up modal instead of redirecting.
+  const { userId: clerkId } = await getServerAuth();
 
   let userId: string | null = null;
   let guestToken: string | null = null;
