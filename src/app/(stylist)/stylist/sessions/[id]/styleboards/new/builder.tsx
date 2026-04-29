@@ -28,7 +28,6 @@ import {
   ArrowUpToLineIcon,
   ArrowDownToLineIcon,
   EraserIcon,
-  LinkIcon,
   SlidersHorizontalIcon,
   FlipHorizontalIcon,
   FlipVerticalIcon,
@@ -66,7 +65,7 @@ import type {
   SearchResponse,
 } from "@/lib/inventory/types";
 
-type Tab = "inventory" | "closet" | "inspiration" | "previous" | "web";
+type Tab = "inventory" | "closet" | "inspiration" | "previous";
 
 interface PreviousLookItem {
   id: string;
@@ -188,7 +187,6 @@ export function StyleboardBuilder({
   const [tab, setTab] = useState<Tab>("inventory");
   const [search, setSearch] = useState("");
   const [inventoryResults, setInventoryResults] = useState<ProductSearchDoc[]>([]);
-  const [webUrl, setWebUrl] = useState("");
   const [saveOpen, setSaveOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [canvasSize, setCanvasSize] = useState<CanvasSize>("small");
@@ -206,7 +204,7 @@ export function StyleboardBuilder({
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 5000]);
   const [inStockOnly, setInStockOnly] = useState(true);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(true);
 
   useEffect(() => {
     void (async () => {
@@ -606,23 +604,11 @@ export function StyleboardBuilder({
     router.refresh();
   }
 
-  async function addWebItem() {
-    if (!webUrl.trim()) return;
-    await addItem(
-      "WEB_ADDED",
-      { webItemUrl: webUrl.trim() },
-      null,
-      webUrl.trim(),
-    );
-    setWebUrl("");
-  }
-
   const tabs: { id: Tab; label: string; icon: typeof ShirtIcon }[] = [
     { id: "inventory", label: "Shop", icon: StoreIcon },
-    { id: "closet", label: "Closet", icon: ShirtIcon },
+    { id: "closet", label: "Client closet", icon: ShirtIcon },
     { id: "inspiration", label: "Inspiration", icon: SparklesIcon },
     { id: "previous", label: "Previous looks", icon: LayersIcon },
-    { id: "web", label: "Web URL", icon: LinkIcon },
   ];
 
   const canSave = canvas.length >= MIN_ITEMS;
@@ -936,27 +922,6 @@ export function StyleboardBuilder({
             </>
           )}
 
-          {tab === "web" && (
-            <div className="p-4 space-y-2">
-              <Input
-                placeholder="https://…"
-                value={webUrl}
-                onChange={(e) => setWebUrl(e.target.value)}
-                className="h-8 rounded-sm font-body text-xs"
-              />
-              <Button
-                size="sm"
-                onClick={() => void addWebItem()}
-                className="w-full h-8 rounded-sm font-body text-xs"
-              >
-                Add web item
-              </Button>
-              <p className="font-body text-[11px] text-muted-foreground">
-                Paste a retailer URL — we&apos;ll use it as a styling reference.
-                The client sees the link in the styleboard.
-              </p>
-            </div>
-          )}
         </div>
 
         {/* Canvas */}

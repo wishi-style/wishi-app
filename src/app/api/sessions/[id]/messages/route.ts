@@ -49,7 +49,11 @@ export async function GET(
       mediaUrl: true,
       kind: true,
       userId: true,
+      boardId: true,
+      singleItemInventoryProductId: true,
+      singleItemWebUrl: true,
       createdAt: true,
+      user: { select: { clerkId: true } },
     },
   });
   messages.reverse();
@@ -60,6 +64,10 @@ export async function GET(
       text: m.text,
       mediaUrl: m.mediaUrl,
       kind: m.kind,
+      boardId: m.boardId,
+      singleItemInventoryProductId: m.singleItemInventoryProductId,
+      singleItemWebUrl: m.singleItemWebUrl,
+      authorClerkId: m.user?.clerkId ?? null,
       sender:
         m.userId === auth.session.stylistId
           ? "stylist"

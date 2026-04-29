@@ -58,7 +58,7 @@ export function MoodboardBuilder({
   const [sendOpen, setSendOpen] = useState(false);
   const [clientInfoOpen, setClientInfoOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [genderFilter, setGenderFilter] = useState("all");
+  const [genderFilter, setGenderFilter] = useState("female");
   const [error, setError] = useState<string | null>(null);
 
   const addedInspirationIds = new Set(

@@ -11,7 +11,20 @@ export interface ChatMessage {
   attributes: Record<string, unknown>;
 }
 
-function toMessage(msg: Message): ChatMessage {
+interface DbMessage {
+  id: string;
+  text: string | null;
+  mediaUrl: string | null;
+  kind: string;
+  boardId: string | null;
+  singleItemInventoryProductId: string | null;
+  singleItemWebUrl: string | null;
+  authorClerkId: string | null;
+  sender: "stylist" | "client" | "system";
+  createdAt: string;
+}
+
+function fromTwilio(msg: Message): ChatMessage {
   let attrs: Record<string, unknown> = {};
   try {
     const raw = msg.attributes;
@@ -28,6 +41,26 @@ function toMessage(msg: Message): ChatMessage {
   };
 }
 
+function fromDb(m: DbMessage): ChatMessage {
+  // Synthetic SID for DB-bootstrapped rows so they can be deduped against
+  // Twilio rows when the realtime connection arrives.
+  return {
+    sid: `db-${m.id}`,
+    author: m.authorClerkId,
+    body: m.text,
+    dateCreated: new Date(m.createdAt),
+    attributes: {
+      kind: m.kind,
+      ...(m.mediaUrl !== null && { mediaUrl: m.mediaUrl }),
+      ...(m.boardId !== null && { boardId: m.boardId }),
+      ...(m.singleItemInventoryProductId !== null && {
+        singleItemInventoryProductId: m.singleItemInventoryProductId,
+      }),
+      ...(m.singleItemWebUrl !== null && { singleItemWebUrl: m.singleItemWebUrl }),
+    },
+  };
+}
+
 export function useChat(sessionId: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -37,6 +70,8 @@ export function useChat(sessionId: string) {
   const clientRef = useRef<Client | null>(null);
   const conversationRef = useRef<Conversation | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dbBootstrappedRef = useRef(false);
+  const twilioSeededRef = useRef(false);
 
   const fetchToken = useCallback(async (): Promise<string> => {
     const res = await fetch(`/api/chat/token?sessionId=${sessionId}`);
@@ -48,7 +83,29 @@ export function useChat(sessionId: string) {
   useEffect(() => {
     let cancelled = false;
 
-    async function connect() {
+    // Bootstrap from DB so the chat body renders historical messages even if
+    // Twilio is unreachable (channel doesn't exist, service down, dev env
+    // without creds). Twilio is the realtime delta — DB is canonical.
+    async function bootstrapFromDb() {
+      try {
+        const res = await fetch(`/api/sessions/${sessionId}/messages?limit=50`);
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { messages: DbMessage[] };
+        if (cancelled) return;
+        // If Twilio already seeded messages, don't clobber the authoritative
+        // realtime list with the stale DB snapshot.
+        if (!twilioSeededRef.current) {
+          setMessages(data.messages.map(fromDb));
+        }
+        dbBootstrappedRef.current = true;
+      } catch (err) {
+        console.error("[useChat] DB bootstrap failed:", err);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+
+    async function connectTwilio() {
       try {
         const token = await fetchToken();
         if (cancelled) return;
@@ -77,10 +134,13 @@ export function useChat(sessionId: string) {
 
         const paginator = await conversation.getMessages(50);
         if (cancelled) { client.shutdown(); return; }
-        setMessages(paginator.items.map(toMessage));
+        // Replace DB-bootstrapped rows with Twilio's authoritative paginator
+        // — Twilio has the real SIDs for sendMediaMessage/sendTextMessage.
+        setMessages(paginator.items.map(fromTwilio));
+        twilioSeededRef.current = true;
 
         conversation.on("messageAdded", (msg) => {
-          if (!cancelled) setMessages((prev) => [...prev, toMessage(msg)]);
+          if (!cancelled) setMessages((prev) => [...prev, fromTwilio(msg)]);
         });
 
         setIsConnected(true);
@@ -100,12 +160,18 @@ export function useChat(sessionId: string) {
       } catch (err) {
         if (cancelled) return;
         console.error("[useChat] Connection failed:", err);
-        setError(err instanceof Error ? err.message : "Failed to connect to chat");
+        // Only surface the error if DB bootstrap also failed — otherwise the
+        // user sees historical messages and the existing "Reconnecting…"
+        // banner indicates the realtime gap.
+        if (!dbBootstrappedRef.current) {
+          setError(err instanceof Error ? err.message : "Failed to connect to chat");
+        }
         setIsLoading(false);
       }
     }
 
-    connect();
+    void bootstrapFromDb();
+    void connectTwilio();
 
     return () => {
       cancelled = true;
