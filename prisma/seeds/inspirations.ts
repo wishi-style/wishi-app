@@ -1,7 +1,39 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { PrismaClient } from "../../src/generated/prisma/client";
-import { putObject, getPublicUrl } from "../../src/lib/s3";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+
+// S3 client + helpers inlined here (rather than importing from src/lib/s3)
+// because the production Docker image only copies prisma/ + node_modules
+// + src/generated. Re-importing src/lib/s3.ts would crash the seed when
+// invoked via `ecs run-task` against the deployed image.
+const s3 = new S3Client({ region: process.env.AWS_REGION ?? "us-east-1" });
+
+function getBucket(): string {
+  const bucket = process.env.S3_UPLOADS_BUCKET;
+  if (!bucket) throw new Error("S3_UPLOADS_BUCKET is not set");
+  return bucket;
+}
+
+function getPublicUrl(key: string): string {
+  const region = process.env.AWS_REGION ?? "us-east-1";
+  return `https://${getBucket()}.s3.${region}.amazonaws.com/${key}`;
+}
+
+async function putObject(
+  key: string,
+  body: Uint8Array,
+  contentType: string,
+): Promise<void> {
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: getBucket(),
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    }),
+  );
+}
 
 /**
  * Seed the InspirationPhoto library with the curated stylist mood-board
