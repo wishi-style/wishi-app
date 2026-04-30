@@ -9,6 +9,9 @@ import {
   ExternalLinkIcon,
   GiftIcon,
   HeartIcon,
+  LockIcon,
+  PaletteIcon,
+  ReceiptIcon,
   ShirtIcon,
   ShoppingBagIcon,
   CreditCardIcon,
@@ -48,6 +51,9 @@ const iconMap = {
   bag: ShoppingBagIcon,
   shirt: ShirtIcon,
   heart: HeartIcon,
+  palette: PaletteIcon,
+  lock: LockIcon,
+  receipt: ReceiptIcon,
 } satisfies Record<string, LucideIcon>;
 
 interface Props {

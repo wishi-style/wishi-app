@@ -72,9 +72,19 @@ test("filterClosetItems narrows by designer", () => {
     item({ id: "2", designer: "APC" }),
     item({ id: "3", designer: "Loewe" }),
   ];
-  const out = filterClosetItems(items, { designer: "Loewe" });
+  const out = filterClosetItems(items, { designer: ["Loewe"] });
   assert.equal(out.length, 2);
   assert.deepEqual(out.map((i) => i.id), ["1", "3"]);
+});
+
+test("filterClosetItems OR-combines values within a dimension", () => {
+  const items = [
+    item({ id: "1", designer: "Loewe" }),
+    item({ id: "2", designer: "APC" }),
+    item({ id: "3", designer: "The Row" }),
+  ];
+  const out = filterClosetItems(items, { designer: ["Loewe", "APC"] });
+  assert.deepEqual(out.map((i) => i.id), ["1", "2"]);
 });
 
 test("filterClosetItems narrows by season", () => {
@@ -82,7 +92,7 @@ test("filterClosetItems narrows by season", () => {
     item({ id: "1", season: "FALL_WINTER" }),
     item({ id: "2", season: "SPRING_SUMMER" }),
   ];
-  const out = filterClosetItems(items, { season: "FALL_WINTER" });
+  const out = filterClosetItems(items, { season: ["FALL_WINTER"] });
   assert.deepEqual(out.map((i) => i.id), ["1"]);
 });
 
@@ -92,27 +102,25 @@ test("filterClosetItems color filter uses array membership, not equality", () =>
     item({ id: "2", colors: ["white"] }),
     item({ id: "3", colors: ["tan"] }),
   ];
-  const out = filterClosetItems(items, { color: "tan" });
+  const out = filterClosetItems(items, { color: ["tan"] });
   assert.deepEqual(out.map((i) => i.id), ["1", "3"]);
 });
 
-test("filterClosetItems combines filters with AND", () => {
+test("filterClosetItems combines filters with AND across dimensions", () => {
   const items = [
     item({ id: "1", designer: "Loewe", category: "Bags" }),
     item({ id: "2", designer: "Loewe", category: "Tops" }),
     item({ id: "3", designer: "APC", category: "Bags" }),
   ];
   const out = filterClosetItems(items, {
-    designer: "Loewe",
-    category: "Bags",
+    designer: ["Loewe"],
+    category: ["Bags"],
   });
   assert.deepEqual(out.map((i) => i.id), ["1"]);
 });
 
-test("filterClosetItems empty-string filter values are treated as 'no filter'", () => {
-  // The component sends `undefined` to clear, but defensive behavior matters
-  // if someone constructs filters from URL params manually.
+test("filterClosetItems empty arrays are treated as 'no filter'", () => {
   const items = [item({ id: "1", designer: "Loewe" })];
-  const out = filterClosetItems(items, { designer: "" });
-  assert.equal(out.length, 1);
+  assert.equal(filterClosetItems(items, { designer: [] }).length, 1);
+  assert.equal(filterClosetItems(items, { designer: [""] }).length, 1);
 });

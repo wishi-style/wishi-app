@@ -553,9 +553,6 @@ function OrderSummary({
               <p className="truncate font-body text-xs text-muted-foreground">
                 {item.title}
               </p>
-              <p className="font-body text-xs text-muted-foreground">
-                Qty {item.quantity}
-              </p>
             </div>
             <span className="font-body text-sm font-medium">
               {formatCents(item.unitAmountInCents * item.quantity)}

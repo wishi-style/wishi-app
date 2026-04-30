@@ -2,7 +2,7 @@ import type { ClosetItem } from "@/generated/prisma/client";
 
 export type ClosetFilterKey = "designer" | "season" | "color" | "category";
 
-export type ClosetFilters = Partial<Record<ClosetFilterKey, string>>;
+export type ClosetFilters = Partial<Record<ClosetFilterKey, string[]>>;
 
 export interface ClosetFacets {
   designer: string[];
@@ -34,20 +34,32 @@ export function computeClosetFacets(items: ClosetItem[]): ClosetFacets {
   };
 }
 
+function nonEmpty(values: string[] | undefined): string[] | null {
+  if (!values || values.length === 0) return null;
+  const cleaned = values.filter((v) => typeof v === "string" && v.length > 0);
+  return cleaned.length > 0 ? cleaned : null;
+}
+
 /**
- * Apply selected filters to the closet item list. Each filter is independent
- * (AND-combined). `color` matches against the array; the others match the
- * exact string. Pure function — extracted from the closet client component.
+ * Apply selected filters to the closet item list. Each dimension OR-combines
+ * its own values; dimensions AND-combine across each other (Loveable parity).
+ * `color` matches against the item's color array; the rest match the exact
+ * scalar field. Empty / missing arrays are treated as "no filter".
  */
 export function filterClosetItems(
   items: ClosetItem[],
   filters: ClosetFilters,
 ): ClosetItem[] {
+  const designer = nonEmpty(filters.designer);
+  const season = nonEmpty(filters.season);
+  const category = nonEmpty(filters.category);
+  const color = nonEmpty(filters.color);
+
   return items.filter((it) => {
-    if (filters.designer && it.designer !== filters.designer) return false;
-    if (filters.season && it.season !== filters.season) return false;
-    if (filters.category && it.category !== filters.category) return false;
-    if (filters.color && !it.colors.includes(filters.color)) return false;
+    if (designer && !(it.designer && designer.includes(it.designer))) return false;
+    if (season && !(it.season && season.includes(it.season))) return false;
+    if (category && !(it.category && category.includes(it.category))) return false;
+    if (color && !color.some((c) => it.colors.includes(c))) return false;
     return true;
   });
 }

@@ -1,6 +1,7 @@
 import { unauthorized } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import { HeartIcon } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import {
   Tabs,
@@ -44,7 +45,9 @@ export default async function FavoritesPage() {
             {looks.length === 0 ? (
               <EmptyState
                 title="No favorite looks yet"
-                body="Save styleboards from your styling sessions to see them here."
+                body="Explore style boards and save the looks you love."
+                ctaHref="/sessions"
+                ctaLabel="Browse Style Boards"
               />
             ) : (
               <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
@@ -69,6 +72,8 @@ export default async function FavoritesPage() {
               <EmptyState
                 title="No favorite items yet"
                 body="Tap the heart on a product to save it here."
+                ctaHref="/feed"
+                ctaLabel="Browse Items"
               />
             ) : (
               <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
@@ -109,15 +114,9 @@ export default async function FavoritesPage() {
             {stylists.length === 0 ? (
               <EmptyState
                 title="No favorite stylists yet"
-                body={
-                  <>
-                    Browse{" "}
-                    <Link href="/stylists" className="underline underline-offset-4">
-                      our stylists
-                    </Link>{" "}
-                    and tap the heart to save your favorites.
-                  </>
-                }
+                body="Discover stylists and save the ones you love."
+                ctaHref="/discover"
+                ctaLabel="Discover Stylists"
               />
             ) : (
               <FavoritesTabsClient stylists={stylists} />
@@ -132,14 +131,27 @@ export default async function FavoritesPage() {
 function EmptyState({
   title,
   body,
+  ctaHref,
+  ctaLabel,
 }: {
   title: string;
   body: React.ReactNode;
+  ctaHref?: string;
+  ctaLabel?: string;
 }) {
   return (
     <div className="py-20 text-center">
+      <HeartIcon className="mx-auto mb-4 h-10 w-10 text-muted-foreground/40" />
       <p className="mb-2 font-display text-xl text-foreground">{title}</p>
-      <p className="text-sm text-muted-foreground">{body}</p>
+      <p className="mb-6 text-sm text-muted-foreground">{body}</p>
+      {ctaHref && ctaLabel && (
+        <Link
+          href={ctaHref}
+          className="inline-flex items-center justify-center rounded-full bg-foreground px-8 py-3 text-sm font-medium text-background transition-colors hover:bg-foreground/90"
+        >
+          {ctaLabel}
+        </Link>
+      )}
     </div>
   );
 }

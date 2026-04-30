@@ -36,15 +36,24 @@ export default async function StyleQuizPage({ params }: Props) {
   const quiz = await getQuizWithQuestions("STYLE_PREFERENCE");
   if (!quiz || quiz.questions.length === 0) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-stone-500">Style quiz is not available yet.</p>
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="text-sm text-muted-foreground">
+          Style quiz is not available yet.
+        </p>
       </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#FAF8F5]">
-      <div className="mx-auto max-w-2xl">
+    <main className="min-h-screen bg-background">
+      <header className="border-b border-border">
+        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-5">
+          <h1 className="font-display text-xl tracking-tight">
+            Your Style Profile
+          </h1>
+        </div>
+      </header>
+      <div className="mx-auto max-w-2xl px-4 py-8">
         <StyleQuizClient sessionId={sessionId} questions={quiz.questions} />
       </div>
     </main>
