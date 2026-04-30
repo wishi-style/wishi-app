@@ -2,13 +2,14 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { ArrowLeftIcon, CheckIcon } from "lucide-react";
+import { ArrowLeft, Check } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 export type RestyleProduct = {
-  /** BoardItem.id — what /api/ai/suggested-feedback takes as path param */
+  /** BoardItem.id — what the styleboard service references when persisting feedback. */
   id: string;
   name: string;
   brand: string;
@@ -22,21 +23,40 @@ export interface RestyleWizardProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   products: RestyleProduct[];
-  /** Called once per selected product when the wizard submits. */
+  /** Called once with all per-product feedback when the wizard submits. */
   onSubmit?: (feedback: RestyleFeedback) => Promise<void> | void;
 }
 
 /**
- * Client wizard for "revise this look" feedback. Two steps:
- *   1) Select which items in the styleboard need a revision.
- *   2) For each selected item, pick 1+ reason chips + optional note.
+ * Loveable-port of `wishi-reimagined/src/components/RestyleWizard.tsx@19f4732`.
  *
- * Phase 10: the reason-chip options are fetched from
- *   GET /api/ai/suggested-feedback/[boardItemId]
- * which returns category-aware canned pills in phase 10 and LLM-generated
- * pills when Phase 7 replaces the endpoint body. The consumer doesn't
- * change when that swap happens.
+ * Two-step modal:
+ *   1) "Restyle Items" — 3-column grid of product tiles. Tap to toggle each
+ *      piece that needs a revision; "Select All" / "Deselect All" header
+ *      toggle.
+ *   2) "Add Feedback" — for each selected item, pick from 7 hardcoded
+ *      reason chips and add an optional note. Submit on the final item.
+ *
+ * Loveable hardcodes the chip vocabulary; staging mirrors that. The AI
+ * suggested-pill endpoint (`/api/ai/suggested-feedback/[boardItemId]`) is
+ * Phase 7 territory and stays unrouted from here per "Mirror, not
+ * paraphrase".
  */
+const FEEDBACK_CHIPS = [
+  "Over my budget",
+  "I have something similar",
+  "Wrong color",
+  "Not my style",
+  "Too bold",
+  "Too structured for me",
+  "Prefer a different length",
+] as const;
+
+function formatPrice(priceInCents: number | null | undefined): string {
+  if (priceInCents == null) return "";
+  return `$${Math.round(priceInCents / 100)}`;
+}
+
 export function RestyleWizard({
   open,
   onOpenChange,
@@ -45,55 +65,15 @@ export function RestyleWizard({
 }: RestyleWizardProps) {
   const [step, setStep] = React.useState<"select" | "feedback">("select");
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
-  const [currentIdx, setCurrentIdx] = React.useState(0);
+  const [currentFeedbackIdx, setCurrentFeedbackIdx] = React.useState(0);
   const [feedback, setFeedback] = React.useState<RestyleFeedback>({});
-  const [pillsByItem, setPillsByItem] = React.useState<
-    Record<string, string[] | undefined>
-  >({});
-  const [pillsLoading, setPillsLoading] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
 
-  const selectedProducts = React.useMemo(
-    () => products.filter((p) => selectedIds.has(p.id)),
-    [products, selectedIds],
-  );
-  const currentProduct = selectedProducts[currentIdx] ?? null;
+  const selectedProducts = products.filter((p) => selectedIds.has(p.id));
+  const currentProduct = selectedProducts[currentFeedbackIdx];
   const currentFeedback = currentProduct
-    ? feedback[currentProduct.id] ?? { reasons: [], note: "" }
+    ? feedback[currentProduct.id] || { reasons: [], note: "" }
     : { reasons: [], note: "" };
-
-  const currentPills = currentProduct
-    ? pillsByItem[currentProduct.id]
-    : undefined;
-
-  // Fetch AI pills for the current item whenever we land on it.
-  React.useEffect(() => {
-    if (!currentProduct) return;
-    if (pillsByItem[currentProduct.id]) return;
-    let cancelled = false;
-    setPillsLoading(true);
-    fetch(`/api/ai/suggested-feedback/${currentProduct.id}`, {
-      cache: "no-store",
-    })
-      .then((r) => r.json())
-      .then((data: { pills?: string[] }) => {
-        if (cancelled) return;
-        setPillsByItem((prev) => ({
-          ...prev,
-          [currentProduct.id]: data.pills ?? [],
-        }));
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setPillsByItem((prev) => ({ ...prev, [currentProduct.id]: [] }));
-      })
-      .finally(() => {
-        if (!cancelled) setPillsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [currentProduct, pillsByItem]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -104,7 +84,7 @@ export function RestyleWizard({
     });
   };
 
-  const toggleAll = () => {
+  const selectAll = () => {
     if (selectedIds.size === products.length) {
       setSelectedIds(new Set());
     } else {
@@ -112,48 +92,50 @@ export function RestyleWizard({
     }
   };
 
-  const toggleReason = (reason: string) => {
+  const goToFeedback = () => {
+    if (selectedIds.size === 0) return;
+    setCurrentFeedbackIdx(0);
+    setStep("feedback");
+  };
+
+  const toggleChip = (chip: string) => {
     if (!currentProduct) return;
     setFeedback((prev) => {
-      const existing = prev[currentProduct.id] ?? { reasons: [], note: "" };
-      const reasons = existing.reasons.includes(reason)
-        ? existing.reasons.filter((r) => r !== reason)
-        : [...existing.reasons, reason];
+      const existing = prev[currentProduct.id] || { reasons: [], note: "" };
+      const reasons = existing.reasons.includes(chip)
+        ? existing.reasons.filter((r) => r !== chip)
+        : [...existing.reasons, chip];
       return { ...prev, [currentProduct.id]: { ...existing, reasons } };
     });
   };
 
   const setNote = (note: string) => {
     if (!currentProduct) return;
-    setFeedback((prev) => ({
-      ...prev,
-      [currentProduct.id]: {
-        reasons: prev[currentProduct.id]?.reasons ?? [],
-        note,
-      },
-    }));
+    setFeedback((prev) => {
+      const existing = prev[currentProduct.id] || { reasons: [], note: "" };
+      return { ...prev, [currentProduct.id]: { ...existing, note } };
+    });
   };
 
-  const goToFeedback = () => {
-    if (selectedIds.size === 0) return;
-    setCurrentIdx(0);
-    setStep("feedback");
+  const handleClose = () => {
+    onOpenChange(false);
+    // Defer reset until after dialog close transition.
+    setTimeout(() => {
+      setStep("select");
+      setSelectedIds(new Set());
+      setCurrentFeedbackIdx(0);
+      setFeedback({});
+    }, 300);
   };
 
-  const advance = async (opts: { skip?: boolean } = {}) => {
-    if (!currentProduct) return;
-    if (currentIdx < selectedProducts.length - 1) {
-      setCurrentIdx((i) => i + 1);
-      return;
-    }
-    // Final item — submit.
-    const payload = opts.skip
+  const submit = async (skipCurrent: boolean) => {
+    const payload = skipCurrent && currentProduct
       ? { ...feedback, [currentProduct.id]: { reasons: [], note: "" } }
       : feedback;
     try {
       setSubmitting(true);
       await onSubmit?.(payload);
-      close();
+      handleClose();
     } catch (err) {
       toast.error((err as Error).message || "Couldn't send feedback");
     } finally {
@@ -161,204 +143,196 @@ export function RestyleWizard({
     }
   };
 
-  const close = () => {
-    onOpenChange(false);
-    // Defer reset until after dialog close transition.
-    setTimeout(() => {
-      setStep("select");
-      setSelectedIds(new Set());
-      setCurrentIdx(0);
-      setFeedback({});
-      setPillsByItem({});
-    }, 150);
+  const handleNext = () => {
+    if (currentFeedbackIdx < selectedProducts.length - 1) {
+      setCurrentFeedbackIdx((i) => i + 1);
+    } else {
+      void submit(false);
+    }
+  };
+
+  const handleSkip = () => {
+    if (currentFeedbackIdx < selectedProducts.length - 1) {
+      setCurrentFeedbackIdx((i) => i + 1);
+    } else {
+      void submit(true);
+    }
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => (v ? onOpenChange(v) : close())}>
-      <DialogContent className="max-w-md p-0 gap-0 overflow-hidden">
-        {step === "select" ? (
-          <>
-            <div className="p-6 pb-4">
-              <h2 className="font-display text-2xl">Revise the look</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Pick the pieces that need another pass.
-              </p>
+    <Dialog open={open} onOpenChange={(v) => (v ? onOpenChange(v) : handleClose())}>
+      <DialogContent className="max-w-lg p-0 gap-0 overflow-hidden">
+        {step === "select" && (
+          <div className="flex flex-col h-[70vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <h3 className="font-display text-lg">Restyle Items</h3>
+              <button
+                onClick={selectAll}
+                className="text-sm font-body font-medium text-foreground hover:text-foreground/70 transition-colors"
+              >
+                {selectedIds.size === products.length ? "Deselect All" : "Select All"}
+              </button>
             </div>
-            <ScrollArea className="max-h-[60vh] border-t border-border">
-              <ul className="p-4 space-y-2">
-                {products.map((p) => {
-                  const checked = selectedIds.has(p.id);
+
+            <p className="px-6 pt-4 pb-2 text-sm font-body text-muted-foreground">
+              Select the items you want to replace
+            </p>
+
+            {/* Product grid */}
+            <ScrollArea className="flex-1 px-6">
+              <div className="grid grid-cols-3 gap-3 pb-4">
+                {products.map((product) => {
+                  const isSelected = selectedIds.has(product.id);
                   return (
-                    <li key={p.id}>
-                      <button
-                        type="button"
-                        onClick={() => toggleSelect(p.id)}
-                        className={cn(
-                          "w-full flex items-center gap-3 rounded-lg border p-3 text-left transition-colors",
-                          checked
-                            ? "border-foreground bg-muted"
-                            : "border-border hover:bg-muted/50",
-                        )}
-                      >
-                        {p.imageUrl ? (
+                    <button
+                      key={product.id}
+                      onClick={() => toggleSelect(product.id)}
+                      className={cn(
+                        "relative rounded-lg border-2 p-2 flex flex-col items-center transition-colors text-left",
+                        isSelected
+                          ? "border-foreground"
+                          : "border-border hover:border-muted-foreground",
+                      )}
+                    >
+                      {isSelected && (
+                        <div className="absolute top-2 right-2 h-5 w-5 rounded-full bg-foreground text-background flex items-center justify-center">
+                          <Check className="h-3 w-3" />
+                        </div>
+                      )}
+                      <div className="aspect-square w-full overflow-hidden rounded-sm mb-2 bg-muted">
+                        {product.imageUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
-                            src={p.imageUrl}
-                            alt={p.name}
-                            className="h-14 w-14 rounded-md object-cover bg-muted"
+                            src={product.imageUrl}
+                            alt={product.brand}
+                            className="w-full h-full object-cover"
                           />
-                        ) : (
-                          <div className="h-14 w-14 rounded-md bg-muted" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs uppercase tracking-widest text-dark-taupe">
-                            {p.brand}
-                          </p>
-                          <p className="text-sm truncate">{p.name}</p>
-                        </div>
-                        <span
-                          className={cn(
-                            "h-5 w-5 rounded-full border flex items-center justify-center transition-colors",
-                            checked
-                              ? "border-foreground bg-foreground text-background"
-                              : "border-border",
-                          )}
-                        >
-                          {checked ? <CheckIcon className="h-3 w-3" /> : null}
-                        </span>
-                      </button>
-                    </li>
+                        ) : null}
+                      </div>
+                      <p className="font-body text-xs font-medium text-foreground text-center truncate w-full">
+                        {product.brand}
+                      </p>
+                      <p className="font-body text-xs text-foreground text-center">
+                        {formatPrice(product.priceInCents)}
+                      </p>
+                    </button>
                   );
                 })}
-              </ul>
+              </div>
             </ScrollArea>
-            <div className="p-4 flex items-center justify-between gap-2 border-t border-border">
-              <button
-                type="button"
-                onClick={toggleAll}
-                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-4"
-              >
-                {selectedIds.size === products.length
-                  ? "Clear all"
-                  : "Select all"}
-              </button>
-              <button
-                type="button"
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-border">
+              <Button
                 onClick={goToFeedback}
                 disabled={selectedIds.size === 0}
-                className="inline-flex h-10 items-center rounded-full bg-foreground px-6 text-sm font-medium text-background disabled:opacity-50 hover:bg-foreground/90 transition-colors"
+                className="w-full rounded-lg bg-foreground text-background hover:bg-foreground/90 font-body"
               >
-                Next · {selectedIds.size}
+                Add Feedback
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === "feedback" && currentProduct && (
+          <div className="flex flex-col h-[70vh]">
+            {/* Header */}
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-border">
+              <button
+                onClick={() => {
+                  if (currentFeedbackIdx > 0) {
+                    setCurrentFeedbackIdx((i) => i - 1);
+                  } else {
+                    setStep("select");
+                  }
+                }}
+                className="text-foreground hover:text-foreground/70 transition-colors"
+              >
+                <ArrowLeft className="h-5 w-5" />
               </button>
+              <h3 className="font-display text-lg">Add Feedback</h3>
             </div>
-          </>
-        ) : currentProduct ? (
-          <>
-            <div className="p-6 pb-3 flex items-center gap-3">
-              {currentIdx > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => setCurrentIdx((i) => Math.max(0, i - 1))}
-                  aria-label="Previous item"
-                  className="h-8 w-8 rounded-full hover:bg-muted flex items-center justify-center"
-                >
-                  <ArrowLeftIcon className="h-4 w-4" />
-                </button>
-              ) : null}
-              <div className="flex-1 min-w-0">
-                <p className="text-xs uppercase tracking-widest text-dark-taupe">
-                  Item {currentIdx + 1} of {selectedProducts.length}
-                </p>
-                <p className="font-display text-lg truncate">
-                  {currentProduct.name}
-                </p>
-              </div>
-            </div>
-            <div className="px-6">
-              {currentProduct.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={currentProduct.imageUrl}
-                  alt={currentProduct.name}
-                  className="w-full aspect-[4/5] object-cover rounded-lg bg-muted"
-                />
-              ) : (
-                <div className="w-full aspect-[4/5] rounded-lg bg-muted" />
-              )}
-            </div>
-            <div className="p-6 pt-4 space-y-4">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2">
-                  What&apos;s not working?
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {pillsLoading && !currentPills ? (
-                    <p className="text-xs text-muted-foreground">
-                      Loading suggestions…
-                    </p>
-                  ) : (currentPills ?? []).length === 0 ? (
-                    <p className="text-xs text-muted-foreground">
-                      No suggestions — use the note below.
-                    </p>
-                  ) : (
-                    (currentPills ?? []).map((reason) => {
-                      const active = currentFeedback.reasons.includes(reason);
-                      return (
-                        <button
-                          key={reason}
-                          type="button"
-                          onClick={() => toggleReason(reason)}
-                          className={cn(
-                            "rounded-full border px-3 py-1.5 text-xs transition-colors",
-                            active
-                              ? "border-foreground bg-foreground text-background"
-                              : "border-border text-muted-foreground hover:border-foreground/50",
-                          )}
-                        >
-                          {reason}
-                        </button>
-                      );
-                    })
-                  )}
+
+            <ScrollArea className="flex-1 px-6">
+              {/* Progress */}
+              <p className="text-sm font-body text-muted-foreground pt-4 pb-3 text-center">
+                {currentFeedbackIdx + 1} of {selectedProducts.length} Items
+              </p>
+
+              {/* Product info */}
+              <div className="flex items-start gap-4 mb-5">
+                <div className="w-28 h-28 shrink-0 rounded-md overflow-hidden bg-white border border-border">
+                  {currentProduct.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={currentProduct.imageUrl}
+                      alt={currentProduct.brand}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : null}
+                </div>
+                <div>
+                  <p className="font-body text-sm font-semibold text-foreground">{currentProduct.brand}</p>
+                  <p className="font-body text-sm text-foreground">{formatPrice(currentProduct.priceInCents)}</p>
                 </div>
               </div>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2">
-                  Anything else? (optional)
-                </p>
-                <textarea
-                  value={currentFeedback.note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder="e.g. love the silhouette, want it in black"
-                  className="w-full rounded-md border border-border bg-background p-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground min-h-[80px] resize-none"
-                  maxLength={500}
-                />
+
+              {/* Feedback chips */}
+              <div className="flex flex-wrap gap-2 mb-5">
+                {FEEDBACK_CHIPS.map((chip) => {
+                  const isActive = currentFeedback.reasons.includes(chip);
+                  return (
+                    <button
+                      key={chip}
+                      onClick={() => toggleChip(chip)}
+                      className={cn(
+                        "rounded-full px-4 py-2 text-sm font-body border transition-colors",
+                        isActive
+                          ? "bg-foreground text-background border-foreground"
+                          : "bg-background text-foreground border-border hover:border-foreground",
+                      )}
+                    >
+                      {chip}
+                    </button>
+                  );
+                })}
               </div>
-            </div>
-            <div className="p-4 flex items-center justify-between gap-2 border-t border-border">
-              <button
-                type="button"
-                onClick={() => advance({ skip: true })}
+
+              {/* Free text */}
+              <textarea
+                placeholder="Add a note (optional)..."
+                value={currentFeedback.note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={3}
+                className="w-full rounded-lg border border-border bg-background px-4 py-3 text-sm font-body text-foreground placeholder:text-muted-foreground outline-none focus:ring-1 focus:ring-ring resize-none mb-4"
+              />
+            </ScrollArea>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-border space-y-2">
+              <Button
+                onClick={handleNext}
                 disabled={submitting}
-                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-4 disabled:opacity-50"
+                className="w-full rounded-lg bg-foreground text-background hover:bg-foreground/90 font-body"
               >
-                Skip
-              </button>
-              <button
-                type="button"
-                onClick={() => advance()}
-                disabled={submitting}
-                className="inline-flex h-10 items-center rounded-full bg-foreground px-6 text-sm font-medium text-background hover:bg-foreground/90 disabled:opacity-50 transition-colors"
-              >
-                {currentIdx < selectedProducts.length - 1
+                {currentFeedbackIdx < selectedProducts.length - 1
                   ? "Next"
                   : submitting
                     ? "Sending…"
-                    : "Send to stylist"}
-              </button>
+                    : "Submit"}
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={handleSkip}
+                disabled={submitting}
+                className="w-full rounded-lg font-body bg-background text-foreground hover:bg-background/80"
+              >
+                Skip
+              </Button>
             </div>
-          </>
-        ) : null}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

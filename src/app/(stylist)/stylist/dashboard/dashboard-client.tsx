@@ -313,20 +313,28 @@ export default function StylistDashboard({
           text: string | null;
           sender: "stylist" | "client" | "system";
           kind: string;
+          systemTemplate: string | null;
           createdAt: string;
         }>;
       };
-      // System messages are filtered out EXCEPT END_SESSION_REQUEST, which
-      // Loveable HEAD renders as a dedicated chat card. The webhook persists
-      // it with `kind: "END_SESSION_REQUEST"` so we can detect + reshape
-      // into a typed ChatMessage on the client.
+      // System messages are filtered out EXCEPT the end-session pair, which
+      // Loveable HEAD renders as dedicated chat cards
+      // (StylistDashboard.tsx:1050-1087). END_SESSION_REQUEST messages get
+      // their own kind on the schema; END_SESSION_APPROVED rides on
+      // SYSTEM_AUTOMATED with `systemTemplate` carrying the template name.
+      const isEndApproved = (m: { kind: string; systemTemplate: string | null }) =>
+        m.kind === "SYSTEM_AUTOMATED" && m.systemTemplate === "END_SESSION_APPROVED";
       const mapped: ChatMessage[] = data.messages
         .filter(
-          (m) => m.sender !== "system" || m.kind === "END_SESSION_REQUEST",
+          (m) =>
+            m.sender !== "system" ||
+            m.kind === "END_SESSION_REQUEST" ||
+            isEndApproved(m),
         )
         .map((m) => {
           let type: ChatMessage["type"] = "text";
           if (m.kind === "END_SESSION_REQUEST") type = "end_request";
+          else if (isEndApproved(m)) type = "end_approved";
           else if (m.kind === "SINGLE_ITEM") type = "item_recommendation";
           return {
             id: m.id,
@@ -1041,6 +1049,16 @@ export default function StylistDashboard({
                     >
                       {selected.endedAt ? "Approved · Session completed" : "Awaiting client approval"}
                     </Badge>
+                  </div>
+                </div>
+              ) : msg.type === "end_approved" ? (
+                /* Approval-receipt card. Loveable HEAD StylistDashboard:1080-
+                 * 1086 — muted ribbon with the canonical post-approval copy. */
+                <div className="flex justify-center my-3">
+                  <div className="w-full max-w-md rounded-sm border border-border bg-muted/30 p-3 text-center">
+                    <p className="font-body text-xs text-muted-foreground">
+                      Client approved end of session — marked Completed. Moves to Archive in 24h.
+                    </p>
                   </div>
                 </div>
               ) : (
