@@ -12,6 +12,10 @@
   --font-display: var(--font-display);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-display);
+  /* Loveable's tailwind config maps `font-body` to DM Sans (the same family
+     we load as --font-sans). Without this token, every `font-body` class on
+     ported JSX is a no-op. */
+  --font-body: var(--font-sans);
 
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
