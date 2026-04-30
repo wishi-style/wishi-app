@@ -10,6 +10,8 @@ import { WriteReviewDialog } from "@/components/stylist/write-review-dialog";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
 import { ContinueWithStylistButton } from "./continue-with-stylist-button";
+import { PlanPicker } from "./plan-picker";
+import { getPlanPricesForUi } from "@/lib/plans";
 import {
   StarIcon,
   ClockIcon,
@@ -160,12 +162,38 @@ export default async function StylistProfilePage({ params }: Props) {
     }
   }
 
-  const { reviews, total: totalReviews } = await listStylistReviews(stylist.id, {
-    limit: 20,
-  }).catch((err) => {
-    console.error("[stylists/[id]] listStylistReviews failed", err);
-    return { reviews: [], total: 0 };
-  });
+  const [{ reviews, total: totalReviews }, planPrices] = await Promise.all([
+    listStylistReviews(stylist.id, { limit: 20 }).catch((err) => {
+      console.error("[stylists/[id]] listStylistReviews failed", err);
+      return { reviews: [], total: 0 };
+    }),
+    getPlanPricesForUi(),
+  ]);
+
+  // Loveable PlanPicker rows. Prices flow from the Plan table — never
+  // hardcoded — and the Lux summary skips locked-out copy ("seasonal
+  // capsules" / "virtual fitting") per CLAUDE.md.
+  const planPickerRows = [
+    {
+      id: "MINI" as const,
+      name: "Wishi Mini",
+      priceDisplay: `$${planPrices.mini.displayDollars}`,
+      summary: "2 Style Boards · Revisions · Any brand worldwide",
+    },
+    {
+      id: "MAJOR" as const,
+      name: "Wishi Major",
+      priceDisplay: `$${planPrices.major.displayDollars}`,
+      popular: true,
+      summary: "5 Style Boards · Closet styling · Beauty advice · Revisions",
+    },
+    {
+      id: "LUX" as const,
+      name: "Wishi Lux",
+      priceDisplay: `$${planPrices.lux.displayDollars}`,
+      summary: "30-min intro call · 8 Style Boards · Bespoke styling",
+    },
+  ];
 
   const personLd = {
     "@context": "https://schema.org",
@@ -582,6 +610,17 @@ export default async function StylistProfilePage({ params }: Props) {
             ) : null}
           </div>
         </section>
+
+        {/* Plan Picker — Loveable StylistProfile.tsx:603-609. Hidden for
+         *  unavailable stylists (waitlist CTA stands alone for those). */}
+        {stylist.isAvailable && (
+          <PlanPicker
+            stylistProfileId={stylist.id}
+            stylistFirstName={firstName}
+            signedIn={signedIn}
+            plans={planPickerRows}
+          />
+        )}
 
         {/* Trust section — Loveable StylistProfile.tsx:612-635 */}
         <section className="bg-foreground text-background py-14 md:py-20">

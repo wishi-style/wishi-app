@@ -15,7 +15,18 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 interface Props {
-  searchParams: Promise<{ stylistId?: string }>;
+  searchParams: Promise<{ stylistId?: string; plan?: string }>;
+}
+
+const PLAN_TIERS = ["MINI", "MAJOR", "LUX"] as const;
+type PlanTier = (typeof PLAN_TIERS)[number];
+
+function parsePlanParam(raw: string | undefined): PlanTier | undefined {
+  if (!raw) return undefined;
+  const upper = raw.toUpperCase();
+  return (PLAN_TIERS as readonly string[]).includes(upper)
+    ? (upper as PlanTier)
+    : undefined;
 }
 
 export default async function SelectPlanPage({ searchParams }: Props) {
@@ -53,6 +64,7 @@ export default async function SelectPlanPage({ searchParams }: Props) {
         stylistId={params.stylistId ?? null}
         stylistName={stylistName}
         stylistAvatarUrl={stylistAvatarUrl}
+        initialPlan={parsePlanParam(params.plan)}
       />
       <SiteFooter />
     </div>
