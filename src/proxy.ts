@@ -27,6 +27,11 @@ const isPublicRoute = createRouteMatcher([
   "/api/webhooks/(.*)",
   "/api/feed",
   "/api/products/(.*)",
+  // Image proxy: per-prefix auth handled inside the route handler itself
+  // (e.g. inspiration/avatars/boards = public, closet/chat = signed-in).
+  // Listing here so Clerk's auth.protect() doesn't blanket-block the
+  // public prefixes that anonymous SharedBoard pages need.
+  "/api/images/(.*)",
   "/sitemap.xml",
   "/robots.txt",
   "/favicon.ico",
