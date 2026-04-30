@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Feed — Wishi",
+  title: "Stylist Looks — Wishi",
   description:
     "Looks curated by our stylists — tap a card to see who styled it and start a session.",
 };
@@ -26,8 +26,7 @@ const tabs: { label: string; value: FeedGender }[] = [
 
 export default async function FeedPage({ searchParams }: Props) {
   const sp = await searchParams;
-  const gender: FeedGender =
-    sp.gender === "MEN" ? "MEN" : "WOMEN";
+  const gender: FeedGender = sp.gender === "MEN" ? "MEN" : "WOMEN";
 
   const user = await getCurrentUser();
   const firstPage = await listFeedBoards({
@@ -39,45 +38,41 @@ export default async function FeedPage({ searchParams }: Props) {
   return (
     <>
       <SiteHeader />
-      <main className="min-h-screen bg-background">
-        <section className="border-b border-border">
-          <div className="mx-auto max-w-6xl px-6 md:px-10 py-10 md:py-14">
-            <h1 className="font-display text-3xl md:text-4xl mb-2">Feed</h1>
-            <p className="text-sm text-muted-foreground">
-              Real looks our stylists have put together. Tap a card to see who styled it.
-            </p>
-            <nav
-              className="mt-6 inline-flex rounded-full border border-border p-1 text-sm"
-              aria-label="Feed category"
-            >
+      <div className="min-h-screen bg-background">
+        {/* Header — Loveable Feed.tsx:84-104. Centered "Stylist Looks" title +
+            pill-toggle directly underneath. No descriptive subtitle. */}
+        <section className="container max-w-4xl pt-8 md:pt-14 pb-6 md:pb-8 px-4">
+          <div className="flex flex-col items-center gap-4 md:gap-5">
+            <h1 className="font-display text-2xl md:text-4xl text-center">
+              Stylist Looks
+            </h1>
+            <div className="flex items-center gap-1">
               {tabs.map((tab) => (
                 <Link
                   key={tab.value}
                   href={`/feed?gender=${tab.value}`}
                   className={cn(
-                    "rounded-full px-4 py-1.5 transition-colors",
+                    "font-body text-sm px-5 py-2 rounded-full transition-colors",
                     gender === tab.value
-                      ? "bg-foreground text-background"
+                      ? "bg-foreground text-background font-medium"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   {tab.label}
                 </Link>
               ))}
-            </nav>
+            </div>
           </div>
         </section>
 
-        <section className="py-10 md:py-14">
-          <div className="mx-auto max-w-6xl px-6 md:px-10">
-            <FeedList
+        <div className="container max-w-4xl pb-20 px-4">
+          <FeedList
             initialPage={firstPage}
             gender={gender}
             isAuthed={!!user}
           />
-          </div>
-        </section>
-      </main>
+        </div>
+      </div>
       <SiteFooter />
     </>
   );
