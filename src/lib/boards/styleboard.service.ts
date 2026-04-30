@@ -472,7 +472,7 @@ export async function rateStyleboard(
       event: "styleboard.reviewed",
       title: "Styleboard loved",
       body: `${clientFirstName} loved this look!`,
-      url: `/stylist/sessions/${sessionId}/workspace`,
+      url: `/stylist/dashboard?session=${sessionId}`,
     });
   } else if (input.rating === "REVISE") {
     await sendSystemMessage(sessionId, SystemTemplate.RESTYLE_REQUESTED, {
@@ -482,7 +482,7 @@ export async function rateStyleboard(
       event: "styleboard.reviewed",
       title: "Revise requested",
       body: `${clientFirstName} requested a restyle.`,
-      url: `/stylist/sessions/${sessionId}/workspace`,
+      url: `/stylist/dashboard?session=${sessionId}`,
     });
   } else {
     await sendSystemMessage(
@@ -494,7 +494,7 @@ export async function rateStyleboard(
       event: "styleboard.reviewed",
       title: "Styleboard feedback",
       body: `${clientFirstName} wasn't feeling this look.`,
-      url: `/stylist/sessions/${sessionId}/workspace`,
+      url: `/stylist/dashboard?session=${sessionId}`,
     });
   }
 

@@ -22,11 +22,26 @@ export async function createMoodboard(
   });
 }
 
+/** Loveable mood-board contract: 9 images max per board. */
+export const MOODBOARD_PHOTO_CAP = 9;
+
+export class MoodboardPhotoCapError extends Error {
+  readonly code = "MOODBOARD_PHOTO_CAP" as const;
+  readonly cap = MOODBOARD_PHOTO_CAP;
+  constructor() {
+    super(`Moodboards are capped at ${MOODBOARD_PHOTO_CAP} photos`);
+    this.name = "MoodboardPhotoCapError";
+  }
+}
+
 export async function addMoodboardPhoto(
   boardId: string,
   input: { s3Key: string; url: string; inspirationPhotoId?: string | null },
 ): Promise<BoardPhoto> {
   const count = await prisma.boardPhoto.count({ where: { boardId } });
+  if (count >= MOODBOARD_PHOTO_CAP) {
+    throw new MoodboardPhotoCapError();
+  }
   return prisma.boardPhoto.create({
     data: {
       boardId,
@@ -209,7 +224,7 @@ export async function rateMoodboard(
       rating === "LOVE"
         ? `${client?.firstName ?? "Your client"} loved the moodboard.`
         : `${client?.firstName ?? "Your client"} wasn't feeling the moodboard.`,
-    url: `/stylist/sessions/${sessionId}/workspace`,
+    url: `/stylist/dashboard?session=${sessionId}`,
   });
 
   return updated;

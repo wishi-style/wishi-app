@@ -1,8 +1,7 @@
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { forbidden, notFound } from "next/navigation";
-import { listInspirationPhotos } from "@/lib/boards/inspiration.service";
-import { MoodboardBuilder } from "./builder";
+import { MoodboardBuilderShell } from "./builder-shell";
 
 export const dynamic = "force-dynamic";
 
@@ -25,9 +24,6 @@ export default async function NewMoodboardPage({ params }: Props) {
   });
   if (!session) notFound();
 
-  const inspiration = await listInspirationPhotos({ take: 60 });
-
-  // Reuse an existing unsent moodboard for this session if present, else create.
   let board = await prisma.board.findFirst({
     where: {
       sessionId,
@@ -59,14 +55,16 @@ export default async function NewMoodboardPage({ params }: Props) {
       .filter(Boolean)
       .join(" ") || "Client";
 
+  const initialImages = board.photos.map((p) => p.url).filter((u): u is string => !!u);
+  const initialPhotoIds = Object.fromEntries(board.photos.map((p) => [p.url, p.id]));
+
   return (
-    <MoodboardBuilder
+    <MoodboardBuilderShell
       boardId={board.id}
       sessionId={sessionId}
-      clientId={session.clientId}
       clientName={clientName}
-      initialPhotos={board.photos}
-      inspiration={inspiration}
+      initialImages={initialImages}
+      initialPhotoIds={initialPhotoIds}
     />
   );
 }

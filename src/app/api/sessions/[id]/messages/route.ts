@@ -52,6 +52,7 @@ export async function GET(
       boardId: true,
       singleItemInventoryProductId: true,
       singleItemWebUrl: true,
+      systemTemplate: true,
       createdAt: true,
       user: { select: { clerkId: true } },
     },
@@ -64,6 +65,11 @@ export async function GET(
       text: m.text,
       mediaUrl: m.mediaUrl,
       kind: m.kind,
+      // SYSTEM_AUTOMATED messages carry their template name in
+      // `systemTemplate` (END_SESSION_APPROVED, MOODBOARD_DELIVERED, etc.).
+      // The dashboard mapper uses it to render dedicated chat cards for
+      // approval / decline / delivery events.
+      systemTemplate: m.systemTemplate,
       boardId: m.boardId,
       singleItemInventoryProductId: m.singleItemInventoryProductId,
       singleItemWebUrl: m.singleItemWebUrl,

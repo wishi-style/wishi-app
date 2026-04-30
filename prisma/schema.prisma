@@ -340,10 +340,10 @@ model User {
   cartItems                CartItem[]
   collections              Collection[]
   loyaltyAccount           LoyaltyAccount?
-  giftCardsPurchased       GiftCard[]       @relation("GiftCardPurchaser")
-  promoCodesCreated        PromoCode[]      @relation("PromoCodeCreator")
-  referralCreditsEarned    ReferralCredit[] @relation("ReferralCreditsEarned")
-  referralCreditsTriggered ReferralCredit[] @relation("ReferralCreditsTriggered")
+  giftCardsPurchased       GiftCard[]           @relation("GiftCardPurchaser")
+  promoCodesCreated        PromoCode[]          @relation("PromoCodeCreator")
+  referralCreditsEarned    ReferralCredit[]     @relation("ReferralCreditsEarned")
+  referralCreditsTriggered ReferralCredit[]     @relation("ReferralCreditsTriggered")
   // Phase 12: stylist-authored private notes on clients they've styled.
   stylistNotesWritten      StylistPrivateNote[] @relation("StylistPrivateNotesWritten")
   stylistNotesAbout        StylistPrivateNote[] @relation("StylistPrivateNotesAbout")
@@ -360,12 +360,12 @@ model User {
 // the stylist only — never exposed to the client. Exactly one row per
 // (stylist, client) pair; the stylist edits it in place.
 model StylistPrivateNote {
-  id             String   @id @default(cuid())
-  stylistUserId  String   @map("stylist_user_id")
-  clientUserId   String   @map("client_user_id")
-  body           String   @db.Text
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(cuid())
+  stylistUserId String   @map("stylist_user_id")
+  clientUserId  String   @map("client_user_id")
+  body          String   @db.Text
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   stylist User @relation("StylistPrivateNotesWritten", fields: [stylistUserId], references: [id], onDelete: Cascade)
   client  User @relation("StylistPrivateNotesAbout", fields: [clientUserId], references: [id], onDelete: Cascade)
@@ -598,6 +598,13 @@ model StylistProfile {
   directorPick         String?     @map("director_pick") @db.Text
   profileMoodboardId   String?     @unique @map("profile_moodboard_id")
   instagramHandle      String?     @map("instagram_handle")
+  // Loveable StylistProfile structured fields (Wave parity, see WISHI-REBUILD-PLAN.md).
+  signatureStyle       String?     @map("signature_style") @db.Text
+  fashionIcons         String[]    @default([]) @map("fashion_icons")
+  favoriteItems        String[]    @default([]) @map("favorite_items")
+  background           String?     @db.Text
+  achievements         String[]    @default([])
+  education            String[]    @default([])
 
   // Onboarding wizard
   onboardingStatus      StylistOnboardingStatus @default(NOT_STARTED) @map("onboarding_status")
@@ -1273,6 +1280,9 @@ model Board {
   stylistProfileId    String?      @map("stylist_profile_id")
   isFeaturedOnProfile Boolean      @default(false) @map("is_featured_on_profile")
   profileStyle        String?      @map("profile_style")
+  profileGender       Gender?      @map("profile_gender")
+  // Moodboard canvas mode: "template" (grid) or "freestyle" (drag-drop x/y).
+  canvasMode          String?      @map("canvas_mode")
   parentBoardId       String?      @map("parent_board_id")
   isRevision          Boolean      @default(false) @map("is_revision")
   title               String?
@@ -1356,6 +1366,12 @@ model BoardPhoto {
   url                String
   orderIndex         Int      @default(0) @map("order_index")
   inspirationPhotoId String?  @map("inspiration_photo_id")
+  // Freestyle canvas position (percent 0-100). Null = template-mode photo.
+  x                  Float?
+  y                  Float?
+  width              Float?
+  height             Float?
+  zIndex             Int?     @map("z_index")
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 

@@ -95,7 +95,10 @@ function humanDueLabel(earliestDueAt: Date | null, now: Date): string {
   return `Due: ${daysBehind} day${daysBehind === 1 ? "" : "s"} ago`;
 }
 
-function actionLabelFor(type: PendingActionType | null): string {
+// Mirror Loveable's actionLabel vocabulary verbatim. The dashboard click
+// handler only navigates for "Create Moodboard" / "Create Look"; every other
+// label is a no-op selector — chat is the workspace, no separate page.
+export function actionLabelFor(type: PendingActionType | null): string {
   switch (type) {
     case "PENDING_MOODBOARD":
       return "Create Moodboard";
@@ -106,11 +109,11 @@ function actionLabelFor(type: PendingActionType | null): string {
     case "PENDING_STYLIST_RESPONSE":
     case "PENDING_CLIENT_FEEDBACK":
     case "PENDING_FOLLOWUP":
-      return "View Session";
+      return "View session";
     case "PENDING_END_APPROVAL":
-      return "View Session";
+      return "Awaiting approval";
     default:
-      return "View Session";
+      return "Start styling";
   }
 }
 
@@ -261,7 +264,7 @@ export async function getStylistDashboardData(
       boardsDelivered: s.styleboardsSent,
       boardsTotal: s.styleboardsAllowed,
       status: statusBlurbFor(nextAction?.type ?? null, s.status),
-      actionLabel: isCompleted ? "View Session" : actionLabelFor(nextAction?.type ?? null),
+      actionLabel: isCompleted ? "View summary" : actionLabelFor(nextAction?.type ?? null),
       loyaltyTier: mapLoyaltyTier(s.client.loyaltyTier, totalSessions),
       totalSessions,
       endedAt: s.completedAt?.toISOString() ?? null,

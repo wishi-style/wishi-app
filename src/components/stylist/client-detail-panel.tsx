@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
-import type { ClientProfileView } from "@/lib/stylists/client-profile";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,20 +21,19 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Camera, Heart, StickyNote } from "lucide-react";
-import { loyaltyConfig, mockClientProfiles } from "@/data/client-profiles";
+import { CameraIcon, HeartIcon, StickyNoteIcon } from "lucide-react";
 
 function InstagramIcon({ className }: { className?: string }) {
   return (
     <svg
+      className={className}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
-      aria-hidden
+      aria-hidden="true"
     >
       <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
       <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
@@ -42,6 +41,86 @@ function InstagramIcon({ className }: { className?: string }) {
     </svg>
   );
 }
+import { loyaltyConfig, mockClientProfiles } from "@/data/client-profiles";
+
+const s1 = {
+  fullName: "Feizhen Li",
+  initials: "FL",
+  gender: "Female",
+  location: "Los Angeles, CA",
+  loyaltyTier: "gold",
+  totalSessions: 8,
+  stylingGoal: "A workwear wardrobe",
+  bodyIssues: ["Stomach", "Something else"],
+  bodyIssueNotes: "Post partum and I have a large stomach I'd like to hide",
+  bodyType: "Pear",
+  highlightAreas: ["Shoulders", "Waist"],
+  style: ["Classic", "Minimalist", "Polished"],
+  styleIcons: ["Meghan Markle", "Amal Clooney"],
+  comfortZone: "A little outside",
+  typicallyWears: "Mostly jeans and pants",
+  sizes: { Tops: "M", Bottoms: "8", Dresses: "8", Shoes: "7.5", Outerwear: "M" },
+  budgets: { Tops: "$50–$100", Bottoms: "$60–$120", Dresses: "$100–$200", Shoes: "$80–$150", Accessories: "$30–$80" },
+  fitPreferences: { top: "Relaxed", bottom: "Straight" },
+  occupation: "Marketing Manager",
+  dressCode: "Denim Friendly",
+  colorsLike: ["Navy", "Black", "White", "Camel", "Olive"],
+  colorsDislike: ["Neon", "Hot Pink", "Orange"],
+  fabricsDislike: ["Polyester", "Sequins"],
+  patternsDislike: ["Large florals", "Animal print"],
+  denimFit: ["Straight", "Wide Leg"],
+  dressStyles: ["Midi", "Wrap"],
+  heelPreference: "Never",
+  jewelryType: ["Gold"],
+  socialLinks: { instagram: "@feizhen.style", pinterest: "feizhen_d", facebook: "" },
+  favoriteLooks: ["Work Chic Board #2 — Look 3", "Weekend Casual — Look 1"],
+  previousBoards: [
+    { name: "Work Chic Moodboard", type: "mood" },
+    { name: "Work Chic Style Board #1", type: "style" },
+    { name: "Work Chic Style Board #2", type: "style" },
+  ],
+  photos: [],
+  notes: "Prefers shopping from Nordstrom and Revolve. Has a capsule wardrobe mindset. Doesn't like oversized fits on top.",
+};
+
+const s2 = {
+  fullName: "Crystal Stokey",
+  initials: "CS",
+  gender: "Female",
+  location: "Los Angeles, CA",
+  loyaltyTier: "silver",
+  totalSessions: 4,
+  stylingGoal: "Date night and weekend outfits",
+  bodyIssues: ["Arms"],
+  bodyIssueNotes: "Prefers sleeves or structured shoulders",
+  bodyType: "Hourglass",
+  highlightAreas: ["Waist", "Legs"],
+  style: ["Bohemian", "Romantic"],
+  styleIcons: ["Sienna Miller", "Vanessa Hudgens"],
+  comfortZone: "Stay close",
+  typicallyWears: "Dresses and skirts",
+  sizes: { Tops: "S", Bottoms: "4", Dresses: "4", Shoes: "8", Outerwear: "S" },
+  budgets: { Tops: "$40–$80", Bottoms: "$50–$100", Dresses: "$80–$160", Shoes: "$60–$120", Accessories: "$20–$60" },
+  fitPreferences: { top: "Fitted", bottom: "Slim" },
+  occupation: "Freelance Photographer",
+  dressCode: "Casual Creative",
+  colorsLike: ["Burnt Orange", "Olive", "Warm Brown", "Rust"],
+  colorsDislike: ["Cool Gray", "Bright Blue"],
+  fabricsDislike: ["Leather"],
+  patternsDislike: ["Stripes"],
+  denimFit: ["Skinny", "Flare"],
+  dressStyles: ["Maxi", "Mini"],
+  heelPreference: "Sometimes — low block heels",
+  jewelryType: ["Gold", "Mixed metals"],
+  socialLinks: { instagram: "@crystal.stokey", pinterest: "cstokey" },
+  favoriteLooks: ["Boho Date Night — Look 2"],
+  previousBoards: [
+    { name: "Boho Date Night Moodboard", type: "mood" },
+    { name: "Weekend Vibes Board", type: "style" },
+  ],
+  photos: [],
+  notes: "Loves earthy tones. Very specific about arm coverage.",
+};
 
 /* ─── Helpers ─── */
 function Detail({ label, value }: { label: string; value: React.ReactNode }) {
@@ -75,28 +154,21 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 /* ─── Component ─── */
+type ClientProfileType = (typeof mockClientProfiles)[string];
+
 interface ClientDetailPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sessionId: string | null;
-  /**
-   * Preferred identifier for the real-data fetch. When provided, the panel
-   * hits `/api/stylist/clients/[clientId]/profile` to resolve a full
-   * ClientProfileView. Falls back to the legacy mockClientProfiles[sessionId]
-   * lookup if omitted or the fetch fails, so the Dashboard's placeholder
-   * rendering still works while the profile is in flight.
-   */
+  /** When provided, panel fetches the real client profile from /api/stylist/clients/[clientId]/profile. */
   clientId?: string | null;
 }
 
-export default function ClientDetailPanel({
-  open,
-  onOpenChange,
-  sessionId,
-  clientId,
-}: ClientDetailPanelProps) {
+export default function ClientDetailPanel({ open, onOpenChange, sessionId, clientId }: ClientDetailPanelProps) {
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState("");
+  const [fetchedProfile, setFetchedProfile] = useState<ClientProfileType | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const sections = [
     { id: "needs", label: "Needs" },
@@ -116,37 +188,26 @@ export default function ClientDetailPanel({
     }
   };
 
-  // Tagging the fetched profile with its source clientId avoids the
-  // setState-in-effect reset pattern that React Compiler rejects. When
-  // clientId changes, the tag no longer matches and the mock falls through
-  // until the new fetch lands.
-  const [fetchedProfile, setFetchedProfile] = useState<
-    { clientId: string; profile: ClientProfileView } | null
-  >(null);
+  // Lazy-fetch real client profile when sheet opens with a real clientId.
+  // Falls back to mockClientProfiles[sessionId] for legacy callers (the
+  // LookCreator builder + dashboard pre-real-data calls).
   useEffect(() => {
     if (!open || !clientId) return;
-    let alive = true;
-    void (async () => {
-      try {
-        const res = await fetch(`/api/stylist/clients/${clientId}/profile`);
-        if (!res.ok) return;
-        const data = (await res.json()) as { profile: ClientProfileView };
-        if (alive) setFetchedProfile({ clientId, profile: data.profile });
-      } catch {
-        /* fall back to mock */
-      }
-    })();
+    let cancelled = false;
+    fetch(`/api/stylist/clients/${clientId}/profile`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { profile?: ClientProfileType } | null) => {
+        if (cancelled || !data?.profile) return;
+        setFetchedProfile(data.profile);
+      })
+      .catch(() => {});
     return () => {
-      alive = false;
+      cancelled = true;
     };
   }, [open, clientId]);
 
-  const liveProfile =
-    fetchedProfile && fetchedProfile.clientId === clientId
-      ? fetchedProfile.profile
-      : null;
   const profile =
-    liveProfile ?? (sessionId ? mockClientProfiles[sessionId] : null);
+    fetchedProfile ?? (sessionId ? mockClientProfiles[sessionId] : null);
 
   if (!profile) {
     return (
@@ -161,6 +222,7 @@ export default function ClientDetailPanel({
   }
 
   const loyalty = loyaltyConfig[profile.loyaltyTier];
+  const LoyaltyIcon = loyalty.icon;
 
   const hasSocial = profile.socialLinks.instagram || profile.socialLinks.pinterest || profile.socialLinks.facebook;
 
@@ -240,7 +302,7 @@ export default function ClientDetailPanel({
 
         <ScrollArea className="h-[calc(100vh-15.5rem)]">
           <Accordion
-            multiple
+            type="multiple"
             defaultValue={["needs", "body", "style", "sizes", "colors"]}
             className="px-6"
           >
@@ -266,7 +328,7 @@ export default function ClientDetailPanel({
                   <Tags items={profile.bodyIssues} variant="destructive" />
                   {profile.bodyIssueNotes && (
                     <p className="font-body text-xs text-muted-foreground mt-1.5 italic">
-                      &ldquo;{profile.bodyIssueNotes}&rdquo;
+                      &quot;{profile.bodyIssueNotes}&quot;
                     </p>
                   )}
                 </div>
@@ -366,7 +428,7 @@ export default function ClientDetailPanel({
                     <div className="space-y-1">
                       {profile.favoriteLooks.map((look) => (
                         <div key={look} className="flex items-center gap-1.5">
-                          <Heart className="h-3 w-3 text-accent shrink-0" />
+                          <HeartIcon className="h-3 w-3 text-accent shrink-0" />
                           <span className="font-body text-sm">{look}</span>
                         </div>
                       ))}
@@ -399,13 +461,13 @@ export default function ClientDetailPanel({
                   <div className="grid grid-cols-3 gap-2">
                     {profile.photos.map((url, i) => (
                       <div key={i} className="aspect-square rounded-sm bg-muted overflow-hidden">
-                        <img src={url} alt={`Client photo ${i + 1}`} className="w-full h-full object-cover" />
+                        <Image src={url} alt={`Client photo ${i + 1}`} width={200} height={200} unoptimized className="w-full h-full object-cover" />
                       </div>
                     ))}
                   </div>
                 ) : (
                   <div className="flex flex-col items-center py-4 text-muted-foreground">
-                    <Camera className="h-8 w-8 mb-2 opacity-40" />
+                    <CameraIcon className="h-8 w-8 mb-2 opacity-40" />
                     <p className="font-body text-xs">No photos uploaded yet</p>
                   </div>
                 )}
@@ -455,7 +517,7 @@ export default function ClientDetailPanel({
                       className="h-7 mt-3 rounded-sm font-body text-xs gap-1"
                       onClick={() => { setNotesDraft(profile.notes); setEditingNotes(true); }}
                     >
-                      <StickyNote className="h-3 w-3" />
+                      <StickyNoteIcon className="h-3 w-3" />
                       {profile.notes ? "Edit notes" : "Add notes"}
                     </Button>
                   </div>

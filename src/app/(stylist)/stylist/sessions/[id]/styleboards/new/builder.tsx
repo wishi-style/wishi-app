@@ -1,126 +1,91 @@
 "use client";
 
-// LookCreator — drag-drop canvas for stylists composing a styleboard.
-// Source panel (inventory / closet / inspiration / web URL) on the left,
-// 1:1 canvas on the right. Items persist x/y on drop; save dialog collects
-// title + description + tags and fires /send.
-//
-// Scope-wise a condensed version of Loveable's 1552-LOC LookCreator — the
-// advanced affordances (bg-removal, crop, flip, retailer/availability/color
-// filters, favorites, "previous looks" tab, keyboard canvas-size shortcuts)
-// are tracked in WISHI-REBUILD-PLAN.md under Phase 12 deferred follow-ups.
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import Image from "next/image";
-import {
-  ArrowLeftIcon,
-  SearchIcon,
-  Trash2Icon,
-  UserIcon,
-  SendIcon,
-  ShirtIcon,
-  StoreIcon,
-  SparklesIcon,
-  LayersIcon,
-  XIcon,
-  ArrowUpToLineIcon,
-  ArrowDownToLineIcon,
-  EraserIcon,
-  SlidersHorizontalIcon,
-  FlipHorizontalIcon,
-  FlipVerticalIcon,
-  ScissorsIcon,
-  HeartIcon,
-  Minimize2Icon,
-  SquareIcon,
-  Maximize2Icon,
-} from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  ArrowLeftIcon,
+  SearchIcon,
+  PlusIcon,
+  XIcon,
+  SendIcon,
+  Trash2Icon,
+  UserIcon,
+  ShirtIcon,
+  StoreIcon,
+  ShoppingBagIcon,
+  SparklesIcon,
+  LayersIcon,
+  ScissorsIcon,
+  EraserIcon,
+  FlipHorizontalIcon,
+  FlipVerticalIcon,
+  ArrowUpToLineIcon,
+  ArrowDownToLineIcon,
+  Loader2Icon,
+  CheckIcon,
+  Minimize2Icon,
+  SquareIcon,
+  Maximize2Icon,
+  HeartIcon,
+  ExternalLinkIcon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  SlidersHorizontalIcon,
+  ChevronDownIcon,
+} from "lucide-react";
+import { removeBackground } from "@/lib/removeBackground";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import ClientDetailPanel from "@/components/stylist/client-detail-panel";
+import { ProductDetailDialog } from "@/components/products/product-detail-dialog";
+import type { ProductItem } from "@/components/boards/styleboard";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Slider } from "@/components/ui/slider";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { loyaltyConfig } from "@/data/client-profiles";
 import { toast } from "sonner";
-import { SaveLookDialog } from "@/components/stylist/save-look-dialog";
-import type {
-  BoardItem,
-  BoardItemSource,
-  ClosetItem,
-  InspirationPhoto,
-} from "@/generated/prisma/client";
-import type {
-  FilterValuesResponse,
-  ProductSearchDoc,
-  SearchQueryDto,
-  SearchResponse,
-} from "@/lib/inventory/types";
 
-type Tab = "inventory" | "closet" | "inspiration" | "previous";
+type SourceTab = "shop" | "closet" | "inspiration" | "previous" | "store";
+type Category = "all" | "tops" | "bottoms" | "outerwear" | "accessories" | "shoes";
 
-interface PreviousLookItem {
+type Availability = "in-stock" | "preorder" | "sale" | "final-sale";
+
+type InspoStyle = "boho" | "classic" | "chic" | "minimal" | "edgy" | "romantic" | "streetwear" | "preppy";
+type InspoBodyType = "petite" | "tall" | "curvy" | "plus-size" | "athletic" | "pear" | "hourglass" | "apple";
+
+interface InventoryItem {
   id: string;
-  boardId: string;
-  boardTitle: string | null;
-  boardSentAt: string;
-  source: string;
-  inventoryProductId: string | null;
-  closetItemId: string | null;
-  inspirationPhotoId: string | null;
-  webItemUrl: string | null;
-  imageUrl: string | null;
-  label: string | null;
-  brand: string | null;
+  image: string;
+  brand: string;
+  name: string;
+  price?: string;
+  category: Exclude<Category, "all">;
+  subcategory?: string;
+  retailer?: string;
+  retailerUrl?: string;
+  availability?: Availability;
+  colors?: string[];
+  sizes?: string[];
+  styles?: InspoStyle[];
+  bodyTypes?: InspoBodyType[];
+  designer?: string;
+  season?: "spring" | "summer" | "fall" | "winter";
 }
 
-interface Props {
-  boardId: string;
-  sessionId: string;
-  isRevision: boolean;
-  clientId: string;
-  clientName: string;
-  initialItems: BoardItem[];
-  closetItems: ClosetItem[];
-  inspiration: InspirationPhoto[];
-}
-
-interface CanvasItem {
-  id: string;
-  source: BoardItemSource;
-  inventoryProductId: string | null;
-  imageUrl: string | null;
-  label: string | null;
-  x: number; // percent 0-100
-  y: number; // percent 0-100
-  zIndex: number;
-  flipH: boolean;
-  flipV: boolean;
-  crop: { top: number; right: number; bottom: number; left: number } | null;
-}
-
-type CanvasSize = "min" | "small" | "large";
-const canvasSizeClass: Record<CanvasSize, string> = {
-  min: "max-w-[480px]",
-  small: "max-w-[640px]",
-  large: "max-w-[880px]",
-};
-
-const MIN_ITEMS = 3;
-const MAX_ITEMS = 12;
-const TILE_PERCENT = 22; // item tile width/height as % of canvas
-
-// Loveable HEAD filter taxonomies. Hardcoded here because tastegraph's
-// FilterValuesResponse doesn't expose Style / BodyType / Tops subcats /
-// Availability facets yet — logged as BACKEND-GAP-E/F/G/H in the audit.
 const TOPS_SUBCATEGORIES = [
   "Active", "Black", "Blouses", "Boho", "Bralette", "Button Up Shirts",
   "Camisole", "Cropped", "Embellished & Sequined", "Floral", "Graphic Tees",
@@ -128,14 +93,25 @@ const TOPS_SUBCATEGORIES = [
   "Puff Sleeve", "Tanks", "Tees", "White",
 ];
 
-const AVAILABILITY_OPTIONS = [
-  { key: "in-stock", label: "In stock" },
-  { key: "preorder", label: "Preorder" },
-  { key: "sale", label: "Sale" },
-  { key: "final-sale", label: "Final sale" },
+const SUBCATEGORIES_BY_CATEGORY: Partial<Record<Exclude<Category, "all">, string[]>> = {
+  tops: TOPS_SUBCATEGORIES,
+};
+
+const COLOR_OPTIONS: { key: string; label: string; hex: string }[] = [
+  { key: "white", label: "White", hex: "#FFFFFF" },
+  { key: "black", label: "Black", hex: "#111111" },
+  { key: "grey", label: "Grey", hex: "#9CA3AF" },
+  { key: "beige", label: "Beige", hex: "#D9C3A1" },
+  { key: "brown", label: "Brown", hex: "#7A4E2D" },
+  { key: "navy", label: "Navy", hex: "#1F2A44" },
+  { key: "blue", label: "Blue", hex: "#3B82F6" },
+  { key: "green", label: "Green", hex: "#4B7F52" },
+  { key: "pink", label: "Pink", hex: "#F4C2C2" },
 ];
 
-const INSPO_STYLE_OPTIONS = [
+const SIZE_OPTIONS = ["XS", "S", "M", "L", "XL", "One size"];
+
+const INSPO_STYLE_OPTIONS: { key: InspoStyle; label: string }[] = [
   { key: "boho", label: "Boho" },
   { key: "classic", label: "Classic" },
   { key: "chic", label: "Chic" },
@@ -146,7 +122,7 @@ const INSPO_STYLE_OPTIONS = [
   { key: "preppy", label: "Preppy" },
 ];
 
-const INSPO_BODY_TYPE_OPTIONS = [
+const INSPO_BODY_TYPE_OPTIONS: { key: InspoBodyType; label: string }[] = [
   { key: "petite", label: "Petite" },
   { key: "tall", label: "Tall" },
   { key: "curvy", label: "Curvy" },
@@ -157,173 +133,254 @@ const INSPO_BODY_TYPE_OPTIONS = [
   { key: "apple", label: "Apple" },
 ];
 
-const PRICE_PRESETS: { key: "any" | "u250" | "250-1000" | "1000+"; label: string }[] = [
-  { key: "any", label: "Any" },
-  { key: "u250", label: "Under $250" },
-  { key: "250-1000", label: "$250 – $1K" },
-  { key: "1000+", label: "$1K+" },
+const tabs: { key: SourceTab; label: string; icon: typeof ShirtIcon }[] = [
+  { key: "shop", label: "Shop", icon: StoreIcon },
+  { key: "store", label: "Store", icon: ShoppingBagIcon },
+  { key: "closet", label: "Client closet", icon: ShirtIcon },
+  { key: "inspiration", label: "Inspiration", icon: SparklesIcon },
+  { key: "previous", label: "Previous Boards", icon: LayersIcon },
 ];
 
-function toCanvasItem(item: BoardItem, fallbackIndex: number): CanvasItem {
-  const crop =
-    item.cropTop != null ||
-    item.cropRight != null ||
-    item.cropBottom != null ||
-    item.cropLeft != null
-      ? {
-          top: item.cropTop ?? 0,
-          right: item.cropRight ?? 0,
-          bottom: item.cropBottom ?? 0,
-          left: item.cropLeft ?? 0,
-        }
-      : null;
-  return {
-    id: item.id,
-    source: item.source,
-    inventoryProductId: item.inventoryProductId ?? null,
-    imageUrl: item.webItemImageUrl ?? null,
-    label:
-      item.webItemTitle ?? item.inventoryProductId ?? item.webItemUrl ?? null,
-    x: item.x ?? 20 + (fallbackIndex % 4) * 20,
-    y: item.y ?? 20 + Math.floor(fallbackIndex / 4) * 22,
-    zIndex: item.zIndex ?? fallbackIndex,
-    flipH: item.flipH ?? false,
-    flipV: item.flipV ?? false,
-    crop,
-  };
+const categories: { key: Category; label: string }[] = [
+  { key: "all", label: "All items" },
+  { key: "tops", label: "Tops" },
+  { key: "bottoms", label: "Bottoms" },
+  { key: "outerwear", label: "Outerwear" },
+  { key: "accessories", label: "Accessories" },
+  { key: "shoes", label: "Shoes" },
+];
+
+interface CanvasItem {
+  uid: string;
+  itemId: string;
+  image: string;
+  originalImage: string;
+  x: number; // percent 0-100
+  y: number; // percent 0-100
+  flipH: boolean;
+  flipV: boolean;
+  bgRemoved: boolean;
+  bgRemoving?: boolean;
+  crop?: { top: number; right: number; bottom: number; left: number }; // percent insets
+}
+
+interface ClientProfile {
+  fullName?: string;
+  initials?: string;
+  loyaltyTier?: string;
+  profilePhotoUrl?: string;
+  sizes?: Record<string, string>;
+  budgets?: Record<string, string>;
+}
+
+interface StyleboardBuilderProps {
+  boardId: string;
+  sessionId: string;
+  isRevision: boolean;
+  clientId: string;
+  clientName: string;
+  clientAvatarUrl: string | null;
+  clientLoyaltyTier: string | null;
+  initialItems: unknown[];
+  clientSizesByCategory: Record<string, string>;
+  clientBudgetsByCategory: Record<string, [number, number]>;
+  directSaleProductIds: string[];
+  shopItems: InventoryItem[];
+  closetItems: InventoryItem[];
+  cartItems: InventoryItem[];
+  purchasedItems: InventoryItem[];
+  inspirationItems: InventoryItem[];
+  previousMoodBoardItems: InventoryItem[];
+  previousStyleBoardItems: InventoryItem[];
+  storeItems: InventoryItem[];
+  clientProfile?: ClientProfile;
 }
 
 export function StyleboardBuilder({
   boardId,
   sessionId,
-  isRevision,
-  clientId,
   clientName,
-  initialItems,
+  shopItems,
   closetItems,
-  inspiration,
-}: Props) {
+  cartItems,
+  purchasedItems,
+  inspirationItems,
+  previousMoodBoardItems,
+  previousStyleBoardItems,
+  storeItems,
+  clientProfile,
+}: StyleboardBuilderProps) {
   const router = useRouter();
-  const canvasRef = useRef<HTMLDivElement>(null);
+  const [tab, setTab] = useState<SourceTab>("shop");
+  const [category, setCategory] = useState<Category>("all");
+  const [selectedSubcategories, setSelectedSubcategories] = useState<Set<string>>(new Set());
 
-  const [canvas, setCanvas] = useState<CanvasItem[]>(() =>
-    initialItems.map((it, idx) => {
-      const base = toCanvasItem(it, idx);
-      // Hydrate image url from joined sources for existing drafts
-      if (it.source === "CLOSET") {
-        const c = closetItems.find((x) => x.id === it.closetItemId);
-        if (c) {
-          base.imageUrl = c.url;
-          base.label = c.name ?? c.designer ?? null;
-        }
-      } else if (it.source === "INSPIRATION_PHOTO") {
-        const i = inspiration.find((x) => x.id === it.inspirationPhotoId);
-        if (i) {
-          base.imageUrl = i.url;
-          base.label = i.title ?? null;
-        }
-      } else if (it.source === "WEB_ADDED") {
-        base.imageUrl = it.webItemImageUrl;
-        base.label = it.webItemTitle ?? it.webItemUrl ?? null;
-      }
-      return base;
-    }),
-  );
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("inventory");
+  const toggleSubcategory = (s: string) => {
+    setSelectedSubcategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(s)) next.delete(s);
+      else next.add(s);
+      return next;
+    });
+  };
   const [search, setSearch] = useState("");
-  const [inventoryResults, setInventoryResults] = useState<ProductSearchDoc[]>([]);
+  const [priceRange, setPriceRange] = useState<string>("any");
+  const [gridCols, setGridCols] = useState<3 | 4 | 6>(4);
+  const [canvas, setCanvas] = useState<CanvasItem[]>([]);
+  const [selectedUid, setSelectedUid] = useState<string | null>(null);
+  const [cropUid, setCropUid] = useState<string | null>(null);
+  const [cropDraft, setCropDraft] = useState<{ top: number; right: number; bottom: number; left: number }>({ top: 0, right: 0, bottom: 0, left: 0 });
+  const [clientInfoOpen, setClientInfoOpen] = useState(false);
+  const [canvasSize, setCanvasSize] = useState<"min" | "small" | "large">("min");
+  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [selectedRetailers, setSelectedRetailers] = useState<Set<string>>(new Set());
+  const [selectedAvailability, setSelectedAvailability] = useState<Set<Availability>>(new Set());
+  const [selectedColors, setSelectedColors] = useState<Set<string>>(new Set());
+  const [colorOpen, setColorOpen] = useState(false);
+  const [sizeOpen, setSizeOpen] = useState(false);
+  const [budgetOpen, setBudgetOpen] = useState(false);
+  const [selectedSizes, setSelectedSizes] = useState<Set<string>>(new Set());
+  const [budget, setBudget] = useState<[number, number]>([0, 5000]);
+  const [selectedInspoStyles, setSelectedInspoStyles] = useState<Set<InspoStyle>>(new Set());
+  const [selectedInspoBodyTypes, setSelectedInspoBodyTypes] = useState<Set<InspoBodyType>>(new Set());
+
+  // Closet-specific filters
+  const [closetColorOpen, setClosetColorOpen] = useState(false);
+  const [closetDesignerOpen, setClosetDesignerOpen] = useState(false);
+  const [closetSeasonOpen, setClosetSeasonOpen] = useState(false);
+  const [closetSelectedColors, setClosetSelectedColors] = useState<Set<string>>(new Set());
+  const [closetSelectedDesigners, setClosetSelectedDesigners] = useState<Set<string>>(new Set());
+  const [closetSelectedSeasons, setClosetSelectedSeasons] = useState<Set<string>>(new Set());
+  const [closetSubTab, setClosetSubTab] = useState<"closet" | "cart" | "purchased">("closet");
+  const [previousSubTab, setPreviousSubTab] = useState<"mood" | "style">("mood");
+  const clientFirstName = clientName.split(" ")[0] || clientName;
+  const closetDesigners = useMemo(
+    () => Array.from(new Set(closetItems.map((i) => i.designer).filter(Boolean) as string[])).sort(),
+    [closetItems]
+  );
+  const SEASON_OPTIONS: { key: "spring" | "summer" | "fall" | "winter"; label: string }[] = [
+    { key: "spring", label: "Spring" },
+    { key: "summer", label: "Summer" },
+    { key: "fall", label: "Fall" },
+    { key: "winter", label: "Winter" },
+  ];
+  const toggleSetItem = <T,>(setter: React.Dispatch<React.SetStateAction<Set<T>>>, value: T) => {
+    setter((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  };
+
+  const toggleInspoStyle = (s: InspoStyle) => {
+    setSelectedInspoStyles((prev) => {
+      const next = new Set(prev);
+      if (next.has(s)) next.delete(s);
+      else next.add(s);
+      return next;
+    });
+  };
+  const toggleInspoBodyType = (b: InspoBodyType) => {
+    setSelectedInspoBodyTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(b)) next.delete(b);
+      else next.add(b);
+      return next;
+    });
+  };
+
+  // Auto-close Size section ~900ms after the user stops adjusting selections
+  useEffect(() => {
+    if (!sizeOpen) return;
+    const t = setTimeout(() => setSizeOpen(false), 900);
+    return () => clearTimeout(t);
+  }, [selectedSizes, sizeOpen]);
+
+  // Auto-close Budget section ~900ms after the user stops adjusting the slider
+  useEffect(() => {
+    if (!budgetOpen) return;
+    const t = setTimeout(() => setBudgetOpen(false), 900);
+    return () => clearTimeout(t);
+  }, [budget, budgetOpen]);
+
+  const toggleAvailability = (a: Availability) => {
+    setSelectedAvailability((prev) => {
+      const next = new Set(prev);
+      if (next.has(a)) next.delete(a);
+      else next.add(a);
+      return next;
+    });
+  };
+  const toggleColor = (c: string) => {
+    setSelectedColors((prev) => {
+      const next = new Set(prev);
+      if (next.has(c)) next.delete(c);
+      else next.add(c);
+      return next;
+    });
+  };
+  const toggleSize = (s: string) => {
+    setSelectedSizes((prev) => {
+      const next = new Set(prev);
+      if (next.has(s)) next.delete(s);
+      else next.add(s);
+      return next;
+    });
+  };
+  const [pdpItem, setPdpItem] = useState<InventoryItem | null>(null);
+
+  // Save dialog state
   const [saveOpen, setSaveOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [canvasSize, setCanvasSize] = useState<CanvasSize>("small");
-  const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set());
-  const [cropTargetId, setCropTargetId] = useState<string | null>(null);
-  const [previousScope, setPreviousScope] = useState<"all" | "client">("client");
-  const [previousItems, setPreviousItems] = useState<PreviousLookItem[]>([]);
-  const [previousLoading, setPreviousLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveDescription, setSaveDescription] = useState("");
+  const [lookName, setLookName] = useState("");
+  const [lookNameTouched, setLookNameTouched] = useState(false);
+  const [saveDescTouched, setSaveDescTouched] = useState(false);
+  const [saveTags, setSaveTags] = useState<{ event: string; bodyType: string; fitPreference: string; highlights: string }>({
+    event: "",
+    bodyType: "",
+    fitPreference: "",
+    highlights: "",
+  });
 
-  // Advanced filter state — populated from /api/products/filters, used by
-  // runInventorySearch to narrow the tastegraph query.
-  const [filterValues, setFilterValues] = useState<FilterValuesResponse | null>(null);
-  const [selectedMerchants, setSelectedMerchants] = useState<string[]>([]);
-  const [selectedColors, setSelectedColors] = useState<string[]>([]);
-  const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
-  const [priceRange, setPriceRange] = useState<[number, number]>([0, 5000]);
-  const [inStockOnly, setInStockOnly] = useState(true);
-  const [filtersOpen, setFiltersOpen] = useState(true);
-  // Loveable HEAD adds rebuild-side filter taxonomies that tastegraph
-  // doesn't expose as facets (logged as BACKEND-GAP-E/F/G/H). Hardcoding
-  // them here keeps parity until tastegraph exposes them.
-  const [selectedAvailability, setSelectedAvailability] = useState<string[]>([]);
-  const [selectedInspoStyles, setSelectedInspoStyles] = useState<string[]>([]);
-  const [selectedInspoBodyTypes, setSelectedInspoBodyTypes] = useState<string[]>([]);
-  const [selectedTopsSubs, setSelectedTopsSubs] = useState<string[]>([]);
-  const [pricePreset, setPricePreset] = useState<"any" | "u250" | "250-1000" | "1000+">("any");
+  const shopRetailers = useMemo(() => {
+    const set = new Set<string>();
+    shopItems.forEach((it) => it.retailer && set.add(it.retailer));
+    return Array.from(set).sort();
+  }, [shopItems]);
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const res = await fetch("/api/products/filters");
-        if (res.ok) {
-          const data = (await res.json()) as FilterValuesResponse;
-          setFilterValues(data);
-        }
-      } catch {
-        /* non-fatal; filters just won't populate */
+  const toggleRetailer = (retailer: string) => {
+    setSelectedRetailers((prev) => {
+      const next = new Set(prev);
+      if (next.has(retailer)) next.delete(retailer);
+      else next.add(retailer);
+      return next;
+    });
+  };
+
+  const toggleFavorite = (itemId: string, brand: string, name: string) => {
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+        toast(`Removed ${brand} ${name} from favorites`);
+      } else {
+        next.add(itemId);
+        toast.success(`Saved ${brand} ${name} to favorites`);
       }
-    })();
-  }, []);
+      return next;
+    });
+  };
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const dragData = useRef<{ image: string; itemId: string } | null>(null);
+  const movingUid = useRef<string | null>(null);
 
-  // Auto-populate the Shop tab with a default browse on mount so stylists
-  // see inventory immediately, matching Loveable's behavior (Loveable
-  // hardcodes 12 products; the rebuild's tastegraph proxy supports the
-  // same default browse via an empty-query search).
+  // Keyboard shortcuts: 1/2/3 to switch canvas size (ignored while typing)
   useEffect(() => {
-    void (async () => {
-      try {
-        const res = await fetch("/api/products", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ inStockOnly: true, pageSize: 24 }),
-        });
-        if (res.ok) {
-          const data = (await res.json()) as SearchResponse;
-          setInventoryResults(data.results ?? []);
-        }
-      } catch {
-        /* non-fatal; user can hit Search manually */
-      }
-    })();
-  }, []);
-
-  // Fetch the stylist's favorited items once so the source-tile heart
-  // reflects prior state.
-  useEffect(() => {
-    void (async () => {
-      try {
-        const res = await fetch("/api/favorites/items");
-        if (res.ok) {
-          const data = (await res.json()) as {
-            items: Array<{ inventoryProductId: string | null }>;
-          };
-          setFavoritedIds(
-            new Set(
-              data.items
-                .map((f) => f.inventoryProductId)
-                .filter((id): id is string => !!id),
-            ),
-          );
-        }
-      } catch {
-        /* non-fatal */
-      }
-    })();
-  }, []);
-
-  // Keyboard shortcuts: 1/2/3 switch canvas size. Ignored when the user is
-  // typing in an input / textarea / search field.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
+    const handler = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
       if (
@@ -335,526 +392,432 @@ export function StyleboardBuilder({
       ) {
         return;
       }
-      if (e.key === "1") setCanvasSize("min");
-      else if (e.key === "2") setCanvasSize("small");
-      else if (e.key === "3") setCanvasSize("large");
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+      if (e.key === "1") {
+        setCanvasSize("min");
+        toast("Canvas: minimize");
+      } else if (e.key === "2") {
+        setCanvasSize("small");
+        toast("Canvas: small");
+      } else if (e.key === "3") {
+        setCanvasSize("large");
+        toast("Canvas: large");
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // Fetch previous looks when the tab opens or scope toggles.
-  useEffect(() => {
-    if (tab !== "previous") return;
-    let alive = true;
-    setPreviousLoading(true);
-    const qs = previousScope === "client" ? `?clientId=${clientId}` : "";
-    void (async () => {
-      try {
-        const res = await fetch(`/api/stylist/previous-looks${qs}`);
-        if (!res.ok) {
-          if (alive) setPreviousItems([]);
-          return;
-        }
-        const data = (await res.json()) as { items: PreviousLookItem[] };
-        if (alive) setPreviousItems(data.items ?? []);
-      } finally {
-        if (alive) setPreviousLoading(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [tab, previousScope, clientId]);
-
-  async function addPreviousLookItem(it: PreviousLookItem) {
-    if (it.inventoryProductId) {
-      await addItem(
-        "INVENTORY",
-        { inventoryProductId: it.inventoryProductId },
-        it.imageUrl,
-        it.label,
-      );
-    } else if (it.closetItemId) {
-      await addItem(
-        "CLOSET",
-        { closetItemId: it.closetItemId },
-        it.imageUrl,
-        it.label,
-      );
-    } else if (it.inspirationPhotoId) {
-      await addItem(
-        "INSPIRATION_PHOTO",
-        { inspirationPhotoId: it.inspirationPhotoId },
-        it.imageUrl,
-        it.label,
-      );
-    } else if (it.webItemUrl) {
-      await addItem(
-        "WEB_ADDED",
-        {
-          webItemUrl: it.webItemUrl,
-          webItemImageUrl: it.imageUrl,
-          webItemTitle: it.label,
-          webItemBrand: it.brand,
-        },
-        it.imageUrl,
-        it.label,
-      );
+  const sourceItems = useMemo(() => {
+    switch (tab) {
+      case "shop": return shopItems;
+      case "store": return storeItems;
+      case "closet":
+        return closetSubTab === "cart" ? cartItems : closetSubTab === "purchased" ? purchasedItems : closetItems;
+      case "inspiration": return inspirationItems;
+      case "previous":
+        return previousSubTab === "style" ? previousStyleBoardItems : previousMoodBoardItems;
     }
-  }
+  }, [tab, closetSubTab, previousSubTab, shopItems, storeItems, cartItems, purchasedItems, closetItems, inspirationItems, previousStyleBoardItems, previousMoodBoardItems]);
 
-  async function toggleFavorite(productId: string) {
-    const had = favoritedIds.has(productId);
-    const next = new Set(favoritedIds);
-    if (had) next.delete(productId);
-    else next.add(productId);
-    setFavoritedIds(next);
-    try {
-      if (had) {
-        await fetch(
-          `/api/favorites/items?inventoryProductId=${encodeURIComponent(productId)}`,
-          { method: "DELETE" },
-        );
-      } else {
-        await fetch("/api/favorites/items", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ inventoryProductId: productId }),
-        });
+  const filtered = useMemo(() => {
+    return sourceItems.filter((it) => {
+      if (tab === "shop" && favoritesOnly && !favorites.has(it.id)) return false;
+      if (tab === "shop" && selectedRetailers.size > 0 && (!it.retailer || !selectedRetailers.has(it.retailer))) return false;
+      if (tab === "shop" && selectedAvailability.size > 0 && (!it.availability || !selectedAvailability.has(it.availability))) return false;
+      if (tab === "shop" && selectedColors.size > 0 && (!it.colors || !it.colors.some((c) => selectedColors.has(c)))) return false;
+      if (tab === "shop" && selectedSizes.size > 0 && (!it.sizes || !it.sizes.some((s) => selectedSizes.has(s)))) return false;
+      if (tab === "inspiration" && selectedInspoStyles.size > 0 && (!it.styles || !it.styles.some((s) => selectedInspoStyles.has(s)))) return false;
+      if (tab === "inspiration" && selectedInspoBodyTypes.size > 0 && (!it.bodyTypes || !it.bodyTypes.some((b) => selectedInspoBodyTypes.has(b)))) return false;
+      if (tab === "closet" && closetSelectedColors.size > 0 && (!it.colors || !it.colors.some((c) => closetSelectedColors.has(c)))) return false;
+      if (tab === "closet" && closetSelectedDesigners.size > 0 && (!it.designer || !closetSelectedDesigners.has(it.designer))) return false;
+      if (tab === "closet" && closetSelectedSeasons.size > 0 && (!it.season || !closetSelectedSeasons.has(it.season))) return false;
+      if (category !== "all" && it.category !== category) return false;
+      if (tab === "shop" && selectedSubcategories.size > 0 && (!it.subcategory || !selectedSubcategories.has(it.subcategory))) return false;
+      if (search && !`${it.brand} ${it.name}`.toLowerCase().includes(search.toLowerCase())) return false;
+      if (tab === "shop" && it.price) {
+        const value = Number(it.price.replace(/[^0-9.]/g, ""));
+        if (value < budget[0] || value > budget[1]) return false;
       }
-    } catch {
-      // Roll back local state if the network write failed.
-      setFavoritedIds(favoritedIds);
-    }
-  }
-
-  async function flipItem(id: string, axis: "h" | "v") {
-    const item = canvas.find((c) => c.id === id);
-    if (!item) return;
-    const nextFlipH = axis === "h" ? !item.flipH : item.flipH;
-    const nextFlipV = axis === "v" ? !item.flipV : item.flipV;
-    setCanvas((prev) =>
-      prev.map((c) =>
-        c.id === id ? { ...c, flipH: nextFlipH, flipV: nextFlipV } : c,
-      ),
-    );
-    await fetch(`/api/styleboards/${boardId}/items/${id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ flipH: nextFlipH, flipV: nextFlipV }),
-    });
-  }
-
-  async function applyCrop(
-    id: string,
-    crop: { top: number; right: number; bottom: number; left: number } | null,
-  ) {
-    setCanvas((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, crop } : c)),
-    );
-    await fetch(`/api/styleboards/${boardId}/items/${id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        cropTop: crop?.top ?? null,
-        cropRight: crop?.right ?? null,
-        cropBottom: crop?.bottom ?? null,
-        cropLeft: crop?.left ?? null,
-      }),
-    });
-  }
-
-  const dragData = useRef<{
-    source: BoardItemSource;
-    imageUrl: string | null;
-    label: string | null;
-    payload: Record<string, unknown>;
-  } | null>(null);
-  const movingId = useRef<string | null>(null);
-
-  const maxZ = useMemo(
-    () => canvas.reduce((m, c) => Math.max(m, c.zIndex), 0),
-    [canvas],
-  );
-
-  async function runInventorySearch() {
-    setError(null);
-    const dto: SearchQueryDto = {
-      query: search || undefined,
-      merchantIds: selectedMerchants.length ? selectedMerchants : undefined,
-      colors: selectedColors.length ? selectedColors : undefined,
-      sizes: selectedSizes.length ? selectedSizes : undefined,
-      // Price preset narrows minPrice/maxPrice via the bucket; falls back to
-      // explicit priceRange when the user has set a custom range too.
-      minPrice:
-        pricePreset === "250-1000"
-          ? Math.max(250, priceRange[0])
-          : pricePreset === "1000+"
-            ? Math.max(1000, priceRange[0])
-            : priceRange[0] > 0
-              ? priceRange[0]
-              : undefined,
-      maxPrice:
-        pricePreset === "u250"
-          ? Math.min(250, priceRange[1])
-          : pricePreset === "250-1000"
-            ? Math.min(1000, priceRange[1])
-            : priceRange[1] < 5000
-              ? priceRange[1]
-              : undefined,
-      inStockOnly: inStockOnly || undefined,
-      pageSize: 24,
-    };
-    const res = await fetch("/api/products", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(dto),
-    });
-    if (!res.ok) {
-      setError("Inventory search failed");
-      setInventoryResults([]);
-      return;
-    }
-    const data = (await res.json()) as SearchResponse;
-    setInventoryResults(data.results ?? []);
-  }
-
-  // Client-side post-filter applied to whatever tastegraph returned. Backs
-  // up server-side filters defensively + applies the few client-only
-  // dimensions tastegraph can't yet honor (Availability beyond in-stock,
-  // pricePreset bucketing). The remaining hardcoded chips
-  // (Tops subcategories, Inspo Style, Inspo BodyType) target facets the
-  // service does not yet surface (BACKEND-GAP-E/F/G/H) — chips render but
-  // do not narrow product results today; they wire up automatically once
-  // tastegraph exposes those fields.
-  const filteredInventoryResults = useMemo(() => {
-    return inventoryResults.filter((p) => {
-      if (selectedAvailability.length > 0) {
-        // Only "in-stock" is derivable from tastegraph today; the others
-        // (preorder/sale/final-sale) pass through unchanged so the chip
-        // doesn't make the grid empty when the backend can't filter.
-        if (selectedAvailability.includes("in-stock") && !p.in_stock) {
-          return false;
-        }
+      if (priceRange !== "any" && it.price) {
+        const value = Number(it.price.replace(/[^0-9.]/g, ""));
+        if (priceRange === "u250" && value >= 250) return false;
+        if (priceRange === "250-1000" && (value < 250 || value > 1000)) return false;
+        if (priceRange === "1000+" && value < 1000) return false;
       }
-      if (pricePreset === "u250" && p.min_price >= 250) return false;
-      if (pricePreset === "250-1000" && (p.min_price < 250 || p.min_price >= 1000)) return false;
-      if (pricePreset === "1000+" && p.min_price < 1000) return false;
       return true;
     });
-  }, [inventoryResults, selectedAvailability, pricePreset]);
+  }, [sourceItems, category, search, priceRange, tab, favoritesOnly, favorites, selectedRetailers, selectedAvailability, selectedColors, selectedSizes, budget, selectedInspoStyles, selectedInspoBodyTypes, selectedSubcategories, closetSelectedColors, closetSelectedDesigners, closetSelectedSeasons]);
 
-  function resetFilters() {
-    setSelectedMerchants([]);
-    setSelectedColors([]);
-    setSelectedSizes([]);
-    setSelectedAvailability([]);
-    setSelectedInspoStyles([]);
-    setSelectedInspoBodyTypes([]);
-    setSelectedTopsSubs([]);
-    setPriceRange([0, 5000]);
-    setPricePreset("any");
-    setInStockOnly(true);
-  }
+  const removeSetItem = <T,>(setter: React.Dispatch<React.SetStateAction<Set<T>>>, value: T) => {
+    setter((prev) => {
+      const next = new Set(prev);
+      next.delete(value);
+      return next;
+    });
+  };
 
-  const activeFilterCount =
-    selectedMerchants.length +
-    selectedColors.length +
-    selectedSizes.length +
-    selectedAvailability.length +
-    selectedTopsSubs.length +
-    selectedInspoStyles.length +
-    selectedInspoBodyTypes.length +
-    (priceRange[0] > 0 || priceRange[1] < 5000 ? 1 : 0) +
-    (pricePreset !== "any" ? 1 : 0) +
-    (inStockOnly ? 0 : 1); // in-stock default is ON, so only count off as "changed"
-
-  // Active filter chip bar — Loveable HEAD shows applied filters as
-  // dismissible chips below the search row with a "Clear all" affordance.
-  // Each chip lists the human-readable label + an X handler that removes
-  // just that one filter; the parent "Reset" still clears everything.
-  type ActiveChip = { key: string; label: string; remove: () => void };
-  const activeChips: ActiveChip[] = [];
-  for (const m of selectedMerchants) {
-    const meta = filterValues?.merchants.find((x) => x.id === m);
-    activeChips.push({
-      key: `m-${m}`,
-      label: meta?.name ?? m,
-      remove: () => setSelectedMerchants((s) => s.filter((x) => x !== m)),
+  type ActiveFilter = { id: string; label: string; swatch?: string; onRemove: () => void };
+  const activeFilters = useMemo<ActiveFilter[]>(() => {
+    const list: ActiveFilter[] = [];
+    if (search.trim()) {
+      list.push({ id: "search", label: `Search: "${search.trim()}"`, onRemove: () => setSearch("") });
+    }
+    if (category !== "all") {
+      const c = categories.find((x) => x.key === category);
+      list.push({ id: "category", label: c?.label ?? category, onRemove: () => { setCategory("all"); setSelectedSubcategories(new Set()); } });
+    }
+    selectedSubcategories.forEach((s) => {
+      list.push({ id: `sub-${s}`, label: s, onRemove: () => removeSetItem(setSelectedSubcategories, s) });
     });
-  }
-  for (const c of selectedColors) {
-    activeChips.push({
-      key: `c-${c}`,
-      label: c,
-      remove: () => setSelectedColors((s) => s.filter((x) => x !== c)),
-    });
-  }
-  for (const s of selectedSizes) {
-    activeChips.push({
-      key: `sz-${s}`,
-      label: s,
-      remove: () => setSelectedSizes((p) => p.filter((x) => x !== s)),
-    });
-  }
-  for (const a of selectedAvailability) {
-    const meta = AVAILABILITY_OPTIONS.find((x) => x.key === a);
-    activeChips.push({
-      key: `av-${a}`,
-      label: meta?.label ?? a,
-      remove: () => setSelectedAvailability((p) => p.filter((x) => x !== a)),
-    });
-  }
-  for (const t of selectedTopsSubs) {
-    activeChips.push({
-      key: `t-${t}`,
-      label: t,
-      remove: () => setSelectedTopsSubs((p) => p.filter((x) => x !== t)),
-    });
-  }
-  for (const v of selectedInspoStyles) {
-    const meta = INSPO_STYLE_OPTIONS.find((x) => x.key === v);
-    activeChips.push({
-      key: `is-${v}`,
-      label: meta?.label ?? v,
-      remove: () => setSelectedInspoStyles((p) => p.filter((x) => x !== v)),
-    });
-  }
-  for (const v of selectedInspoBodyTypes) {
-    const meta = INSPO_BODY_TYPE_OPTIONS.find((x) => x.key === v);
-    activeChips.push({
-      key: `ib-${v}`,
-      label: meta?.label ?? v,
-      remove: () => setSelectedInspoBodyTypes((p) => p.filter((x) => x !== v)),
-    });
-  }
-  if (pricePreset !== "any") {
-    const meta = PRICE_PRESETS.find((x) => x.key === pricePreset);
-    activeChips.push({
-      key: `pp-${pricePreset}`,
-      label: meta?.label ?? "Price",
-      remove: () => setPricePreset("any"),
-    });
-  }
-  if (priceRange[0] > 0 || priceRange[1] < 5000) {
-    activeChips.push({
-      key: "pr",
-      label: `$${priceRange[0]} – $${priceRange[1]}`,
-      remove: () => setPriceRange([0, 5000]),
-    });
-  }
-  if (!inStockOnly) {
-    activeChips.push({
-      key: "is",
-      label: "Including out-of-stock",
-      remove: () => setInStockOnly(true),
-    });
-  }
-
-  function findFreeSlot(): { x: number; y: number } {
-    const occupied = (px: number, py: number) =>
-      canvas.some(
-        (c) => Math.abs(c.x - px) < TILE_PERCENT && Math.abs(c.y - py) < TILE_PERCENT,
-      );
-    for (let r = 0; r < 4; r++) {
-      for (let c = 0; c < 4; c++) {
-        const x = 20 + c * 20;
-        const y = 20 + r * 22;
-        if (!occupied(x, y)) return { x, y };
+    if (tab === "shop" && favoritesOnly) {
+      list.push({ id: "favs", label: "Favorites only", onRemove: () => setFavoritesOnly(false) });
+    }
+    if (tab === "shop") {
+      selectedRetailers.forEach((r) => list.push({ id: `ret-${r}`, label: r, onRemove: () => removeSetItem(setSelectedRetailers, r) }));
+      const availabilityLabels: Record<Availability, string> = { "in-stock": "In-Stock", preorder: "Preorder", sale: "Sale", "final-sale": "Final Sale" };
+      selectedAvailability.forEach((a) => list.push({ id: `av-${a}`, label: availabilityLabels[a], onRemove: () => removeSetItem(setSelectedAvailability, a) }));
+      selectedColors.forEach((c) => {
+        const opt = COLOR_OPTIONS.find((x) => x.key === c);
+        list.push({ id: `col-${c}`, label: opt?.label ?? c, swatch: opt?.hex, onRemove: () => removeSetItem(setSelectedColors, c) });
+      });
+      selectedSizes.forEach((s) => list.push({ id: `sz-${s}`, label: `Size ${s}`, onRemove: () => removeSetItem(setSelectedSizes, s) }));
+      if (budget[0] > 0 || budget[1] < 5000) {
+        list.push({ id: "budget", label: `$${budget[0].toLocaleString()}–$${budget[1].toLocaleString()}${budget[1] >= 5000 ? "+" : ""}`, onRemove: () => setBudget([0, 5000]) });
       }
     }
-    return { x: 50, y: 50 };
-  }
+    if (priceRange !== "any") {
+      const labels: Record<string, string> = { u250: "Under $250", "250-1000": "$250–$1,000", "1000+": "$1,000+" };
+      list.push({ id: "price", label: labels[priceRange] ?? priceRange, onRemove: () => setPriceRange("any") });
+    }
+    if (tab === "inspiration") {
+      selectedInspoStyles.forEach((s) => {
+        const opt = INSPO_STYLE_OPTIONS.find((x) => x.key === s);
+        list.push({ id: `is-${s}`, label: opt?.label ?? s, onRemove: () => removeSetItem(setSelectedInspoStyles, s) });
+      });
+      selectedInspoBodyTypes.forEach((b) => {
+        const opt = INSPO_BODY_TYPE_OPTIONS.find((x) => x.key === b);
+        list.push({ id: `ib-${b}`, label: opt?.label ?? b, onRemove: () => removeSetItem(setSelectedInspoBodyTypes, b) });
+      });
+    }
+    if (tab === "closet") {
+      closetSelectedColors.forEach((c) => {
+        const opt = COLOR_OPTIONS.find((x) => x.key === c);
+        list.push({ id: `cc-${c}`, label: opt?.label ?? c, swatch: opt?.hex, onRemove: () => removeSetItem(setClosetSelectedColors, c) });
+      });
+      closetSelectedDesigners.forEach((d) => {
+        list.push({ id: `cd-${d}`, label: d, onRemove: () => removeSetItem(setClosetSelectedDesigners, d) });
+      });
+      closetSelectedSeasons.forEach((s) => {
+        list.push({ id: `cs-${s}`, label: s.charAt(0).toUpperCase() + s.slice(1), onRemove: () => removeSetItem(setClosetSelectedSeasons, s) });
+      });
+    }
+    return list;
+  }, [tab, search, category, selectedSubcategories, favoritesOnly, selectedRetailers, selectedAvailability, selectedColors, selectedSizes, budget, priceRange, selectedInspoStyles, selectedInspoBodyTypes, closetSelectedColors, closetSelectedDesigners, closetSelectedSeasons]);
 
-  async function addItem(
-    source: BoardItemSource,
-    payload: Record<string, unknown>,
-    imageUrl: string | null,
-    label: string | null,
-    dropX?: number,
-    dropY?: number,
-  ) {
-    if (canvas.length >= MAX_ITEMS) {
-      toast(`Maximum ${MAX_ITEMS} items on canvas`);
+  const clearAllFilters = () => {
+    setSearch("");
+    setCategory("all");
+    setSelectedSubcategories(new Set());
+    setFavoritesOnly(false);
+    setSelectedRetailers(new Set());
+    setSelectedAvailability(new Set());
+    setSelectedColors(new Set());
+    setSelectedSizes(new Set());
+    setBudget([0, 5000]);
+    setPriceRange("any");
+    setSelectedInspoStyles(new Set());
+    setSelectedInspoBodyTypes(new Set());
+    setClosetSelectedColors(new Set());
+    setClosetSelectedDesigners(new Set());
+    setClosetSelectedSeasons(new Set());
+  };
+
+
+  const addToCanvas = (item: InventoryItem, x?: number, y?: number) => {
+    if (canvas.length >= 12) {
+      toast("Maximum 12 items on canvas");
       return;
     }
-    const slot =
-      dropX != null && dropY != null ? { x: dropX, y: dropY } : findFreeSlot();
-    const z = maxZ + 1;
-    const res = await fetch(`/api/styleboards/${boardId}/items`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ source, ...payload, x: slot.x, y: slot.y, zIndex: z }),
-    });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(b.error ?? "Add failed");
-      toast.error(b.error ?? "Add failed");
-      return;
-    }
-    const created = (await res.json()) as BoardItem;
-    setCanvas((prev) => [
-      ...prev,
-      {
-        id: created.id,
-        source: created.source,
-        inventoryProductId: created.inventoryProductId ?? null,
-        imageUrl: imageUrl ?? created.webItemImageUrl ?? null,
-        label,
-        x: created.x ?? slot.x,
-        y: created.y ?? slot.y,
-        zIndex: created.zIndex ?? z,
-        flipH: false,
-        flipV: false,
-        crop: null,
-      },
-    ]);
-  }
+    setCanvas((prev) => {
+      // Tile size on canvas (% of canvas) — matches render width
+      const tile = 24; // overlap threshold in %
+      const occupied = (px: number, py: number) =>
+        prev.some((c) => Math.abs(c.x - px) < tile && Math.abs(c.y - py) < tile);
 
-  async function removeItem(id: string) {
-    const prev = canvas;
-    setCanvas((c) => c.filter((it) => it.id !== id));
-    if (selectedId === id) setSelectedId(null);
-    const res = await fetch(`/api/styleboards/${boardId}/items/${id}`, {
-      method: "DELETE",
-    });
-    if (!res.ok) setCanvas(prev);
-  }
+      // Candidate grid: 4 cols x 4 rows centered in canvas
+      const cols = 4;
+      const rows = 4;
+      const stepX = 22;
+      const stepY = 22;
+      const startX = 50 - ((cols - 1) * stepX) / 2;
+      const startY = 50 - ((rows - 1) * stepY) / 2;
 
-  async function repositionItem(id: string, x: number, y: number) {
-    setCanvas((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, x, y } : c)),
-    );
-    await fetch(`/api/styleboards/${boardId}/items/${id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ x, y }),
-    });
-  }
+      const candidates: Array<{ x: number; y: number }> = [];
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          candidates.push({ x: startX + c * stepX, y: startY + r * stepY });
+        }
+      }
 
-  async function changeZIndex(id: string, z: number) {
-    setCanvas((prev) => prev.map((c) => (c.id === id ? { ...c, zIndex: z } : c)));
-    await fetch(`/api/styleboards/${boardId}/items/${id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ zIndex: z }),
-    });
-  }
+      let finalX: number;
+      let finalY: number;
+      if (x !== undefined && y !== undefined) {
+        // User dropped at a specific spot — nudge if that spot is occupied
+        let px = x;
+        let py = y;
+        if (occupied(px, py)) {
+          const free = candidates.find((p) => !occupied(p.x, p.y));
+          if (free) {
+            px = free.x;
+            py = free.y;
+          } else {
+            // Fallback: small jitter
+            px = Math.min(88, Math.max(12, x + 8));
+            py = Math.min(88, Math.max(12, y + 8));
+          }
+        }
+        finalX = Math.min(88, Math.max(12, px));
+        finalY = Math.min(88, Math.max(12, py));
+      } else {
+        const free = candidates.find((p) => !occupied(p.x, p.y));
+        const fallback = candidates[prev.length % candidates.length];
+        const pick = free ?? fallback;
+        finalX = pick.x;
+        finalY = pick.y;
+      }
 
-  async function clearCanvas() {
-    if (!confirm(`Remove all ${canvas.length} items from this look?`)) return;
-    const prev = canvas;
-    const ids = prev.map((c) => c.id);
+      return [
+        ...prev,
+        {
+          uid: `${item.id}-${Date.now()}`,
+          itemId: item.id,
+          image: item.image,
+          originalImage: item.image,
+          x: finalX,
+          y: finalY,
+          flipH: false,
+          flipV: false,
+          bgRemoved: false,
+        },
+      ];
+    });
+  };
+
+  const removeFromCanvas = (uid: string) => {
+    setCanvas((prev) => prev.filter((c) => c.uid !== uid));
+  };
+
+  const clearCanvas = () => {
     setCanvas([]);
-    setSelectedId(null);
-    const results = await Promise.allSettled(
-      ids.map((id) =>
-        fetch(`/api/styleboards/${boardId}/items/${id}`, {
-          method: "DELETE",
-        }).then((res) => {
-          if (!res.ok) throw new Error(`delete ${id} → ${res.status}`);
-          return id;
-        }),
-      ),
-    );
-    const rejected = results
-      .map((r, i) => ({ r, id: ids[i] }))
-      .filter(({ r }) => r.status === "rejected")
-      .map(({ id }) => id);
-    if (rejected.length > 0) {
-      // Restore only the items whose DELETE failed server-side — the ones
-      // that succeeded stay gone.
-      setCanvas(prev.filter((c) => rejected.includes(c.id)));
-      toast.error(
-        `Could not remove ${rejected.length} item${rejected.length === 1 ? "" : "s"}`,
-      );
-    }
-  }
+    setSelectedUid(null);
+    setCropUid(null);
+  };
 
-  function handleCanvasDrop(e: React.DragEvent) {
+  const updateItem = (uid: string, patch: Partial<CanvasItem>) => {
+    setCanvas((prev) => prev.map((c) => (c.uid === uid ? { ...c, ...patch } : c)));
+  };
+
+  const sendToBack = (uid: string) => {
+    setCanvas((prev) => {
+      const idx = prev.findIndex((c) => c.uid === uid);
+      if (idx <= 0) return prev;
+      const next = [...prev];
+      const [item] = next.splice(idx, 1);
+      next.unshift(item);
+      return next;
+    });
+  };
+
+  const sendToFront = (uid: string) => {
+    setCanvas((prev) => {
+      const idx = prev.findIndex((c) => c.uid === uid);
+      if (idx === -1 || idx === prev.length - 1) return prev;
+      const next = [...prev];
+      const [item] = next.splice(idx, 1);
+      next.push(item);
+      return next;
+    });
+  };
+
+  const handleRemoveBg = async (uid: string) => {
+    const item = canvas.find((c) => c.uid === uid);
+    if (!item || item.bgRemoving) return;
+    if (item.bgRemoved) {
+      updateItem(uid, { image: item.originalImage, bgRemoved: false });
+      return;
+    }
+    updateItem(uid, { bgRemoving: true });
+    try {
+      const out = await removeBackground(item.originalImage);
+      updateItem(uid, { image: out, bgRemoved: true, bgRemoving: false });
+      toast.success("Background removed");
+    } catch (err) {
+      console.error(err);
+      updateItem(uid, { bgRemoving: false });
+      toast.error("Couldn't remove background");
+    }
+  };
+
+  const openCrop = (uid: string) => {
+    const item = canvas.find((c) => c.uid === uid);
+    if (!item) return;
+    setCropUid(uid);
+    setCropDraft(item.crop ?? { top: 0, right: 0, bottom: 0, left: 0 });
+  };
+  const applyCrop = () => {
+    if (cropUid) updateItem(cropUid, { crop: cropDraft });
+    setCropUid(null);
+  };
+  const resetCrop = () => {
+    if (cropUid) updateItem(cropUid, { crop: undefined });
+    setCropUid(null);
+  };
+
+  const handleDragStart = (item: InventoryItem) => {
+    dragData.current = { image: item.image, itemId: item.id };
+  };
+
+  const handleCanvasDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
-    const clampedX = Math.min(90, Math.max(10, x));
-    const clampedY = Math.min(90, Math.max(10, y));
-    if (movingId.current) {
-      const id = movingId.current;
-      movingId.current = null;
-      void repositionItem(id, clampedX, clampedY);
+
+    if (movingUid.current) {
+      const uid = movingUid.current;
+      setCanvas((prev) => prev.map((c) => (c.uid === uid ? { ...c, x, y } : c)));
+      movingUid.current = null;
       return;
     }
     if (dragData.current) {
-      const d = dragData.current;
+      const it = sourceItems.find((s) => s.id === dragData.current!.itemId);
+      if (it) addToCanvas(it, x, y);
       dragData.current = null;
-      void addItem(d.source, d.payload, d.imageUrl, d.label, clampedX, clampedY);
     }
-  }
+  };
 
-  async function sendBoard(input: {
-    title: string;
-    description: string;
-    tags: string[];
-  }) {
-    const res = await fetch(`/api/styleboards/${boardId}/send`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input),
-    });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(b.error ?? "Send failed");
+  const MIN_ITEMS_TO_SAVE = 3;
+  const MAX_DESC = 600;
+  const MAX_TAG = 60;
+  const handleSave = () => {
+    if (canvas.length < MIN_ITEMS_TO_SAVE) {
+      toast(`Add at least ${MIN_ITEMS_TO_SAVE} items to the canvas before saving`);
+      return;
     }
-    setSaveOpen(false);
-    toast.success(`"${input.title}" sent to ${clientName}`);
-    router.push(`/stylist/sessions/${sessionId}/workspace`);
-    router.refresh();
-  }
+    setSaveOpen(true);
+  };
 
-  const tabs: { id: Tab; label: string; icon: typeof ShirtIcon }[] = [
-    { id: "inventory", label: "Shop", icon: StoreIcon },
-    { id: "closet", label: "Client closet", icon: ShirtIcon },
-    { id: "inspiration", label: "Inspiration", icon: SparklesIcon },
-    { id: "previous", label: "Previous looks", icon: LayersIcon },
-  ];
+  const confirmSave = async () => {
+    const name = lookName.trim();
+    const desc = saveDescription.trim();
+    if (!name) {
+      setLookNameTouched(true);
+      toast("Please name the look before saving");
+      return;
+    }
+    if (!desc) {
+      setSaveDescTouched(true);
+      toast("Please add a description before saving");
+      return;
+    }
 
-  const canSave = canvas.length >= MIN_ITEMS;
+    setIsSaving(true);
+    const toastId = toast.loading(`Saving "${name}"…`);
+    try {
+      const tagList = [saveTags.event, saveTags.bodyType, saveTags.fitPreference, saveTags.highlights]
+        .map((t) => t.trim())
+        .filter(Boolean);
+      const res = await fetch(`/api/styleboards/${boardId}/send`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: name, description: desc, tags: tagList }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Send failed");
+      }
+      toast.success(`"${name}" saved & sent to ${clientName}`, {
+        id: toastId,
+        description: "Redirecting to dashboard…",
+      });
+      setSaveOpen(false);
+      // Brief pause so the user sees the success state before routing
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      router.push(`/stylist/dashboard?session=${sessionId}`);
+      router.refresh();
+    } catch (err) {
+      toast.error("Could not save the look. Please try again.", { id: toastId });
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">
+    <div className="flex flex-col h-screen bg-background">
       {/* Top bar */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-3">
-          <Link
-            href={`/stylist/sessions/${sessionId}/workspace`}
+          <button
+            onClick={() => router.push(`/stylist/dashboard?session=${sessionId}`)}
             className="text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeftIcon className="h-5 w-5" />
-          </Link>
-          <div>
-            <h1 className="font-display text-base font-semibold">
-              {isRevision ? "Create restyle" : "Create a look"}
-            </h1>
-            <p className="font-body text-xs text-muted-foreground">
-              for {clientName} · {canvas.length}/{MAX_ITEMS} items
-            </p>
-          </div>
+          </button>
+          {(() => {
+            const profile = clientProfile;
+            const fullName = profile?.fullName || clientName;
+            const initials = profile?.initials || clientName.split(" ").map((n) => n[0]).slice(0, 2).join("");
+            const tier = profile?.loyaltyTier;
+            const loyalty = tier && tier !== "new" ? loyaltyConfig[tier as keyof typeof loyaltyConfig] : null;
+            const LoyaltyIcon = loyalty?.icon;
+            return (
+              <div className="flex items-center gap-2.5">
+                <Avatar className="h-9 w-9">
+                  {profile?.profilePhotoUrl && <AvatarImage src={profile.profilePhotoUrl} alt={fullName} />}
+                  <AvatarFallback className="font-body text-xs bg-muted text-foreground">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-1.5">
+                    <h1 className="font-display text-sm font-semibold leading-tight">{fullName}</h1>
+                    {loyalty && LoyaltyIcon && (
+                      <Badge
+                        variant="secondary"
+                        className={cn(
+                          "h-5 px-1.5 gap-1 font-body text-[10px] font-medium rounded-sm border-0",
+                          loyalty.className
+                        )}
+                      >
+                        <LoyaltyIcon className="h-2.5 w-2.5" />
+                        {loyalty.label}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="font-body text-[11px] text-muted-foreground leading-tight">
+                    Create a look
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
         </div>
         <div className="flex items-center gap-2">
-          <Link
-            href={`/stylist/clients/${clientId}`}
-            className="inline-flex items-center gap-1.5 h-8 rounded-sm border border-border px-3 font-body text-xs hover:bg-muted transition-colors"
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setClientInfoOpen(true)}
+            className="font-body text-xs h-8 rounded-sm gap-1.5"
           >
             <UserIcon className="h-3.5 w-3.5" />
             Client info
-          </Link>
+          </Button>
           {canvas.length > 0 && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => void clearCanvas()}
+              onClick={clearCanvas}
               className="font-body text-xs text-muted-foreground h-8 gap-1"
             >
               <Trash2Icon className="h-3.5 w-3.5" />
@@ -862,37 +825,32 @@ export function StyleboardBuilder({
             </Button>
           )}
           <Button
-            onClick={() => setSaveOpen(true)}
-            disabled={!canSave}
+            onClick={handleSave}
+            disabled={canvas.length < MIN_ITEMS_TO_SAVE}
             size="sm"
-            title={!canSave ? `Add ${MIN_ITEMS - canvas.length} more item(s) to enable` : undefined}
+            title={canvas.length < MIN_ITEMS_TO_SAVE ? `Add ${MIN_ITEMS_TO_SAVE - canvas.length} more item${MIN_ITEMS_TO_SAVE - canvas.length === 1 ? "" : "s"} to enable` : undefined}
             className="h-8 rounded-sm bg-foreground text-background hover:bg-foreground/90 font-body text-xs gap-1.5"
           >
             <SendIcon className="h-3.5 w-3.5" />
-            Save &amp; send
-            {!canSave && ` (${canvas.length}/${MIN_ITEMS})`}
+            Save & send{canvas.length < MIN_ITEMS_TO_SAVE ? ` (${canvas.length}/${MIN_ITEMS_TO_SAVE})` : ""}
           </Button>
         </div>
       </div>
-
-      {error && (
-        <div className="bg-red-50 px-5 py-2 text-xs text-red-700">{error}</div>
-      )}
 
       {/* Source tabs */}
       <div className="flex items-center gap-1 px-5 border-b border-border shrink-0">
         {tabs.map((t) => {
           const Icon = t.icon;
-          const active = tab === t.id;
+          const active = tab === t.key;
           return (
             <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
+              key={t.key}
+              onClick={() => setTab(t.key)}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-2.5 font-body text-xs border-b-2 -mb-px transition-colors",
                 active
                   ? "border-foreground text-foreground font-semibold"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
+                  : "border-transparent text-muted-foreground hover:text-foreground"
               )}
             >
               <Icon className="h-3.5 w-3.5" />
@@ -902,935 +860,1365 @@ export function StyleboardBuilder({
         })}
       </div>
 
-      {/* Main split */}
+      {/* Main */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Source library */}
-        <div className="w-[380px] shrink-0 border-r border-border flex flex-col min-h-0">
-          {tab === "inventory" && (
-            <>
-              <div className="flex gap-2 px-4 py-3 border-b border-border">
-                <div className="relative flex-1">
-                  <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                  <Input
-                    placeholder="Search products…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void runInventorySearch();
-                    }}
-                    className="h-8 pl-8 font-body text-xs rounded-sm"
-                  />
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setFiltersOpen((v) => !v)}
-                  className="h-8 rounded-sm font-body text-xs gap-1.5"
-                >
-                  <SlidersHorizontalIcon className="h-3.5 w-3.5" />
-                  Filters
-                  {activeFilterCount > 0 && (
-                    <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-foreground text-background text-[10px] px-1">
-                      {activeFilterCount}
-                    </span>
-                  )}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void runInventorySearch()}
-                  className="h-8 rounded-sm font-body text-xs"
-                >
-                  Search
-                </Button>
-              </div>
-              {/* Active filters chip bar — Loveable HEAD parity */}
-              {activeChips.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2 border-b border-border">
-                  {activeChips.map((c) => (
-                    <button
-                      key={c.key}
-                      onClick={c.remove}
-                      className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 font-body text-[11px] hover:bg-foreground hover:text-background transition-colors"
-                    >
-                      <span>{c.label}</span>
-                      <XIcon className="h-3 w-3" />
-                    </button>
-                  ))}
+        {/* Left: filter sidebar */}
+        {filtersCollapsed ? (
+          <aside className="w-10 shrink-0 border-r border-border bg-muted/20 flex flex-col items-center py-3">
+            <button
+              onClick={() => setFiltersCollapsed(false)}
+              title="Show filters"
+              aria-label="Show filters"
+              className="h-8 w-8 rounded-sm flex items-center justify-center hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <PanelLeftOpenIcon className="h-4 w-4" />
+            </button>
+            <div className="mt-2 [writing-mode:vertical-rl] rotate-180 font-display text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <SlidersHorizontalIcon className="h-3 w-3" />
+              Filters
+            </div>
+          </aside>
+        ) : (
+        <aside className="w-[200px] shrink-0 border-r border-border bg-muted/20 p-4 flex flex-col gap-5 overflow-y-auto relative">
+          <div className="flex items-center justify-between -mt-1 -mr-1">
+            <span className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1.5">
+              <SlidersHorizontalIcon className="h-3 w-3" /> Filters
+            </span>
+            <button
+              onClick={() => setFiltersCollapsed(true)}
+              title="Hide filters"
+              aria-label="Hide filters"
+              className="h-6 w-6 rounded-sm flex items-center justify-center hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <PanelLeftCloseIcon className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          {tab === "shop" && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Filter by retailers
+                </h3>
+                {selectedRetailers.size > 0 && (
                   <button
-                    onClick={resetFilters}
-                    className="font-body text-[10px] text-muted-foreground hover:text-foreground underline ml-1"
+                    onClick={() => setSelectedRetailers(new Set())}
+                    className="font-body text-[10px] text-muted-foreground hover:text-foreground underline"
                   >
-                    Clear all
+                    Clear
                   </button>
-                </div>
-              )}
-              {filtersOpen && filterValues && (
-                <FilterPanel
-                  filterValues={filterValues}
-                  selectedMerchants={selectedMerchants}
-                  selectedColors={selectedColors}
-                  selectedSizes={selectedSizes}
-                  selectedAvailability={selectedAvailability}
-                  selectedTopsSubs={selectedTopsSubs}
-                  selectedInspoStyles={selectedInspoStyles}
-                  selectedInspoBodyTypes={selectedInspoBodyTypes}
-                  pricePreset={pricePreset}
-                  priceRange={priceRange}
-                  inStockOnly={inStockOnly}
-                  activeFilterCount={activeFilterCount}
-                  onMerchants={setSelectedMerchants}
-                  onColors={setSelectedColors}
-                  onSizes={setSelectedSizes}
-                  onAvailability={setSelectedAvailability}
-                  onTopsSubs={setSelectedTopsSubs}
-                  onInspoStyles={setSelectedInspoStyles}
-                  onInspoBodyTypes={setSelectedInspoBodyTypes}
-                  onPricePreset={setPricePreset}
-                  onPriceRange={setPriceRange}
-                  onInStockOnly={setInStockOnly}
-                  onReset={resetFilters}
-                  onApply={() => {
-                    setFiltersOpen(false);
-                    void runInventorySearch();
+                )}
+              </div>
+              <div className="space-y-0.5 max-h-48 overflow-y-auto pr-1">
+                {shopRetailers.map((r) => {
+                  const active = selectedRetailers.has(r);
+                  return (
+                    <button
+                      key={r}
+                      onClick={() => toggleRetailer(r)}
+                      className={cn(
+                        "w-full text-left px-2 py-1.5 rounded-sm font-body text-xs transition-colors flex items-center gap-2",
+                        active
+                          ? "bg-foreground text-background"
+                          : "text-foreground hover:bg-muted"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "h-3 w-3 rounded-sm border flex items-center justify-center shrink-0",
+                          active
+                            ? "bg-background border-background"
+                            : "border-border"
+                        )}
+                      >
+                        {active && <span className="h-1.5 w-1.5 bg-foreground rounded-[1px]" />}
+                      </span>
+                      <span className="truncate">{r}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {tab === "shop" && (
+            <div>
+              <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                Availability
+              </h3>
+              <div className="space-y-0.5">
+                {([
+                  { key: "in-stock" as const, label: "In-Stock" },
+                  { key: "preorder" as const, label: "Preorder" },
+                  { key: "sale" as const, label: "Sale" },
+                  { key: "final-sale" as const, label: "Final Sale" },
+                ]).map((opt) => {
+                  const active = selectedAvailability.has(opt.key);
+                  return (
+                    <button
+                      key={opt.key}
+                      onClick={() => toggleAvailability(opt.key)}
+                      className={cn(
+                        "w-full text-left px-2 py-1.5 rounded-sm font-body text-xs transition-colors flex items-center gap-2",
+                        active
+                          ? "bg-foreground text-background"
+                          : "text-foreground hover:bg-muted"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "h-3 w-3 rounded-sm border flex items-center justify-center shrink-0",
+                          active
+                            ? "bg-background border-background"
+                            : "border-border"
+                        )}
+                      >
+                        {active && <span className="h-1.5 w-1.5 bg-foreground rounded-[1px]" />}
+                      </span>
+                      <span className="truncate">{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {tab === "inspiration" && (
+            <>
+              {(selectedInspoStyles.size > 0 || selectedInspoBodyTypes.size > 0) && (
+                <button
+                  onClick={() => {
+                    setSelectedInspoStyles(new Set());
+                    setSelectedInspoBodyTypes(new Set());
                   }}
-                />
+                  className="self-start font-body text-[11px] text-foreground hover:text-foreground/80 underline underline-offset-2"
+                >
+                  Clear all filters
+                </button>
               )}
-              <ScrollArea className="flex-1">
-                <div className="grid grid-cols-2 gap-2 p-3">
-                  {filteredInventoryResults.map((p) => (
-                    <SourceTile
-                      key={p.id}
-                      imageUrl={p.primary_image_url ?? null}
-                      label={p.canonical_name}
-                      sublabel={p.brand_name}
-                      favorited={favoritedIds.has(p.id)}
-                      onFavoriteToggle={() => void toggleFavorite(p.id)}
-                      onAdd={() =>
-                        void addItem(
-                          "INVENTORY",
-                          { inventoryProductId: p.id },
-                          p.primary_image_url ?? null,
-                          p.canonical_name,
-                        )
-                      }
-                      onDragStart={() => {
-                        dragData.current = {
-                          source: "INVENTORY",
-                          imageUrl: p.primary_image_url ?? null,
-                          label: p.canonical_name,
-                          payload: { inventoryProductId: p.id },
-                        };
-                      }}
-                    />
-                  ))}
-                  {filteredInventoryResults.length === 0 && (
-                    <p className="col-span-2 px-2 py-6 font-body text-xs text-muted-foreground text-center">
-                      {inventoryResults.length === 0
-                        ? "Search the inventory to start adding items."
-                        : "No items match the current filters."}
-                    </p>
-                  )}
+              <div>
+                <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                  Style
+                </h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {INSPO_STYLE_OPTIONS.map((opt) => {
+                    const active = selectedInspoStyles.has(opt.key);
+                    return (
+                      <button
+                        key={opt.key}
+                        onClick={() => toggleInspoStyle(opt.key)}
+                        className={cn(
+                          "h-7 px-2.5 rounded-sm border font-body text-[11px] transition-colors",
+                          active
+                            ? "bg-foreground text-background border-foreground"
+                            : "bg-background text-foreground border-border hover:bg-muted"
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
                 </div>
-              </ScrollArea>
+              </div>
+
+              <div>
+                <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                  Body type
+                </h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {INSPO_BODY_TYPE_OPTIONS.map((opt) => {
+                    const active = selectedInspoBodyTypes.has(opt.key);
+                    return (
+                      <button
+                        key={opt.key}
+                        onClick={() => toggleInspoBodyType(opt.key)}
+                        className={cn(
+                          "h-7 px-2.5 rounded-sm border font-body text-[11px] transition-colors",
+                          active
+                            ? "bg-foreground text-background border-foreground"
+                            : "bg-background text-foreground border-border hover:bg-muted"
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+
+          {tab !== "inspiration" && (
+          <div>
+            <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+              Category
+            </h3>
+            <div className="space-y-0.5">
+              {categories.map((c) => {
+                const subs = c.key !== "all" ? SUBCATEGORIES_BY_CATEGORY[c.key as Exclude<Category, "all">] : undefined;
+                const isActive = category === c.key;
+                return (
+                  <div key={c.key}>
+                    <button
+                      onClick={() => {
+                        setCategory(c.key);
+                        if (c.key !== category) setSelectedSubcategories(new Set());
+                      }}
+                      className={cn(
+                        "w-full text-left px-2 py-1.5 rounded-sm font-body text-xs transition-colors",
+                        isActive
+                          ? "bg-foreground text-background"
+                          : "text-foreground hover:bg-muted"
+                      )}
+                    >
+                      {c.label}
+                    </button>
+                    {tab === "shop" && isActive && subs && (
+                      <div className="mt-1 ml-2 pl-2 border-l border-border space-y-0.5 max-h-64 overflow-y-auto pr-1">
+                        {selectedSubcategories.size > 0 && (
+                          <button
+                            onClick={() => setSelectedSubcategories(new Set())}
+                            className="font-body text-[10px] text-muted-foreground hover:text-foreground underline px-2 py-0.5"
+                          >
+                            Clear
+                          </button>
+                        )}
+                        {subs.map((s) => {
+                          const subActive = selectedSubcategories.has(s);
+                          return (
+                            <button
+                              key={s}
+                              onClick={() => toggleSubcategory(s)}
+                              className={cn(
+                                "w-full text-left px-2 py-1 rounded-sm font-body text-xs transition-colors flex items-center gap-2",
+                                subActive
+                                  ? "bg-foreground text-background"
+                                  : "text-foreground hover:bg-muted"
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  "h-3 w-3 rounded-sm border flex items-center justify-center shrink-0",
+                                  subActive ? "bg-background border-background" : "border-border"
+                                )}
+                              >
+                                {subActive && <span className="h-1.5 w-1.5 bg-foreground rounded-[1px]" />}
+                              </span>
+                              <span className="truncate">{s}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          )}
+
+
+          {tab === "shop" && (
+            <>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setColorOpen((v) => !v)}
+                  aria-expanded={colorOpen}
+                  className="w-full flex items-center justify-between mb-2 group"
+                >
+                  <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
+                    Color{selectedColors.size > 0 && ` (${selectedColors.size})`}
+                  </h3>
+                  <ChevronDownIcon
+                    className={cn(
+                      "h-3.5 w-3.5 text-muted-foreground transition-transform",
+                      colorOpen && "rotate-180"
+                    )}
+                  />
+                </button>
+                {colorOpen && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {COLOR_OPTIONS.map((c) => {
+                      const active = selectedColors.has(c.key);
+                      return (
+                        <button
+                          key={c.key}
+                          onClick={() => toggleColor(c.key)}
+                          title={c.label}
+                          aria-label={c.label}
+                          aria-pressed={active}
+                          className={cn(
+                            "h-6 w-6 rounded-full border transition-all",
+                            active
+                              ? "border-foreground ring-2 ring-foreground ring-offset-1 ring-offset-background"
+                              : "border-border hover:border-foreground/60"
+                          )}
+                          style={{ backgroundColor: c.hex }}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setSizeOpen((v) => !v)}
+                  aria-expanded={sizeOpen}
+                  className="w-full flex items-center justify-between mb-2 group"
+                >
+                  <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
+                    Size{selectedSizes.size > 0 && ` (${selectedSizes.size})`}
+                  </h3>
+                  <ChevronDownIcon
+                    className={cn(
+                      "h-3.5 w-3.5 text-muted-foreground transition-transform",
+                      sizeOpen && "rotate-180"
+                    )}
+                  />
+                </button>
+                {sizeOpen && (
+                  <>
+                    <div className="flex flex-wrap gap-1.5">
+                      {SIZE_OPTIONS.map((s) => {
+                        const active = selectedSizes.has(s);
+                        return (
+                          <button
+                            key={s}
+                            onClick={() => toggleSize(s)}
+                            className={cn(
+                              "min-w-8 h-7 px-2 rounded-sm border font-body text-[11px] transition-colors",
+                              active
+                                ? "bg-foreground text-background border-foreground"
+                                : "bg-background text-foreground border-border hover:bg-muted"
+                            )}
+                          >
+                            {s}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {selectedSizes.size > 0 && (
+                      <button
+                        onClick={() => setSelectedSizes(new Set())}
+                        className="mt-2 font-body text-[11px] text-foreground hover:text-foreground/80 underline underline-offset-2"
+                      >
+                        Clear size
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setBudgetOpen((v) => !v)}
+                  aria-expanded={budgetOpen}
+                  className="w-full flex items-center justify-between mb-2 group"
+                >
+                  <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
+                    Budget{(budget[0] > 0 || budget[1] < 5000) && " •"}
+                  </h3>
+                  <ChevronDownIcon
+                    className={cn(
+                      "h-3.5 w-3.5 text-muted-foreground transition-transform",
+                      budgetOpen && "rotate-180"
+                    )}
+                  />
+                </button>
+                {budgetOpen && (
+                  <>
+                    <div className="flex justify-end mb-1">
+                      <span className="font-body text-[10px] text-muted-foreground">
+                        ${budget[0].toLocaleString()} – ${budget[1].toLocaleString()}{budget[1] >= 5000 ? "+" : ""}
+                      </span>
+                    </div>
+                    <Slider
+                      min={0}
+                      max={5000}
+                      step={50}
+                      value={budget}
+                      onValueChange={(v) => { const arr = v as readonly number[]; setBudget([arr[0], arr[1]] as [number, number]); }}
+                      className="my-2"
+                    />
+                    {(budget[0] > 0 || budget[1] < 5000) && (
+                      <button
+                        onClick={() => setBudget([0, 5000])}
+                        className="mt-2 font-body text-[11px] text-foreground hover:text-foreground/80 underline underline-offset-2"
+                      >
+                        Reset budget
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </>
           )}
 
           {tab === "closet" && (
-            <ScrollArea className="flex-1">
-              <div className="grid grid-cols-2 gap-2 p-3">
-                {closetItems.map((c) => (
-                  <SourceTile
-                    key={c.id}
-                    imageUrl={c.url}
-                    label={c.name ?? "Closet item"}
-                    sublabel={c.designer ?? "Client closet"}
-                    onAdd={() =>
-                      void addItem(
-                        "CLOSET",
-                        { closetItemId: c.id },
-                        c.url,
-                        c.name ?? null,
-                      )
-                    }
-                    onDragStart={() => {
-                      dragData.current = {
-                        source: "CLOSET",
-                        imageUrl: c.url,
-                        label: c.name ?? null,
-                        payload: { closetItemId: c.id },
-                      };
-                    }}
+            <>
+              {/* Colors */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setClosetColorOpen((v) => !v)}
+                  aria-expanded={closetColorOpen}
+                  className="w-full flex items-center justify-between mb-2 group"
+                >
+                  <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
+                    Colors{closetSelectedColors.size > 0 && ` (${closetSelectedColors.size})`}
+                  </h3>
+                  <ChevronDownIcon
+                    className={cn(
+                      "h-3.5 w-3.5 text-muted-foreground transition-transform",
+                      closetColorOpen && "rotate-180"
+                    )}
                   />
-                ))}
-                {closetItems.length === 0 && (
-                  <p className="col-span-2 px-2 py-6 font-body text-xs text-muted-foreground text-center">
-                    Client&apos;s closet is empty.
-                  </p>
+                </button>
+                {closetColorOpen && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {COLOR_OPTIONS.map((c) => {
+                      const active = closetSelectedColors.has(c.key);
+                      return (
+                        <button
+                          key={c.key}
+                          onClick={() => toggleSetItem(setClosetSelectedColors, c.key)}
+                          title={c.label}
+                          aria-label={c.label}
+                          aria-pressed={active}
+                          className={cn(
+                            "h-6 w-6 rounded-full border transition-all",
+                            active
+                              ? "border-foreground ring-2 ring-foreground ring-offset-1 ring-offset-background"
+                              : "border-border hover:border-foreground/60"
+                          )}
+                          style={{ backgroundColor: c.hex }}
+                        />
+                      );
+                    })}
+                  </div>
                 )}
               </div>
-            </ScrollArea>
-          )}
 
-          {tab === "inspiration" && (
-            <ScrollArea className="flex-1">
-              <div className="grid grid-cols-2 gap-2 p-3">
-                {inspiration.map((i) => (
-                  <SourceTile
-                    key={i.id}
-                    imageUrl={i.url}
-                    label={i.title ?? "Inspiration"}
-                    sublabel="Inspiration"
-                    onAdd={() =>
-                      void addItem(
-                        "INSPIRATION_PHOTO",
-                        { inspirationPhotoId: i.id },
-                        i.url,
-                        i.title ?? null,
-                      )
-                    }
-                    onDragStart={() => {
-                      dragData.current = {
-                        source: "INSPIRATION_PHOTO",
-                        imageUrl: i.url,
-                        label: i.title ?? null,
-                        payload: { inspirationPhotoId: i.id },
-                      };
-                    }}
+              {/* Designers */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setClosetDesignerOpen((v) => !v)}
+                  aria-expanded={closetDesignerOpen}
+                  className="w-full flex items-center justify-between mb-2 group"
+                >
+                  <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
+                    Designers{closetSelectedDesigners.size > 0 && ` (${closetSelectedDesigners.size})`}
+                  </h3>
+                  <ChevronDownIcon
+                    className={cn(
+                      "h-3.5 w-3.5 text-muted-foreground transition-transform",
+                      closetDesignerOpen && "rotate-180"
+                    )}
                   />
-                ))}
+                </button>
+                {closetDesignerOpen && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {closetDesigners.map((d) => {
+                      const active = closetSelectedDesigners.has(d);
+                      return (
+                        <button
+                          key={d}
+                          onClick={() => toggleSetItem(setClosetSelectedDesigners, d)}
+                          className={cn(
+                            "h-7 px-2.5 rounded-sm border font-body text-[11px] transition-colors",
+                            active
+                              ? "bg-foreground text-background border-foreground"
+                              : "bg-background text-foreground border-border hover:bg-muted"
+                          )}
+                        >
+                          {d}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            </ScrollArea>
-          )}
 
-          {tab === "previous" && (
-            <>
-              <div className="flex items-center gap-1 border-b border-border px-3 py-2">
-                <PreviousScopeToggle
-                  value={previousScope}
-                  onChange={setPreviousScope}
-                />
+              {/* Season */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setClosetSeasonOpen((v) => !v)}
+                  aria-expanded={closetSeasonOpen}
+                  className="w-full flex items-center justify-between mb-2 group"
+                >
+                  <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
+                    Season{closetSelectedSeasons.size > 0 && ` (${closetSelectedSeasons.size})`}
+                  </h3>
+                  <ChevronDownIcon
+                    className={cn(
+                      "h-3.5 w-3.5 text-muted-foreground transition-transform",
+                      closetSeasonOpen && "rotate-180"
+                    )}
+                  />
+                </button>
+                {closetSeasonOpen && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {SEASON_OPTIONS.map((s) => {
+                      const active = closetSelectedSeasons.has(s.key);
+                      return (
+                        <button
+                          key={s.key}
+                          onClick={() => toggleSetItem<string>(setClosetSelectedSeasons, s.key)}
+                          className={cn(
+                            "h-7 px-2.5 rounded-sm border font-body text-[11px] transition-colors",
+                            active
+                              ? "bg-foreground text-background border-foreground"
+                              : "bg-background text-foreground border-border hover:bg-muted"
+                          )}
+                        >
+                          {s.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-              <ScrollArea className="flex-1">
-                <div className="grid grid-cols-2 gap-2 p-3">
-                  {previousLoading && (
-                    <p className="col-span-2 py-6 text-center font-body text-xs text-muted-foreground">
-                      Loading…
-                    </p>
-                  )}
-                  {!previousLoading &&
-                    previousItems.map((it) => (
-                      <SourceTile
-                        key={it.id}
-                        imageUrl={it.imageUrl}
-                        label={it.label ?? "Item"}
-                        sublabel={it.boardTitle ?? it.brand ?? "Past look"}
-                        onAdd={() => void addPreviousLookItem(it)}
-                        onDragStart={() => {
-                          dragData.current = {
-                            source: it.inventoryProductId
-                              ? "INVENTORY"
-                              : it.closetItemId
-                                ? "CLOSET"
-                                : it.inspirationPhotoId
-                                  ? "INSPIRATION_PHOTO"
-                                  : "WEB_ADDED",
-                            imageUrl: it.imageUrl,
-                            label: it.label,
-                            payload: it.inventoryProductId
-                              ? { inventoryProductId: it.inventoryProductId }
-                              : it.closetItemId
-                                ? { closetItemId: it.closetItemId }
-                                : it.inspirationPhotoId
-                                  ? { inspirationPhotoId: it.inspirationPhotoId }
-                                  : {
-                                      webItemUrl: it.webItemUrl,
-                                      webItemImageUrl: it.imageUrl,
-                                      webItemTitle: it.label,
-                                      webItemBrand: it.brand,
-                                    },
-                          };
-                        }}
-                      />
-                    ))}
-                  {!previousLoading && previousItems.length === 0 && (
-                    <p className="col-span-2 px-2 py-6 font-body text-xs text-muted-foreground text-center">
-                      No past looks yet
-                      {previousScope === "client" ? " for this client" : ""}.
-                    </p>
-                  )}
-                </div>
-              </ScrollArea>
+
+              {(closetSelectedColors.size > 0 || closetSelectedDesigners.size > 0 || closetSelectedSeasons.size > 0) && (
+                <button
+                  onClick={() => {
+                    setClosetSelectedColors(new Set());
+                    setClosetSelectedDesigners(new Set());
+                    setClosetSelectedSeasons(new Set());
+                  }}
+                  className="self-start font-body text-[11px] text-foreground hover:text-foreground/80 underline underline-offset-2"
+                >
+                  Clear all filters
+                </button>
+              )}
             </>
           )}
 
+          <p className="font-body text-[11px] text-muted-foreground mt-auto">
+            Tip: click an item to add or drag it onto the canvas. Drag items already on the canvas to reposition.
+          </p>
+        </aside>
+        )}
+
+        {/* Center: inventory grid */}
+        <div className="flex-1 flex flex-col min-w-0 border-r border-border">
+          <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              {tab === "shop" && (
+                <button
+                  onClick={() => setFavoritesOnly((v) => !v)}
+                  title={favoritesOnly ? "Showing favorites only" : "Show favorites only"}
+                  aria-pressed={favoritesOnly}
+                  className={cn(
+                    "h-8 inline-flex items-center gap-1.5 px-2.5 rounded-sm font-body text-xs transition-colors border whitespace-nowrap",
+                    favoritesOnly
+                      ? "bg-foreground text-background border-foreground"
+                      : "bg-background text-foreground border-border hover:bg-muted"
+                  )}
+                >
+                  <HeartIcon
+                    className={cn(
+                      "h-3.5 w-3.5",
+                      favoritesOnly ? "fill-background" : "fill-none"
+                    )}
+                  />
+                  Favorites
+                  <span
+                    className={cn(
+                      "font-body text-[10px]",
+                      favoritesOnly ? "text-background/70" : "text-muted-foreground"
+                    )}
+                  >
+                    {favorites.size}
+                  </span>
+                </button>
+              )}
+              <div className="relative w-full max-w-xs">
+                <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search inventory..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="h-8 pl-8 font-body text-xs rounded-sm"
+                />
+              </div>
+              <span className="font-body text-sm text-muted-foreground whitespace-nowrap">
+                {filtered.length} {filtered.length === 1 ? "item" : "items"}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="font-body text-[11px] text-muted-foreground mr-1">View</span>
+              {[3, 4, 6].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setGridCols(n as 3 | 4 | 6)}
+                  className={cn(
+                    "h-7 w-7 rounded-sm font-body text-xs transition-colors",
+                    gridCols === n
+                      ? "bg-foreground text-background"
+                      : "text-muted-foreground hover:text-foreground hover:font-semibold"
+                  )}
+                  aria-label={`${n} per row`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+          {tab === "closet" && (
+            <div className="flex items-center gap-1 px-5 py-2 border-b border-border bg-muted/30">
+              {([
+                { key: "closet", label: `${clientFirstName}'s Closet` },
+                { key: "cart", label: `${clientFirstName}'s Cart` },
+                { key: "purchased", label: `${clientFirstName}'s Purchased` },
+              ] as const).map((st) => {
+                const active = closetSubTab === st.key;
+                return (
+                  <button
+                    key={st.key}
+                    onClick={() => setClosetSubTab(st.key)}
+                    aria-pressed={active}
+                    className={cn(
+                      "h-8 px-3 rounded-sm font-body text-xs transition-colors border whitespace-nowrap",
+                      active
+                        ? "bg-foreground text-background border-foreground"
+                        : "bg-background text-foreground border-border hover:bg-muted"
+                    )}
+                  >
+                    {st.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {tab === "previous" && (
+            <div className="flex items-center gap-1 px-5 py-2 border-b border-border bg-muted/30">
+              {([
+                { key: "mood", label: "Mood Boards" },
+                { key: "style", label: "Style Boards" },
+              ] as const).map((st) => {
+                const active = previousSubTab === st.key;
+                return (
+                  <button
+                    key={st.key}
+                    onClick={() => setPreviousSubTab(st.key)}
+                    aria-pressed={active}
+                    className={cn(
+                      "h-8 px-3 rounded-sm font-body text-xs transition-colors border whitespace-nowrap",
+                      active
+                        ? "bg-foreground text-background border-foreground"
+                        : "bg-background text-foreground border-border hover:bg-muted"
+                    )}
+                  >
+                    {st.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {activeFilters.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap px-5 py-2 border-b border-border bg-muted/20">
+              <span className="font-display text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">
+                Active filters
+              </span>
+              {activeFilters.map((f) => (
+                <span
+                  key={f.id}
+                  className="inline-flex items-center gap-1 h-7 pl-2 pr-1 rounded-full border border-foreground bg-foreground text-background font-body text-[11px]"
+                >
+                  {f.swatch && (
+                    <span
+                      className="h-3 w-3 rounded-full border border-background/50"
+                      style={{ backgroundColor: f.swatch }}
+                    />
+                  )}
+                  <span className="max-w-[160px] truncate">{f.label}</span>
+                  <button
+                    type="button"
+                    onClick={f.onRemove}
+                    aria-label={`Remove filter ${f.label}`}
+                    className="h-5 w-5 inline-flex items-center justify-center rounded-full hover:bg-background/20 transition-colors"
+                  >
+                    <XIcon className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+              {activeFilters.length > 1 && (
+                <button
+                  type="button"
+                  onClick={clearAllFilters}
+                  className="ml-1 font-body text-[11px] text-foreground hover:text-foreground/80 underline underline-offset-2"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+          )}
+          <ScrollArea className="flex-1">
+            <div
+              className={cn(
+                "grid gap-3 p-5",
+                gridCols === 3 && "grid-cols-2 lg:grid-cols-3",
+                gridCols === 4 && "grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
+                gridCols === 6 && "grid-cols-3 lg:grid-cols-4 xl:grid-cols-6"
+              )}
+            >
+              {filtered.map((item) => (
+                <div
+                  key={item.id}
+                  draggable
+                  onDragStart={() => handleDragStart(item)}
+                  onClick={() => tab === "inspiration" ? addToCanvas(item) : setPdpItem(item)}
+                  className="group relative bg-card border border-border rounded-sm overflow-hidden cursor-pointer hover:border-foreground transition-colors"
+                >
+                  <div className="aspect-square overflow-hidden bg-muted">
+                    <Image
+                      src={item.image}
+                      alt={item.name}
+                      width={400}
+                      height={400}
+                      unoptimized
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                      draggable={false}
+                    />
+                  </div>
+                  {tab !== "inspiration" && (
+                    <div className="p-2 space-y-0.5">
+                      <p className="font-body text-[11px] font-medium truncate">{item.brand}</p>
+                      <div className="flex items-center justify-between gap-2 pt-0.5">
+                        {item.price && (
+                          <p className="font-body text-[11px] text-foreground">{item.price}</p>
+                        )}
+                        {item.retailerUrl && (
+                          <a
+                            href={item.retailerUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            title={`Open ${item.retailer ?? "retailer"} in a new tab`}
+                            className="inline-flex items-center gap-0.5 font-body text-[10px] text-muted-foreground hover:text-foreground hover:underline truncate max-w-[60%]"
+                          >
+                            <span className="truncate">{item.retailer ?? "Visit"}</span>
+                            <ExternalLinkIcon className="h-2.5 w-2.5 shrink-0" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  <div className="absolute top-1.5 right-1.5 flex items-center gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleFavorite(item.id, item.brand, item.name);
+                      }}
+                      aria-label={favorites.has(item.id) ? "Remove from favorites" : "Add to favorites"}
+                      title={favorites.has(item.id) ? "Remove from favorites" : "Add to favorites"}
+                      className={cn(
+                        "h-6 w-6 rounded-full bg-background/90 border border-border flex items-center justify-center transition-opacity",
+                        favorites.has(item.id)
+                          ? "opacity-100"
+                          : "opacity-0 group-hover:opacity-100"
+                      )}
+                    >
+                      <HeartIcon
+                        className={cn(
+                          "h-3 w-3 transition-colors",
+                          favorites.has(item.id)
+                            ? "fill-destructive text-destructive"
+                            : "text-foreground"
+                        )}
+                      />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        addToCanvas(item);
+                      }}
+                      aria-label="Add to canvas"
+                      title="Add to canvas"
+                      className="h-6 w-6 rounded-full bg-background/90 border border-border flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-foreground hover:text-background"
+                    >
+                      <PlusIcon className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {filtered.length === 0 && (
+                <div className="col-span-full p-12 text-center">
+                  <p className="font-body text-sm text-muted-foreground">No items match these filters</p>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
         </div>
 
-        {/* Canvas */}
-        <div className="flex-1 flex flex-col items-center justify-center bg-muted/20 p-6 overflow-auto min-h-0 gap-3">
-          <CanvasSizeToggle value={canvasSize} onChange={setCanvasSize} />
+        {/* Right: canvas */}
+        <div
+          className={cn(
+            "shrink-0 flex flex-col bg-muted/30 transition-[width] duration-200",
+            canvasSize === "min" && "w-[160px] p-3",
+            canvasSize === "small" && "w-[420px] p-5",
+            canvasSize === "large" && "w-[640px] p-5"
+          )}
+        >
+          <div className={cn("flex items-center justify-between gap-2", canvasSize === "min" ? "mb-2" : "mb-3")}>
+            {canvasSize !== "min" && (
+              <span className="font-display text-sm font-medium">Look canvas</span>
+            )}
+            <div className={cn("flex items-center gap-2", canvasSize === "min" && "w-full justify-between")}>
+              <div className="flex items-center gap-0.5 border border-border rounded-sm p-0.5 bg-background">
+                {([
+                  { key: "min", icon: Minimize2Icon, label: "Minimize (1)" },
+                  { key: "small", icon: SquareIcon, label: "Small (2)" },
+                  { key: "large", icon: Maximize2Icon, label: "Large (3)" },
+                ] as const).map(({ key, icon: Icon, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => setCanvasSize(key)}
+                    aria-label={label}
+                    title={label}
+                    className={cn(
+                      "h-6 w-6 rounded-sm flex items-center justify-center transition-colors",
+                      canvasSize === key
+                        ? "bg-foreground text-background"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <Icon className="h-3 w-3" />
+                  </button>
+                ))}
+              </div>
+              <span className="font-body text-[11px] text-muted-foreground">
+                {canvas.length}/12
+              </span>
+            </div>
+          </div>
+          {canvasSize === "min" ? (
+            <div
+              ref={canvasRef}
+              role="button"
+              tabIndex={0}
+              onClick={() => setCanvasSize("small")}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setCanvasSize("small");
+                }
+              }}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                handleCanvasDrop(e);
+                setCanvasSize("small");
+              }}
+              title="Expand canvas — drop items here to add"
+              className="relative aspect-square w-full rounded-sm border border-border bg-background overflow-hidden hover:border-foreground transition-colors cursor-pointer"
+            >
+              {canvas.length === 0 ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-2 pointer-events-none">
+                  <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center mb-1.5">
+                    <PlusIcon className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <p className="font-body text-[10px] text-muted-foreground leading-tight">
+                    Empty look
+                  </p>
+                </div>
+              ) : (
+                canvas.map((c, idx) => {
+                  const crop = c.crop ?? { top: 0, right: 0, bottom: 0, left: 0 };
+                  const sX = 100 / Math.max(1, 100 - crop.left - crop.right);
+                  const sY = 100 / Math.max(1, 100 - crop.top - crop.bottom);
+                  return (
+                    <div
+                      key={c.uid}
+                      style={{ left: `${c.x}%`, top: `${c.y}%`, width: "30%", aspectRatio: "1 / 1", zIndex: idx + 1 }}
+                      className="absolute -translate-x-1/2 -translate-y-1/2 rounded-sm overflow-hidden border border-border bg-card shadow-sm pointer-events-none"
+                    >
+                      <div
+                        className="absolute"
+                        style={{
+                          top: `${-crop.top * sY}%`,
+                          left: `${-crop.left * sX}%`,
+                          width: `${sX * 100}%`,
+                          height: `${sY * 100}%`,
+                          transform: `scale(${c.flipH ? -1 : 1}, ${c.flipV ? -1 : 1})`,
+                        }}
+                      >
+                        <Image src={c.image} alt="" width={400} height={400} unoptimized className="w-full h-full object-cover" draggable={false} />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          ) : (
           <div
             ref={canvasRef}
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleCanvasDrop}
-            onClick={() => setSelectedId(null)}
-            className={cn(
-              "relative w-full aspect-square rounded-sm border-2 border-dashed border-border bg-background overflow-hidden",
-              canvasSizeClass[canvasSize],
-            )}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setSelectedUid(null);
+            }}
+            className="relative aspect-square w-full rounded-sm border-2 border-dashed border-border bg-background overflow-hidden"
           >
             {canvas.length === 0 && (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
+                <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                  <PlusIcon className="h-5 w-5 text-muted-foreground" />
+                </div>
                 <p className="font-body text-sm text-muted-foreground">
-                  Drag items onto the canvas
+                  Click or drag items here
                 </p>
                 <p className="font-body text-xs text-muted-foreground/60 mt-1">
-                  Or click a source item to drop it in the next open slot
+                  Build the outfit by adding pieces
                 </p>
               </div>
             )}
-            {canvas.map((c) => {
-              const transform =
-                c.flipH || c.flipV
-                  ? `scale(${c.flipH ? -1 : 1}, ${c.flipV ? -1 : 1})`
-                  : undefined;
-              const clipPath = c.crop
-                ? `inset(${c.crop.top}% ${c.crop.right}% ${c.crop.bottom}% ${c.crop.left}%)`
-                : undefined;
+
+            {canvas.map((c, idx) => {
+              const selected = selectedUid === c.uid;
+              const crop = c.crop ?? { top: 0, right: 0, bottom: 0, left: 0 };
+              const scaleX = 100 / Math.max(1, 100 - crop.left - crop.right);
+              const scaleY = 100 / Math.max(1, 100 - crop.top - crop.bottom);
               return (
                 <div
-                  key={c.id}
+                  key={c.uid}
                   draggable
                   onDragStart={() => {
-                    movingId.current = c.id;
+                    movingUid.current = c.uid;
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSelectedId(c.id);
+                    setSelectedUid(c.uid);
                   }}
-                  style={{
-                    left: `${c.x}%`,
-                    top: `${c.y}%`,
-                    zIndex: c.zIndex,
-                  }}
-                  className={cn(
-                    "absolute w-[22%] aspect-square -translate-x-1/2 -translate-y-1/2 rounded-sm overflow-hidden border-2 bg-card cursor-move transition-shadow",
-                    selectedId === c.id
-                      ? "border-foreground shadow-lg"
-                      : "border-transparent hover:border-border",
-                  )}
+                  style={{ left: `${c.x}%`, top: `${c.y}%`, zIndex: idx + 1 }}
+                  className="absolute -translate-x-1/2 -translate-y-1/2"
                 >
-                  {c.imageUrl ? (
-                    <Image
-                      src={c.imageUrl}
-                      alt={c.label ?? ""}
-                      fill
-                      className="object-cover pointer-events-none"
-                      sizes="200px"
-                      style={{ transform, clipPath }}
-                      unoptimized
-                    />
-                  ) : (
-                    <div className="absolute inset-0 flex items-center justify-center bg-muted p-1 text-center text-[10px] text-muted-foreground">
-                      {c.label ?? "Item"}
+                  <div
+                    style={{
+                      width: canvasSize === "small" ? "26%" : "22%",
+                      aspectRatio: "1 / 1",
+                    }}
+                    className={cn(
+                      "relative rounded-sm overflow-hidden bg-card shadow-sm cursor-move border",
+                      selected ? "border-foreground ring-2 ring-foreground/20" : "border-border"
+                    )}
+                  >
+                    <div
+                      className="absolute"
+                      style={{
+                        top: `${-crop.top * scaleY}%`,
+                        left: `${-crop.left * scaleX}%`,
+                        width: `${scaleX * 100}%`,
+                        height: `${scaleY * 100}%`,
+                        transform: `scale(${c.flipH ? -1 : 1}, ${c.flipV ? -1 : 1})`,
+                      }}
+                    >
+                      <Image
+                        src={c.image}
+                        alt="Canvas item"
+                        width={400}
+                        height={400}
+                        unoptimized
+                        className="w-full h-full object-cover"
+                        draggable={false}
+                      />
+                    </div>
+                    {c.bgRemoving && (
+                      <div className="absolute inset-0 bg-background/70 flex items-center justify-center">
+                        <Loader2Icon className="h-4 w-4 animate-spin text-foreground" />
+                      </div>
+                    )}
+                  </div>
+
+                  {selected && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute left-1/2 -translate-x-1/2 -top-10 flex items-center gap-0.5 px-1 py-1 rounded-sm bg-popover border border-border shadow-md"
+                      style={{ zIndex: 999 }}
+                    >
+                      <TooltipProvider delayDuration={200}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={() => handleRemoveBg(c.uid)}
+                              className={cn(
+                                "h-7 w-7 rounded-sm flex items-center justify-center hover:bg-muted transition-colors",
+                                c.bgRemoved && "bg-muted"
+                              )}
+                              disabled={c.bgRemoving}
+                            >
+                              <EraserIcon className="h-3.5 w-3.5" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="text-xs">{c.bgRemoved ? "Restore background" : "Remove background"}</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={() => openCrop(c.uid)}
+                              className="h-7 w-7 rounded-sm flex items-center justify-center hover:bg-muted transition-colors"
+                            >
+                              <ScissorsIcon className="h-3.5 w-3.5" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="text-xs">Crop</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={() => updateItem(c.uid, { flipH: !c.flipH })}
+                              className={cn(
+                                "h-7 w-7 rounded-sm flex items-center justify-center hover:bg-muted transition-colors",
+                                c.flipH && "bg-muted"
+                              )}
+                            >
+                              <FlipHorizontalIcon className="h-3.5 w-3.5" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="text-xs">Flip horizontal</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={() => updateItem(c.uid, { flipV: !c.flipV })}
+                              className={cn(
+                                "h-7 w-7 rounded-sm flex items-center justify-center hover:bg-muted transition-colors",
+                                c.flipV && "bg-muted"
+                              )}
+                            >
+                              <FlipVerticalIcon className="h-3.5 w-3.5" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="text-xs">Flip vertical</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={() => sendToBack(c.uid)}
+                              className="h-7 w-7 rounded-sm flex items-center justify-center hover:bg-muted transition-colors"
+                            >
+                              <ArrowDownToLineIcon className="h-3.5 w-3.5" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="text-xs">Send to back</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={() => sendToFront(c.uid)}
+                              className="h-7 w-7 rounded-sm flex items-center justify-center hover:bg-muted transition-colors"
+                            >
+                              <ArrowUpToLineIcon className="h-3.5 w-3.5" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="text-xs">Bring to front</TooltipContent>
+                        </Tooltip>
+                        <div className="w-px h-4 bg-border mx-0.5" />
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={() => {
+                                removeFromCanvas(c.uid);
+                                setSelectedUid(null);
+                              }}
+                              className="h-7 w-7 rounded-sm flex items-center justify-center hover:bg-destructive/10 hover:text-destructive transition-colors"
+                            >
+                              <Trash2Icon className="h-3.5 w-3.5" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="text-xs">Remove</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </div>
                   )}
                 </div>
               );
             })}
           </div>
+          )}
+          {selectedUid && (
+            <p className="font-body text-[11px] text-muted-foreground mt-2">
+              Click an item to edit it. Click empty canvas to deselect.
+            </p>
+          )}
+        </div>
+      </div>
 
-          {selectedId && (
-            <SelectionBar
-              onRemove={() => void removeItem(selectedId)}
-              onFront={() => void changeZIndex(selectedId, maxZ + 1)}
-              onBack={() => void changeZIndex(selectedId, 0)}
-              onFlipH={() => void flipItem(selectedId, "h")}
-              onFlipV={() => void flipItem(selectedId, "v")}
-              onCrop={() => setCropTargetId(selectedId)}
-              onBgRemove={() =>
-                toast("Background removal coming soon — Phase 7 feature")
+      <ClientDetailPanel
+        open={clientInfoOpen}
+        onOpenChange={setClientInfoOpen}
+        sessionId={sessionId || null}
+      />
+
+      <ProductDetailDialog
+        open={!!pdpItem}
+        onOpenChange={(o) => !o && setPdpItem(null)}
+        product={
+          pdpItem
+            ? {
+                id: pdpItem.id,
+                image: pdpItem.image,
+                brand: `${pdpItem.brand} — ${pdpItem.name}`,
+                price: pdpItem.price ?? "—",
               }
-              onClose={() => setSelectedId(null)}
-            />
-          )}
-        </div>
-      </div>
-
-      <SaveLookDialog
-        open={saveOpen}
-        onOpenChange={setSaveOpen}
-        clientName={clientName}
-        onSend={sendBoard}
-      />
-
-      {cropTargetId && (
-        <CropDialog
-          item={canvas.find((c) => c.id === cropTargetId) ?? null}
-          onClose={() => setCropTargetId(null)}
-          onApply={(crop) => {
-            void applyCrop(cropTargetId, crop);
-            setCropTargetId(null);
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-function PreviousScopeToggle({
-  value,
-  onChange,
-}: {
-  value: "all" | "client";
-  onChange: (v: "all" | "client") => void;
-}) {
-  const opts: { key: "all" | "client"; label: string }[] = [
-    { key: "client", label: "This client" },
-    { key: "all", label: "All clients" },
-  ];
-  return (
-    <div className="inline-flex items-center rounded-sm bg-muted p-0.5">
-      {opts.map((o) => {
-        const active = value === o.key;
-        return (
-          <button
-            key={o.key}
-            onClick={() => onChange(o.key)}
-            className={cn(
-              "px-3 py-1 rounded-sm font-body text-[11px] transition-colors",
-              active
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function CanvasSizeToggle({
-  value,
-  onChange,
-}: {
-  value: CanvasSize;
-  onChange: (v: CanvasSize) => void;
-}) {
-  const options: { key: CanvasSize; icon: typeof SquareIcon; title: string }[] = [
-    { key: "min", icon: Minimize2Icon, title: "Minimize (press 1)" },
-    { key: "small", icon: SquareIcon, title: "Small (press 2)" },
-    { key: "large", icon: Maximize2Icon, title: "Large (press 3)" },
-  ];
-  return (
-    <div className="inline-flex items-center gap-0.5 rounded-full bg-card border border-border shadow-sm p-1">
-      {options.map((o) => {
-        const Icon = o.icon;
-        const active = value === o.key;
-        return (
-          <button
-            key={o.key}
-            onClick={() => onChange(o.key)}
-            title={o.title}
-            className={cn(
-              "h-7 w-7 rounded-full flex items-center justify-center transition-colors",
-              active
-                ? "bg-foreground text-background"
-                : "text-muted-foreground hover:bg-muted",
-            )}
-          >
-            <Icon className="h-3.5 w-3.5" />
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function CropDialog({
-  item,
-  onClose,
-  onApply,
-}: {
-  item: CanvasItem | null;
-  onClose: () => void;
-  onApply: (
-    crop: { top: number; right: number; bottom: number; left: number } | null,
-  ) => void;
-}) {
-  const [top, setTop] = useState(item?.crop?.top ?? 0);
-  const [right, setRight] = useState(item?.crop?.right ?? 0);
-  const [bottom, setBottom] = useState(item?.crop?.bottom ?? 0);
-  const [left, setLeft] = useState(item?.crop?.left ?? 0);
-  if (!item) return null;
-  const clipPath = `inset(${top}% ${right}% ${bottom}% ${left}%)`;
-  return (
-    <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-[420px] rounded-sm">
-        <DialogHeader>
-          <DialogTitle className="font-display text-lg">Crop item</DialogTitle>
-          <DialogDescription className="font-body text-xs text-muted-foreground">
-            Trim the image from each edge. Values are percent insets.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="aspect-square w-full bg-muted rounded-sm overflow-hidden relative">
-          {item.imageUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={item.imageUrl}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover"
-              style={{ clipPath }}
-            />
-          )}
-        </div>
-        <div className="space-y-3 py-2">
-          <CropSlider label="Top" value={top} onChange={setTop} />
-          <CropSlider label="Right" value={right} onChange={setRight} />
-          <CropSlider label="Bottom" value={bottom} onChange={setBottom} />
-          <CropSlider label="Left" value={left} onChange={setLeft} />
-        </div>
-        <DialogFooter className="gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onApply(null)}
-            className="h-8 rounded-sm font-body text-xs"
-          >
-            Reset
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => onApply({ top, right, bottom, left })}
-            className="h-8 rounded-sm font-body text-xs"
-          >
-            Apply crop
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function CropSlider({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <div>
-      <div className="flex items-center justify-between font-body text-[11px] text-muted-foreground mb-1">
-        <span>{label}</span>
-        <span>{Math.round(value)}%</span>
-      </div>
-      <Slider
-        value={[value]}
-        onValueChange={(vals) => {
-          const next = Array.isArray(vals) ? vals[0] : vals;
-          onChange(next ?? 0);
+            : null
+        }
+        stylistContext={(() => {
+          if (!pdpItem) return undefined;
+          const profile = clientProfile;
+          // Map inventory category → client profile keys
+          const sizeKeyMap: Record<string, string> = {
+            tops: "Tops",
+            bottoms: "Bottoms",
+            outerwear: "Outerwear",
+            shoes: "Shoes",
+            accessories: "",
+          };
+          const budgetKeyMap: Record<string, string> = {
+            tops: "Tops",
+            bottoms: "Bottoms",
+            outerwear: "Tops",
+            shoes: "Shoes",
+            accessories: "Accessories",
+          };
+          const sizeKey = sizeKeyMap[pdpItem.category];
+          const budgetKey = budgetKeyMap[pdpItem.category];
+          const clientSize = sizeKey && profile?.sizes ? profile.sizes[sizeKey] : undefined;
+          const budgetLabel = budgetKey && profile?.budgets ? profile.budgets[budgetKey] : undefined;
+          // Parse budget label like "$50–$100" or "$50-$100"
+          let budgetRange: [number, number] | undefined;
+          if (budgetLabel) {
+            const nums = budgetLabel.replace(/,/g, "").match(/\d+/g);
+            if (nums && nums.length >= 2) budgetRange = [parseInt(nums[0]), parseInt(nums[1])];
+          }
+          const productPrice = pdpItem.price ? parseInt(pdpItem.price.replace(/[^0-9]/g, "")) : undefined;
+          return {
+            clientName,
+            clientSize,
+            availableSizes: pdpItem.sizes,
+            productPrice: isNaN(productPrice as number) ? undefined : productPrice,
+            budgetRange,
+            budgetLabel,
+            categoryLabel: pdpItem.category.charAt(0).toUpperCase() + pdpItem.category.slice(1),
+          };
+        })()}
+        addLabel="Add to canvas"
+        onAddToCart={() => {
+          if (pdpItem) {
+            addToCanvas(pdpItem);
+            toast.success(`Added ${pdpItem.brand} to canvas`);
+            setPdpItem(null);
+          }
         }}
-        min={0}
-        max={40}
-        step={1}
       />
+
+      <Dialog open={!!cropUid} onOpenChange={(o) => !o && setCropUid(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-base">Crop item</DialogTitle>
+          </DialogHeader>
+          {cropUid && (() => {
+            const item = canvas.find((c) => c.uid === cropUid);
+            if (!item) return null;
+            const sx = 100 / Math.max(1, 100 - cropDraft.left - cropDraft.right);
+            const sy = 100 / Math.max(1, 100 - cropDraft.top - cropDraft.bottom);
+            return (
+              <div className="space-y-4">
+                <div className="relative aspect-square w-full rounded-sm overflow-hidden border border-border bg-muted">
+                  <div
+                    className="absolute"
+                    style={{
+                      top: `${-cropDraft.top * sy}%`,
+                      left: `${-cropDraft.left * sx}%`,
+                      width: `${sx * 100}%`,
+                      height: `${sy * 100}%`,
+                      transform: `scale(${item.flipH ? -1 : 1}, ${item.flipV ? -1 : 1})`,
+                    }}
+                  >
+                    <Image src={item.image} alt="Crop preview" width={400} height={400} unoptimized className="w-full h-full object-cover" />
+                  </div>
+                </div>
+                {(["top", "right", "bottom", "left"] as const).map((side) => (
+                  <div key={side}>
+                    <div className="flex justify-between font-body text-xs mb-1.5">
+                      <span className="capitalize text-muted-foreground">{side}</span>
+                      <span className="text-foreground">{Math.round(cropDraft[side])}%</span>
+                    </div>
+                    <Slider
+                      value={[cropDraft[side]]}
+                      max={45}
+                      step={1}
+                      onValueChange={(v) => setCropDraft((d) => ({ ...d, [side]: (v as readonly number[])[0] }))}
+                    />
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="ghost" size="sm" onClick={resetCrop} className="font-body text-xs">
+              Reset
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setCropUid(null)} className="font-body text-xs">
+              Cancel
+            </Button>
+            <Button size="sm" onClick={applyCrop} className="font-body text-xs gap-1.5">
+              <CheckIcon className="h-3.5 w-3.5" />
+              Apply
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={saveOpen} onOpenChange={(o) => { if (isSaving) return; setSaveOpen(o); if (!o) { setSaveDescTouched(false); setLookNameTouched(false); } }}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display text-2xl text-foreground">Save look for {clientName}</DialogTitle>
+            <DialogDescription className="font-body text-sm text-foreground/70">
+              Name your look, explain why you styled it, and add a few tags to capture what the client asked for.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-2">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <Label htmlFor="look-name" className="font-body text-sm font-semibold text-foreground">
+                  Look name <span className="text-destructive">*</span>
+                </Label>
+                <span className="font-body text-xs text-foreground/60">
+                  {lookName.length}/80
+                </span>
+              </div>
+              <Input
+                id="look-name"
+                placeholder="e.g. Sunset rooftop dinner"
+                value={lookName}
+                onChange={(e) => setLookName(e.target.value.slice(0, 80))}
+                onBlur={() => setLookNameTouched(true)}
+                className={cn(
+                  "h-11 font-body text-base text-foreground rounded-sm",
+                  lookNameTouched && !lookName.trim() && "border-destructive focus-visible:ring-destructive"
+                )}
+              />
+              {lookNameTouched && !lookName.trim() && (
+                <p className="font-body text-sm text-destructive mt-1.5">
+                  A name is required.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <Label htmlFor="look-desc" className="font-body text-sm font-semibold text-foreground">
+                  Why this look <span className="text-destructive">*</span>
+                </Label>
+                <span className="font-body text-xs text-foreground/60">
+                  {saveDescription.length}/{MAX_DESC}
+                </span>
+              </div>
+              <Textarea
+                id="look-desc"
+                placeholder="Explain your styling choices for the client (mandatory)…"
+                value={saveDescription}
+                onChange={(e) => setSaveDescription(e.target.value.slice(0, MAX_DESC))}
+                onBlur={() => setSaveDescTouched(true)}
+                rows={6}
+                className={cn(
+                  "font-body text-base text-foreground resize-none",
+                  saveDescTouched && !saveDescription.trim() && "border-destructive focus-visible:ring-destructive"
+                )}
+              />
+              {saveDescTouched && !saveDescription.trim() && (
+                <p className="font-body text-sm text-destructive mt-1.5">
+                  A description is required.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <h4 className="font-display text-sm font-semibold uppercase tracking-wider text-foreground mb-3">
+                Client brief tags
+              </h4>
+              <div className="grid grid-cols-2 gap-4">
+                {([
+                  { key: "event" as const, label: "Event", placeholder: "e.g. Beach wedding" },
+                  { key: "bodyType" as const, label: "Body type", placeholder: "e.g. Pear" },
+                  { key: "fitPreference" as const, label: "Fit preference", placeholder: "e.g. Relaxed" },
+                  { key: "highlights" as const, label: "Highlights", placeholder: "e.g. Show waist" },
+                ]).map((t) => (
+                  <div key={t.key}>
+                    <Label htmlFor={`tag-${t.key}`} className="font-body text-sm font-medium text-foreground">
+                      {t.label}
+                    </Label>
+                    <Input
+                      id={`tag-${t.key}`}
+                      placeholder={t.placeholder}
+                      value={saveTags[t.key]}
+                      onChange={(e) =>
+                        setSaveTags((prev) => ({ ...prev, [t.key]: e.target.value.slice(0, MAX_TAG) }))
+                      }
+                      className="h-10 mt-1.5 font-body text-sm text-foreground rounded-sm"
+                    />
+                  </div>
+                ))}
+              </div>
+              {(saveTags.event || saveTags.bodyType || saveTags.fitPreference || saveTags.highlights) && (
+                <div className="flex flex-wrap gap-2 mt-4">
+                  {Object.entries(saveTags)
+                    .filter(([, v]) => v.trim())
+                    .map(([k, v]) => (
+                      <Badge key={k} variant="secondary" className="font-body text-xs text-foreground">
+                        {v}
+                      </Badge>
+                    ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => setSaveOpen(false)}
+              disabled={isSaving}
+              className="font-body text-sm text-foreground"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmSave}
+              disabled={isSaving || !saveDescription.trim() || !lookName.trim()}
+              className="font-body text-sm gap-1.5 bg-foreground text-background hover:bg-foreground/90"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2Icon className="h-4 w-4 animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                <>
+                  <SendIcon className="h-4 w-4" />
+                  Save & send
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function SourceTile({
-  imageUrl,
-  label,
-  sublabel,
-  favorited,
-  onAdd,
-  onFavoriteToggle,
-  onDragStart,
-}: {
+// Re-export the prior CartItemView shape so page.tsx imports keep compiling.
+export interface CartItemView {
+  id: string;
+  inventoryProductId: string;
   imageUrl: string | null;
-  label: string;
-  sublabel: string | null;
-  favorited?: boolean;
-  onAdd: () => void;
-  onFavoriteToggle?: () => void;
-  onDragStart: () => void;
-}) {
-  return (
-    <div
-      draggable
-      onDragStart={onDragStart}
-      className="relative group overflow-hidden rounded-sm border border-border bg-card text-left hover:shadow-sm transition-shadow"
-    >
-      <button
-        onClick={onAdd}
-        className="block w-full text-left"
-        aria-label={`Add ${label} to canvas`}
-      >
-        <div className="aspect-square bg-muted relative">
-          {imageUrl ? (
-            <Image
-              src={imageUrl}
-              alt={label}
-              fill
-              className="object-cover"
-              sizes="160px"
-              unoptimized
-            />
-          ) : null}
-        </div>
-        <div className="p-2">
-        {sublabel && (
-          <p className="font-body text-[10px] uppercase tracking-wider text-muted-foreground truncate">
-            {sublabel}
-          </p>
-        )}
-        <p className="font-body text-xs text-foreground truncate">{label}</p>
-      </div>
-      </button>
-      {onFavoriteToggle && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onFavoriteToggle();
-          }}
-          title={favorited ? "Remove from favorites" : "Save to favorites"}
-          className="absolute top-2 right-2 h-7 w-7 rounded-full bg-background/80 backdrop-blur flex items-center justify-center hover:bg-background transition-colors opacity-0 group-hover:opacity-100 data-[favorited=true]:opacity-100"
-          data-favorited={favorited ? "true" : "false"}
-        >
-          <HeartIcon
-            className={cn(
-              "h-3.5 w-3.5",
-              favorited ? "fill-red-500 text-red-500" : "text-foreground",
-            )}
-          />
-        </button>
-      )}
-    </div>
-  );
-}
-
-function SelectionBar({
-  onRemove,
-  onFront,
-  onBack,
-  onFlipH,
-  onFlipV,
-  onCrop,
-  onBgRemove,
-  onClose,
-}: {
-  onRemove: () => void;
-  onFront: () => void;
-  onBack: () => void;
-  onFlipH: () => void;
-  onFlipV: () => void;
-  onCrop: () => void;
-  onBgRemove: () => void;
-  onClose: () => void;
-}) {
-  return (
-    <div className="mt-4 flex items-center gap-1 rounded-full bg-card border border-border shadow-sm px-2 py-1">
-      <ToolButton title="Bring to front" onClick={onFront}>
-        <ArrowUpToLineIcon className="h-3.5 w-3.5" />
-      </ToolButton>
-      <ToolButton title="Send to back" onClick={onBack}>
-        <ArrowDownToLineIcon className="h-3.5 w-3.5" />
-      </ToolButton>
-      <div className="h-4 w-px bg-border mx-1" />
-      <ToolButton title="Flip horizontal" onClick={onFlipH}>
-        <FlipHorizontalIcon className="h-3.5 w-3.5" />
-      </ToolButton>
-      <ToolButton title="Flip vertical" onClick={onFlipV}>
-        <FlipVerticalIcon className="h-3.5 w-3.5" />
-      </ToolButton>
-      <ToolButton title="Crop" onClick={onCrop}>
-        <ScissorsIcon className="h-3.5 w-3.5" />
-      </ToolButton>
-      <ToolButton title="Remove background" onClick={onBgRemove}>
-        <EraserIcon className="h-3.5 w-3.5" />
-      </ToolButton>
-      <div className="h-4 w-px bg-border mx-1" />
-      <ToolButton title="Remove item" onClick={onRemove}>
-        <Trash2Icon className="h-3.5 w-3.5 text-red-600" />
-      </ToolButton>
-      <ToolButton title="Deselect" onClick={onClose}>
-        <XIcon className="h-3.5 w-3.5" />
-      </ToolButton>
-    </div>
-  );
-}
-
-function ToolButton({
-  title,
-  onClick,
-  children,
-}: {
-  title: string;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      title={title}
-      className="h-7 w-7 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
-    >
-      {children}
-    </button>
-  );
-}
-
-// Inventory filter panel — retailer chips, color swatches, size chips, plus
-// the Loveable HEAD additions (Availability, Style/BodyType for Inspo, Tops
-// subcategories, Price preset). Tastegraph doesn't expose all these as
-// facets yet (BACKEND-GAP-E/F/G/H); the rebuild ships them from hardcoded
-// option lists for now.
-function FilterPanel({
-  filterValues,
-  selectedMerchants,
-  selectedColors,
-  selectedSizes,
-  selectedAvailability,
-  selectedTopsSubs,
-  selectedInspoStyles,
-  selectedInspoBodyTypes,
-  pricePreset,
-  priceRange,
-  inStockOnly,
-  activeFilterCount,
-  onMerchants,
-  onColors,
-  onSizes,
-  onAvailability,
-  onTopsSubs,
-  onInspoStyles,
-  onInspoBodyTypes,
-  onPricePreset,
-  onPriceRange,
-  onInStockOnly,
-  onReset,
-  onApply,
-}: {
-  filterValues: FilterValuesResponse;
-  selectedMerchants: string[];
-  selectedColors: string[];
-  selectedSizes: string[];
-  selectedAvailability: string[];
-  selectedTopsSubs: string[];
-  selectedInspoStyles: string[];
-  selectedInspoBodyTypes: string[];
-  pricePreset: "any" | "u250" | "250-1000" | "1000+";
-  priceRange: [number, number];
-  inStockOnly: boolean;
-  activeFilterCount: number;
-  onMerchants: (v: string[]) => void;
-  onColors: (v: string[]) => void;
-  onSizes: (v: string[]) => void;
-  onAvailability: (v: string[]) => void;
-  onTopsSubs: (v: string[]) => void;
-  onInspoStyles: (v: string[]) => void;
-  onInspoBodyTypes: (v: string[]) => void;
-  onPricePreset: (v: "any" | "u250" | "250-1000" | "1000+") => void;
-  onPriceRange: (v: [number, number]) => void;
-  onInStockOnly: (v: boolean) => void;
-  onReset: () => void;
-  onApply: () => void;
-}) {
-  function toggle<T>(arr: T[], val: T, setter: (next: T[]) => void) {
-    setter(arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val]);
-  }
-  return (
-    <div className="border-b border-border px-4 py-3 space-y-3 max-h-[50vh] overflow-y-auto">
-      <div className="flex items-center justify-between">
-        <h3 className="font-display text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Filters {activeFilterCount > 0 ? `(${activeFilterCount})` : ""}
-        </h3>
-        {activeFilterCount > 0 && (
-          <button
-            onClick={onReset}
-            className="font-body text-[10px] text-muted-foreground hover:text-foreground underline"
-          >
-            Reset
-          </button>
-        )}
-      </div>
-
-      {filterValues.merchants.length > 0 && (
-        <ChipGroup
-          label="Retailers"
-          options={filterValues.merchants.map((m) => ({ key: m.id, label: m.name }))}
-          selected={selectedMerchants}
-          onToggle={(k) => toggle(selectedMerchants, k, onMerchants)}
-        />
-      )}
-
-      {filterValues.colors.length > 0 && (
-        <ChipGroup
-          label="Colors"
-          options={filterValues.colors.map((c) => ({ key: c, label: c }))}
-          selected={selectedColors}
-          onToggle={(k) => toggle(selectedColors, k, onColors)}
-        />
-      )}
-
-      {filterValues.sizes.length > 0 && (
-        <ChipGroup
-          label="Sizes"
-          options={filterValues.sizes.map((s) => ({ key: s, label: s }))}
-          selected={selectedSizes}
-          onToggle={(k) => toggle(selectedSizes, k, onSizes)}
-        />
-      )}
-
-      <ChipGroup
-        label="Availability"
-        options={AVAILABILITY_OPTIONS}
-        selected={selectedAvailability}
-        onToggle={(k) => toggle(selectedAvailability, k, onAvailability)}
-      />
-
-      {/* Tops subcats / Inspo Style / Inspo BodyType depend on facets the
-          inventory service does not yet expose (BACKEND-GAP-E/F/G/H). The
-          chips render so stylists can preview the taxonomy, but they
-          don't narrow product results until the backend lands them. */}
-      <p className="font-body text-[10px] italic text-muted-foreground/70">
-        Some filters below preview taxonomy not yet served by inventory.
-      </p>
-
-      <ChipGroup
-        label="Tops subcategories"
-        options={TOPS_SUBCATEGORIES.map((s) => ({ key: s, label: s }))}
-        selected={selectedTopsSubs}
-        onToggle={(k) => toggle(selectedTopsSubs, k, onTopsSubs)}
-      />
-
-      <ChipGroup
-        label="Inspo style"
-        options={INSPO_STYLE_OPTIONS}
-        selected={selectedInspoStyles}
-        onToggle={(k) => toggle(selectedInspoStyles, k, onInspoStyles)}
-      />
-
-      <ChipGroup
-        label="Inspo body type"
-        options={INSPO_BODY_TYPE_OPTIONS}
-        selected={selectedInspoBodyTypes}
-        onToggle={(k) => toggle(selectedInspoBodyTypes, k, onInspoBodyTypes)}
-      />
-
-      <div>
-        <label className="block font-display text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
-          Price preset
-        </label>
-        <div className="flex flex-wrap gap-1">
-          {PRICE_PRESETS.map((p) => (
-            <button
-              key={p.key}
-              onClick={() => onPricePreset(p.key)}
-              className={cn(
-                "rounded-sm border px-2 py-1 font-body text-[11px] transition-colors",
-                pricePreset === p.key
-                  ? "bg-foreground text-background border-foreground"
-                  : "border-border text-foreground hover:bg-muted",
-              )}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <label className="block font-display text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
-          Price (USD)
-        </label>
-        <div className="flex items-center gap-2">
-          <Input
-            type="number"
-            min={0}
-            value={priceRange[0]}
-            onChange={(e) =>
-              onPriceRange([Number(e.target.value) || 0, priceRange[1]])
-            }
-            className="h-7 w-20 rounded-sm font-body text-xs"
-            aria-label="Min price"
-          />
-          <span className="font-body text-xs text-muted-foreground">–</span>
-          <Input
-            type="number"
-            min={0}
-            value={priceRange[1]}
-            onChange={(e) =>
-              onPriceRange([priceRange[0], Number(e.target.value) || 0])
-            }
-            className="h-7 w-20 rounded-sm font-body text-xs"
-            aria-label="Max price"
-          />
-        </div>
-      </div>
-
-      <label className="flex items-center gap-2 font-body text-xs">
-        <input
-          type="checkbox"
-          checked={inStockOnly}
-          onChange={(e) => onInStockOnly(e.target.checked)}
-        />
-        In-stock only
-      </label>
-
-      <div className="pt-1">
-        <Button
-          size="sm"
-          onClick={onApply}
-          className="w-full h-8 rounded-sm font-body text-xs"
-        >
-          Apply filters
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function ChipGroup({
-  label,
-  options,
-  selected,
-  onToggle,
-}: {
-  label: string;
-  options: { key: string; label: string }[];
-  selected: string[];
-  onToggle: (key: string) => void;
-}) {
-  return (
-    <div>
-      <div className="font-display text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
-        {label}
-      </div>
-      <div className="flex flex-wrap gap-1">
-        {options.slice(0, 20).map((o) => {
-          const active = selected.includes(o.key);
-          return (
-            <button
-              key={o.key}
-              onClick={() => onToggle(o.key)}
-              className={cn(
-                "rounded-sm border px-2 py-1 font-body text-[11px] transition-colors",
-                active
-                  ? "bg-foreground text-background border-foreground"
-                  : "border-border text-foreground hover:bg-muted",
-              )}
-            >
-              {o.label}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
+  name: string;
+  brand: string;
+  priceCents: number;
 }

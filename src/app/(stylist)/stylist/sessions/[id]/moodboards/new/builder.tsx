@@ -1,25 +1,23 @@
 "use client";
 
-// Loveable-styled moodboard creator: Pinterest-style inspiration library on
-// the left + asymmetric canvas preview on the right + save-and-send dialog
-// with an AI-drafted note. Wires to the existing moodboard service + photos
-// API (no localStorage drafts — draft state is the DB row with sentAt null).
-
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { useState, useEffect } from "react";
+import Image from "next/image";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { saveDraft, deleteDraft, type MoodBoardDraft } from "@/lib/moodBoardDrafts";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
 import {
   ArrowLeftIcon,
   SearchIcon,
   PlusIcon,
+  XIcon,
+  ChevronDownIcon,
   SendIcon,
   Trash2Icon,
   UserIcon,
+  SaveIcon,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -36,222 +34,193 @@ import {
 import { SendMoodBoardDialog } from "@/components/stylist/send-moodboard-dialog";
 import ClientDetailPanel from "@/components/stylist/client-detail-panel";
 import { toast } from "sonner";
-import type {
-  BoardPhoto,
-  InspirationPhoto,
-} from "@/generated/prisma/client";
 
-interface Props {
-  boardId: string;
-  sessionId: string;
-  clientId: string;
-  clientName: string;
-  initialPhotos: BoardPhoto[];
-  inspiration: InspirationPhoto[];
+interface InspirationPhoto {
+  id: string;
+  url: string;
+  s3Key: string;
+  title: string | null;
+  category: string | null;
+  tags: string[];
 }
 
-export function MoodboardBuilder({
-  boardId,
-  sessionId,
-  clientId,
-  clientName,
-  initialPhotos,
-  inspiration,
-}: Props) {
-  const router = useRouter();
-  const [photos, setPhotos] = useState(initialPhotos);
-  const [sendOpen, setSendOpen] = useState(false);
-  const [clientInfoOpen, setClientInfoOpen] = useState(false);
+interface MoodBoardCreatorProps {
+  clientName: string;
+  sessionId?: string | null;
+  draftId?: string | null;
+  initialImages?: string[];
+  onBack: () => void;
+  onSend?: (images: string[], note: string) => void;
+  onDraftSaved?: () => void;
+  onPhotoAdded?: (input: { url: string; s3Key: string; inspirationPhotoId: string }) => Promise<boolean>;
+  onPhotoRemoved?: (url: string) => Promise<void>;
+}
+
+export function MoodboardBuilder({ clientName, sessionId, draftId, initialImages, onBack, onSend, onDraftSaved, onPhotoAdded, onPhotoRemoved }: MoodBoardCreatorProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [genderFilter, setGenderFilter] = useState("female");
-  const [error, setError] = useState<string | null>(null);
-  // Loveable HEAD adds a Template / Freestyle toggle. Template is the
-  // existing curated MoodBoardGrid; Freestyle drops items onto a
-  // free-positioning canvas with drag + resize handles.
-  const [canvasMode, setCanvasMode] = useState<"template" | "freestyle">(
-    "template",
-  );
+  const [canvasImages, setCanvasImages] = useState<string[]>(initialImages || []);
+  const [canvasMode, setCanvasMode] = useState<"template" | "freestyle">("template");
   const [freestyleItems, setFreestyleItems] = useState<FreestyleItem[]>([]);
+  const [sendDialogOpen, setSendDialogOpen] = useState(false);
+  const [clientInfoOpen, setClientInfoOpen] = useState(false);
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(draftId || null);
+  const [inspirations, setInspirations] = useState<InspirationPhoto[]>([]);
 
-  const addedInspirationIds = new Set(
-    photos
-      .map((p) => p.inspirationPhotoId)
-      .filter((id): id is string => id != null),
-  );
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (genderFilter !== "all") params.set("category", genderFilter);
+    if (searchQuery.trim()) params.set("q", searchQuery.trim());
+    let cancelled = false;
+    fetch(`/api/inspiration-photos?${params.toString()}`)
+      .then((r) => (r.ok ? r.json() : { photos: [] }))
+      .then((body) => {
+        if (!cancelled) setInspirations(body.photos ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setInspirations([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [genderFilter, searchQuery]);
 
-  const filtered = inspiration.filter((p) => {
-    if (searchQuery.trim()) {
-      const q = searchQuery.trim().toLowerCase();
-      const haystack = `${p.title ?? ""} ${p.tags.join(" ")}`.toLowerCase();
-      if (!haystack.includes(q)) return false;
-    }
-    if (genderFilter !== "all") {
-      const cat = p.category?.toLowerCase() ?? "";
-      if (!cat.includes(genderFilter)) return false;
-    }
-    return true;
-  });
+  const resultCount = inspirations.length;
 
-  async function addFromInspiration(photo: InspirationPhoto) {
-    if (addedInspirationIds.has(photo.id)) {
-      toast("Already on board");
+  // Re-flow freestyle items when entering freestyle mode or when images change while in freestyle.
+  useEffect(() => {
+    if (canvasMode !== "freestyle") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFreestyleItems((prev) => {
+      const existing = new Map(prev.map((it) => [it.src, it]));
+      const maxZ = Math.max(0, ...prev.map((it) => it.z));
+      const defaults = defaultFreestyleLayout(canvasImages);
+      let z = maxZ;
+      return canvasImages.map((src, i) => {
+        const found = existing.get(src);
+        if (found) return found;
+        z += 1;
+        return { ...defaults[i], z };
+      });
+    });
+  }, [canvasMode, canvasImages]);
+
+  const addToCanvas = (photo: InspirationPhoto) => {
+    if (canvasImages.includes(photo.url)) {
+      toast("Already added to board");
       return;
     }
-    if (photos.length >= 9) {
+    if (canvasImages.length >= 9) {
       toast("Maximum 9 images per mood board");
       return;
     }
-    const res = await fetch(`/api/moodboards/${boardId}/photos`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        s3Key: photo.s3Key,
+    setCanvasImages((prev) => [...prev, photo.url]);
+    if (onPhotoAdded) {
+      void onPhotoAdded({
         url: photo.url,
+        s3Key: photo.s3Key,
         inspirationPhotoId: photo.id,
-      }),
-    });
-    if (!res.ok) {
-      setError("Could not add photo");
+      }).then((ok) => {
+        if (!ok) setCanvasImages((prev) => prev.filter((s) => s !== photo.url));
+      });
+    }
+  };
+
+  const removeFromCanvas = (index: number) => {
+    const src = canvasImages[index];
+    setCanvasImages((prev) => prev.filter((_, i) => i !== index));
+    setFreestyleItems((prev) => prev.filter((it) => it.src !== src));
+    if (onPhotoRemoved && src) void onPhotoRemoved(src);
+  };
+
+  const clearCanvas = () => {
+    const removed = canvasImages;
+    setCanvasImages([]);
+    setFreestyleItems([]);
+    if (onPhotoRemoved) {
+      for (const src of removed) void onPhotoRemoved(src);
+    }
+  };
+
+  const handleSaveDraft = () => {
+    if (canvasImages.length === 0) {
+      toast("Add images before saving a draft");
       return;
     }
-    const created = (await res.json()) as BoardPhoto;
-    setPhotos((p) => [...p, created]);
-  }
-
-  async function removePhoto(photoId: string) {
-    const prev = photos;
-    setPhotos((p) => p.filter((ph) => ph.id !== photoId));
-    const res = await fetch(
-      `/api/moodboards/${boardId}/photos/${photoId}`,
-      { method: "DELETE" },
+    const saved = saveDraft(
+      { clientName, sessionId: sessionId || null, images: canvasImages },
+      currentDraftId || undefined
     );
-    if (!res.ok) {
-      setPhotos(prev);
-      setError("Could not remove photo");
-    }
-  }
+    setCurrentDraftId(saved.id);
+    onDraftSaved?.();
+    toast.success("Draft saved");
+  };
 
-  async function clearCanvas() {
-    const prev = photos;
-    const ids = prev.map((p) => p.id);
-    setPhotos([]);
-    const results = await Promise.allSettled(
-      ids.map((id) =>
-        fetch(`/api/moodboards/${boardId}/photos/${id}`, {
-          method: "DELETE",
-        }).then((res) => {
-          if (!res.ok) throw new Error(`delete ${id} → ${res.status}`);
-          return id;
-        }),
-      ),
-    );
-    const failed = results.filter((r) => r.status === "rejected");
-    if (failed.length > 0) {
-      // Re-fetch authoritative state from the server rather than trying to
-      // reconstruct it client-side — some deletes may have succeeded.
-      const res = await fetch(`/api/moodboards/${boardId}`);
-      if (res.ok) {
-        const body = (await res.json()) as { photos?: BoardPhoto[] };
-        if (body.photos) setPhotos(body.photos);
-        else setPhotos(prev);
-      } else {
-        setPhotos(prev);
-      }
-      toast.error(
-        `Could not remove ${failed.length} photo${failed.length === 1 ? "" : "s"}`,
-      );
-    }
-  }
-
-  async function sendBoard(note: string) {
-    setError(null);
-    const res = await fetch(`/api/moodboards/${boardId}/send`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ note }),
+  const handleSend = (images: string[], note: string) => {
+    // Delete draft after sending
+    if (currentDraftId) deleteDraft(currentDraftId);
+    toast.success("Mood board sent to " + clientName, {
+      description: "Redirecting to dashboard…",
     });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(body.error ?? "Send failed");
-      toast.error(body.error ?? "Send failed");
-      return;
-    }
-    // Loveable HEAD pattern: success toast lands first, then a 900ms grace
-    // period before navigation so the stylist sees confirmation before the
-    // page shifts. Redirect goes to the stylist's home (the dashboard) —
-    // the rebuild's perspective inversion of Loveable's "/" target.
-    toast.success(`Mood board sent to ${clientName}`);
     setTimeout(() => {
-      router.push(`/stylist/dashboard`);
-      router.refresh();
+      onSend?.(images, note);
     }, 900);
-  }
-
-  const canvasImages = photos.map((p) => ({ id: p.id, url: p.url }));
-
-  // Re-flow freestyle items when entering freestyle mode or when the photo
-  // set changes underneath. Depend on the content signature (id+url) — not
-  // photos.length — so a swap (remove 1 + add 1) or a server refresh that
-  // returns different URLs at the same length still triggers the reflow.
-  // Preserve existing positions for images already on the canvas.
-  const freestyleSignature = photos.map((p) => `${p.id}:${p.url}`).join("|");
-  useEffect(() => {
-    if (canvasMode !== "freestyle") return;
-    setFreestyleItems((prev) => {
-      const existing = new Set(prev.map((it) => it.src));
-      const seeded = defaultFreestyleLayout(canvasImages.map((i) => i.url));
-      const kept = prev.filter((it) =>
-        canvasImages.some((c) => c.url === it.src),
-      );
-      const added = seeded.filter((s) => !existing.has(s.src));
-      return [...kept, ...added];
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canvasMode, freestyleSignature]);
+  };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">
+    <div className="flex flex-col h-full bg-background">
       {/* Top bar */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-3">
-          <Link
-            href={`/stylist/sessions/${sessionId}/workspace`}
+          <button
+            onClick={onBack}
             className="text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeftIcon className="h-5 w-5" />
-          </Link>
+          </button>
           <div>
-            <h1 className="font-display text-base font-semibold">
-              Create mood board
-            </h1>
+            <h1 className="font-display text-base font-semibold">Create mood board</h1>
             <p className="font-body text-xs text-muted-foreground">
               for {clientName}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setClientInfoOpen(true)}
-            className="inline-flex items-center gap-1.5 h-8 rounded-sm border border-border px-3 font-body text-xs hover:bg-muted transition-colors"
+            className="font-body text-xs h-8 rounded-sm gap-1.5"
           >
             <UserIcon className="h-3.5 w-3.5" />
             Client info
-          </button>
-          {photos.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => void clearCanvas()}
-              className="font-body text-xs text-muted-foreground h-8 gap-1"
-            >
-              <Trash2Icon className="h-3.5 w-3.5" />
-              Clear
-            </Button>
+          </Button>
+          {canvasImages.length > 0 && (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearCanvas}
+                className="font-body text-xs text-muted-foreground h-8 gap-1"
+              >
+                <Trash2Icon className="h-3.5 w-3.5" />
+                Clear
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSaveDraft}
+                className="font-body text-xs h-8 rounded-sm gap-1.5"
+              >
+                <SaveIcon className="h-3.5 w-3.5" />
+                Save draft
+              </Button>
+            </>
+
           )}
           <Button
-            onClick={() => setSendOpen(true)}
-            disabled={photos.length === 0}
+            onClick={() => setSendDialogOpen(true)}
+            disabled={canvasImages.length === 0}
             size="sm"
             className="h-8 rounded-sm bg-foreground text-background hover:bg-foreground/90 font-body text-xs gap-1.5"
           >
@@ -261,67 +230,66 @@ export function MoodboardBuilder({
         </div>
       </div>
 
-      {error && (
-        <div className="bg-red-50 px-5 py-2 text-xs text-red-700">{error}</div>
-      )}
-
+      {/* Main area */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Inspiration library */}
+        {/* Left: Inspiration grid */}
         <div className="flex-1 flex flex-col border-r border-border min-w-0">
+          {/* Filters */}
           <div className="flex items-center gap-2 px-5 py-3 border-b border-border">
-            <Select
-              value={genderFilter}
-              onValueChange={(v) => setGenderFilter(v ?? "all")}
-            >
+            <Select value={genderFilter} onValueChange={setGenderFilter}>
               <SelectTrigger className="w-[100px] h-8 rounded-sm font-body text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All</SelectItem>
                 <SelectItem value="female">Female</SelectItem>
                 <SelectItem value="male">Male</SelectItem>
+                <SelectItem value="all">All</SelectItem>
               </SelectContent>
             </Select>
             <span className="font-body text-sm text-muted-foreground">
-              {filtered.length} results
+              {resultCount} Results
             </span>
             <div className="ml-auto relative">
               <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                placeholder="Search…"
+                placeholder="Search..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-[180px] h-8 pl-8 font-body text-xs rounded-sm"
+                className="w-[160px] h-8 pl-8 font-body text-xs rounded-sm"
               />
             </div>
           </div>
 
+          {/* Photo grid */}
           <ScrollArea className="flex-1">
-            <div className="columns-3 md:columns-4 gap-2 p-5">
-              {filtered.map((p) => {
-                const isAdded = addedInspirationIds.has(p.id);
+            <div className="columns-4 gap-2 p-5">
+              {inspirations.map((photo, i) => {
+                const isAdded = canvasImages.includes(photo.url);
                 return (
                   <div
-                    key={p.id}
+                    key={photo.id}
                     className="relative mb-2 group cursor-pointer break-inside-avoid"
-                    onClick={() => void addFromInspiration(p)}
+                    onClick={() => addToCanvas(photo)}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={p.url}
-                      alt={p.title ?? ""}
+                    <Image
+                      src={photo.url}
+                      alt={photo.title || `Inspiration ${i + 1}`}
+                      width={400}
+                      height={600}
+                      unoptimized
                       className={cn(
                         "w-full rounded-sm object-cover transition-all duration-200",
-                        isAdded && "ring-2 ring-accent opacity-70",
+                        isAdded && "ring-2 ring-accent opacity-70"
                       )}
                       loading="lazy"
                     />
+                    {/* Hover overlay */}
                     <div
                       className={cn(
                         "absolute inset-0 rounded-sm flex items-center justify-center transition-opacity duration-200",
                         isAdded
                           ? "bg-accent/20 opacity-100"
-                          : "bg-foreground/0 group-hover:bg-foreground/20 opacity-0 group-hover:opacity-100",
+                          : "bg-foreground/0 group-hover:bg-foreground/20 opacity-0 group-hover:opacity-100"
                       )}
                     >
                       {isAdded ? (
@@ -335,27 +303,21 @@ export function MoodboardBuilder({
                   </div>
                 );
               })}
-              {filtered.length === 0 && (
-                <p className="font-body text-sm text-muted-foreground col-span-full">
-                  No inspiration photos match your filters.
-                </p>
-              )}
             </div>
           </ScrollArea>
         </div>
 
-        {/* Canvas preview */}
-        <div className="w-[400px] shrink-0 hidden md:flex flex-col items-center justify-center p-6 bg-muted/30">
+        {/* Right: Canvas */}
+        <div className="w-[400px] shrink-0 flex flex-col items-center justify-center p-6 bg-muted/30">
           <div className="w-full max-w-[360px]">
             <div className="flex items-center justify-between mb-3">
               <span className="font-display text-sm font-medium">Board</span>
               <span className="font-body text-[11px] text-muted-foreground">
-                {photos.length}/9 images
+                {canvasImages.length}/9 images
               </span>
             </div>
 
-            {/* Mode toggle (Loveable HEAD): Template = curated grid;
-                Freestyle = drag-positioned canvas. */}
+            {/* Mode toggle */}
             <div className="flex items-center gap-1 mb-3 p-0.5 bg-muted rounded-sm w-fit">
               <button
                 onClick={() => setCanvasMode("template")}
@@ -363,7 +325,7 @@ export function MoodboardBuilder({
                   "px-2.5 py-1 rounded-sm font-body text-[11px] transition-colors",
                   canvasMode === "template"
                     ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 Template
@@ -374,15 +336,16 @@ export function MoodboardBuilder({
                   "px-2.5 py-1 rounded-sm font-body text-[11px] transition-colors",
                   canvasMode === "freestyle"
                     ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 Freestyle
               </button>
             </div>
 
+            {/* Canvas area */}
             <div className="aspect-square w-full rounded-sm border-2 border-dashed border-border bg-background overflow-hidden">
-              {photos.length === 0 ? (
+              {canvasImages.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center px-6">
                   <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-3">
                     <PlusIcon className="h-5 w-5 text-muted-foreground" />
@@ -400,7 +363,7 @@ export function MoodboardBuilder({
                 <MoodBoardGrid
                   images={canvasImages}
                   editable
-                  onRemove={(id) => void removePhoto(id)}
+                  onRemove={removeFromCanvas}
                   className="h-full"
                 />
               ) : (
@@ -410,14 +373,14 @@ export function MoodboardBuilder({
                   onRemove={(i) => {
                     const src = freestyleItems[i]?.src;
                     if (!src) return;
-                    const photo = canvasImages.find((c) => c.url === src);
-                    if (photo) void removePhoto(photo.id);
+                    const idx = canvasImages.indexOf(src);
+                    if (idx >= 0) removeFromCanvas(idx);
                   }}
                   className="h-full"
                 />
               )}
             </div>
-            {canvasMode === "freestyle" && photos.length > 0 && (
+            {canvasMode === "freestyle" && canvasImages.length > 0 && (
               <p className="font-body text-[10px] text-muted-foreground/70 mt-2 text-center">
                 Drag to position · drag bottom-right corner to resize
               </p>
@@ -427,18 +390,17 @@ export function MoodboardBuilder({
       </div>
 
       <SendMoodBoardDialog
-        open={sendOpen}
-        onOpenChange={setSendOpen}
+        open={sendDialogOpen}
+        onOpenChange={setSendDialogOpen}
         images={canvasImages}
         clientName={clientName}
-        onSend={sendBoard}
+        onSend={handleSend}
       />
 
       <ClientDetailPanel
         open={clientInfoOpen}
         onOpenChange={setClientInfoOpen}
-        sessionId={sessionId}
-        clientId={clientId}
+        sessionId={sessionId || null}
       />
     </div>
   );
