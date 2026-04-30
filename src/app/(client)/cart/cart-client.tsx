@@ -52,6 +52,29 @@ function formatDollars(cents: number): string {
   }).format(cents / 100);
 }
 
+function sortRows<T extends { priceInCents: number | null; brand: string }>(
+  rows: T[],
+  sortBy: SortOption,
+): T[] {
+  const copy = [...rows];
+  switch (sortBy) {
+    case "price_high":
+      return copy.sort(
+        (a, b) => (b.priceInCents ?? 0) - (a.priceInCents ?? 0),
+      );
+    case "price_low":
+      return copy.sort(
+        (a, b) => (a.priceInCents ?? 0) - (b.priceInCents ?? 0),
+      );
+    case "retailer":
+      return copy.sort((a, b) =>
+        (a.brand || "").localeCompare(b.brand || ""),
+      );
+    default:
+      return copy;
+  }
+}
+
 export function CartClient({ wishi, retailer }: Props) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -105,26 +128,6 @@ export function CartClient({ wishi, retailer }: Props) {
     }
   }
 
-  function sortRows<T extends { priceInCents: number | null; brand: string }>(
-    rows: T[],
-  ): T[] {
-    const copy = [...rows];
-    switch (sortBy) {
-      case "price_high":
-        return copy.sort(
-          (a, b) => (b.priceInCents ?? 0) - (a.priceInCents ?? 0),
-        );
-      case "price_low":
-        return copy.sort(
-          (a, b) => (a.priceInCents ?? 0) - (b.priceInCents ?? 0),
-        );
-      case "retailer":
-        return copy.sort((a, b) => (a.brand || "").localeCompare(b.brand || ""));
-      default:
-        return copy;
-    }
-  }
-
   const selectedRows = useMemo(
     () => wishi.filter((r) => selected.has(r.cartItemId)),
     [wishi, selected],
@@ -136,9 +139,9 @@ export function CartClient({ wishi, retailer }: Props) {
   const subtotal = formatDollars(subtotalCents);
   const selectedItemCount = selectedRows.length;
 
-  const sortedWishi = useMemo(() => sortRows(wishi), [wishi, sortBy]);
+  const sortedWishi = useMemo(() => sortRows(wishi, sortBy), [wishi, sortBy]);
   const sortedRetailer = useMemo(
-    () => sortRows(retailer),
+    () => sortRows(retailer, sortBy),
     [retailer, sortBy],
   );
 
