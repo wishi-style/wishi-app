@@ -275,16 +275,16 @@ export default async function SharedBoardPage({ params }: Props) {
               </div>
             </div>
             <h2 className="mb-3 font-display text-2xl md:text-3xl">
-              Want {firstName} to style you?
+              want {firstName.toLowerCase()} to style you?
             </h2>
             <p className="mx-auto mb-6 max-w-md text-sm text-muted-foreground">
               Book a session and get personalized looks curated just for you.
             </p>
             <Link
-              href={`/stylists/${stylistProfileId}`}
-              className="inline-flex h-11 items-center rounded-full bg-foreground px-6 text-sm font-medium text-background transition-colors hover:bg-foreground/90"
+              href={`/select-plan?stylistId=${stylistProfileId}`}
+              className="inline-flex h-11 items-center rounded-full bg-foreground px-6 text-sm font-body text-background transition-opacity hover:opacity-90"
             >
-              Continue with {firstName}
+              book {firstName.toLowerCase()}
             </Link>
           </section>
         </div>
