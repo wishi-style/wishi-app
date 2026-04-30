@@ -63,9 +63,11 @@ interface MoodBoardCreatorProps {
   onBack: () => void;
   onSend?: (images: string[], note: string) => void;
   onDraftSaved?: () => void;
+  onPhotoAdded?: (url: string) => Promise<boolean>;
+  onPhotoRemoved?: (url: string) => Promise<void>;
 }
 
-export function MoodboardBuilder({ clientName, sessionId, draftId, initialImages, onBack, onSend, onDraftSaved }: MoodBoardCreatorProps) {
+export function MoodboardBuilder({ clientName, sessionId, draftId, initialImages, onBack, onSend, onDraftSaved, onPhotoAdded, onPhotoRemoved }: MoodBoardCreatorProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [genderFilter, setGenderFilter] = useState("female");
   const [canvasImages, setCanvasImages] = useState<string[]>(initialImages || []);
@@ -104,17 +106,27 @@ export function MoodboardBuilder({ clientName, sessionId, draftId, initialImages
       return;
     }
     setCanvasImages((prev) => [...prev, src]);
+    if (onPhotoAdded) {
+      void onPhotoAdded(src).then((ok) => {
+        if (!ok) setCanvasImages((prev) => prev.filter((s) => s !== src));
+      });
+    }
   };
 
   const removeFromCanvas = (index: number) => {
     const src = canvasImages[index];
     setCanvasImages((prev) => prev.filter((_, i) => i !== index));
     setFreestyleItems((prev) => prev.filter((it) => it.src !== src));
+    if (onPhotoRemoved && src) void onPhotoRemoved(src);
   };
 
   const clearCanvas = () => {
+    const removed = canvasImages;
     setCanvasImages([]);
     setFreestyleItems([]);
+    if (onPhotoRemoved) {
+      for (const src of removed) void onPhotoRemoved(src);
+    }
   };
 
   const handleSaveDraft = () => {

@@ -55,9 +55,8 @@ export default async function NewMoodboardPage({ params }: Props) {
       .filter(Boolean)
       .join(" ") || "Client";
 
-  const initialImages = board.photos
-    .map((p) => p.s3Key)
-    .filter((k): k is string => !!k);
+  const initialImages = board.photos.map((p) => p.url).filter((u): u is string => !!u);
+  const initialPhotoIds = Object.fromEntries(board.photos.map((p) => [p.url, p.id]));
 
   return (
     <MoodboardBuilderShell
@@ -65,6 +64,7 @@ export default async function NewMoodboardPage({ params }: Props) {
       sessionId={sessionId}
       clientName={clientName}
       initialImages={initialImages}
+      initialPhotoIds={initialPhotoIds}
     />
   );
 }
