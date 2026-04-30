@@ -168,6 +168,15 @@ const canvasTileWidthClass: Record<CanvasSize, string> = {
   large: "w-[22%]",
 };
 
+// Inventory-grid density — Loveable's "View 3 / 4 / 6" toggle. Classes
+// are spelled out so Tailwind 4's JIT picks them up at build time.
+type GridCols = 3 | 4 | 6;
+const gridColsClass: Record<GridCols, string> = {
+  3: "grid-cols-3",
+  4: "grid-cols-4",
+  6: "grid-cols-6",
+};
+
 const MIN_ITEMS = 3;
 const MAX_ITEMS = 12;
 const TILE_PERCENT = 22; // item tile width/height as % of canvas
@@ -309,6 +318,7 @@ export function StyleboardBuilder({
   >([]);
   const [previousLoading, setPreviousLoading] = useState(false);
 
+  const [gridCols, setGridCols] = useState<GridCols>(3);
   const [closetSubTab, setClosetSubTab] = useState<ClosetSubTab>("all");
   const [closetSelectedColors, setClosetSelectedColors] = useState<string[]>([]);
   const [closetSelectedDesigners, setClosetSelectedDesigners] = useState<
@@ -1304,8 +1314,31 @@ export function StyleboardBuilder({
                   }}
                 />
               )}
+              {/* Inventory grid density toggle — Loveable HEAD parity
+                  (LookCreator.tsx@19f4732:1488-1505). 3/4/6 column modes. */}
+              <div className="flex items-center justify-end gap-1 px-3 pt-2 text-[10px] text-muted-foreground font-body">
+                <span>View</span>
+                {([3, 4, 6] as const).map((n) => {
+                  const active = gridCols === n;
+                  return (
+                    <button
+                      key={n}
+                      onClick={() => setGridCols(n)}
+                      aria-pressed={active}
+                      className={cn(
+                        "h-5 w-5 rounded-sm border font-body text-[10px] transition-colors",
+                        active
+                          ? "bg-foreground text-background border-foreground"
+                          : "border-border text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {n}
+                    </button>
+                  );
+                })}
+              </div>
               <ScrollArea className="flex-1">
-                <div className="grid grid-cols-2 gap-2 p-3">
+                <div className={cn("grid gap-2 p-3", gridColsClass[gridCols])}>
                   {filteredInventoryResults.map((p) => (
                     <SourceTile
                       key={p.id}
@@ -1333,7 +1366,10 @@ export function StyleboardBuilder({
                     />
                   ))}
                   {filteredInventoryResults.length === 0 && (
-                    <p className="col-span-2 px-2 py-6 font-body text-xs text-muted-foreground text-center">
+                    <p
+                      className="px-2 py-6 font-body text-xs text-muted-foreground text-center"
+                      style={{ gridColumn: "1 / -1" }}
+                    >
                       {inventoryResults.length === 0
                         ? "Search the inventory to start adding items."
                         : "No items match the current filters."}
@@ -1668,10 +1704,10 @@ export function StyleboardBuilder({
             {canvas.length === 0 && (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
                 <p className="font-body text-sm text-muted-foreground">
-                  Drag items onto the canvas
+                  Build your look
                 </p>
                 <p className="font-body text-xs text-muted-foreground/60 mt-1">
-                  Or click a source item to drop it in the next open slot
+                  Add at least {MIN_ITEMS} items
                 </p>
               </div>
             )}
@@ -2405,6 +2441,11 @@ function FilterPanel({
           Apply filters
         </Button>
       </div>
+      {/* Loveable HEAD parity hint (LookCreator.tsx@19f4732:1437). */}
+      <p className="pt-2 text-[10px] leading-snug text-muted-foreground/70 font-body">
+        Tip: click an item to add or drag it onto the canvas. Drag items
+        already on the canvas to reposition.
+      </p>
     </div>
   );
 }
