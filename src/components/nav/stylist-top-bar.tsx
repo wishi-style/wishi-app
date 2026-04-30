@@ -76,19 +76,17 @@ export function StylistTopBar({ stylistInitials }: Props) {
           My bookings
         </button>
         <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <button
-                aria-label="Open profile menu"
-                className="ml-2 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-            }
-          >
-            <Avatar className="h-8 w-8 cursor-pointer">
-              <AvatarFallback className="bg-accent text-accent-foreground font-body text-xs">
-                {stylistInitials}
-              </AvatarFallback>
-            </Avatar>
+          <DropdownMenuTrigger asChild>
+            <button
+              aria-label="Open profile menu"
+              className="ml-2 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Avatar className="h-8 w-8 cursor-pointer">
+                <AvatarFallback className="bg-accent text-accent-foreground font-body text-xs">
+                  {stylistInitials}
+                </AvatarFallback>
+              </Avatar>
+            </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56 font-body">
             <DropdownMenuItem onClick={() => router.push("/stylist/profile")}>

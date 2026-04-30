@@ -1,10 +1,6 @@
 "use client";
 
-// Save-and-send dialog for moodboards. Renders the asymmetric preview,
-// auto-drafts an AI note (stub — Phase 7 will plug in the real LLM), lets
-// the stylist edit, and calls onSend with the final note.
-
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -14,21 +10,21 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { MoodBoardGrid } from "./moodboard-grid";
+import { MoodBoardGrid } from "@/components/stylist/moodboard-grid";
 import { SendIcon, SparklesIcon, Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
 
-interface Props {
+interface SendMoodBoardDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  images: { id: string; url: string }[];
+  images: string[];
   clientName: string;
-  onSend: (note: string) => Promise<void> | void;
+  onSend: (images: string[], note: string) => void;
 }
 
 const aiSuggestions = [
-  "I chose earthy tones and relaxed silhouettes that match your preference for effortless elegance. Each piece can be mixed and matched to create multiple outfits.",
-  "These picks reflect the minimalist aesthetic you mentioned — clean lines, neutral palette, quality fabrics. Versatile staples that transition seamlessly from day to evening.",
+  "I chose earthy tones and relaxed silhouettes that match your preference for effortless elegance. Each piece can be mixed and matched to create multiple outfits — perfect for your upcoming travel plans.",
+  "These picks reflect the minimalist aesthetic you mentioned — clean lines, neutral palette, quality fabrics. I focused on versatile staples that transition seamlessly from day to evening.",
   "I curated bold statement pieces paired with versatile basics for maximum outfit combinations. The color palette ties back to the warm tones you gravitated toward in your style quiz.",
 ];
 
@@ -38,16 +34,16 @@ export function SendMoodBoardDialog({
   images,
   clientName,
   onSend,
-}: Props) {
+}: SendMoodBoardDialogProps) {
   const [note, setNote] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [sending, setSending] = useState(false);
 
+  // Auto-generate AI suggestion when dialog opens
   useEffect(() => {
     if (open && !note) {
       setIsGenerating(true);
-      const suggestion =
-        aiSuggestions[Math.floor(Math.random() * aiSuggestions.length)];
+      const suggestion = aiSuggestions[Math.floor(Math.random() * aiSuggestions.length)];
+      // Simulate AI generation with a typing effect
       let i = 0;
       const interval = setInterval(() => {
         setNote(suggestion.slice(0, i + 1));
@@ -59,28 +55,22 @@ export function SendMoodBoardDialog({
       }, 12);
       return () => clearInterval(interval);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  async function handleSend() {
+  const handleSend = () => {
     if (!note.trim()) {
       toast.error("Add a personal note before sending");
       return;
     }
-    setSending(true);
-    try {
-      await onSend(note.trim());
-      setNote("");
-      onOpenChange(false);
-    } finally {
-      setSending(false);
-    }
-  }
+    onSend(images, note.trim());
+    setNote("");
+    onOpenChange(false);
+  };
 
-  function handleClose(value: boolean) {
+  const handleClose = (value: boolean) => {
     if (!value) setNote("");
     onOpenChange(value);
-  }
+  };
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -94,6 +84,7 @@ export function SendMoodBoardDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {/* Board preview */}
         <div className="px-6">
           <div className="rounded-sm border border-border overflow-hidden aspect-[3/2] max-h-[200px]">
             <MoodBoardGrid images={images} className="h-full" />
@@ -103,6 +94,7 @@ export function SendMoodBoardDialog({
           </p>
         </div>
 
+        {/* Note input */}
         <div className="px-6 pb-2">
           <div className="flex items-center gap-1.5 mb-1.5">
             {isGenerating ? (
@@ -131,6 +123,7 @@ export function SendMoodBoardDialog({
           </div>
         </div>
 
+        {/* Actions */}
         <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border bg-muted/30">
           <Button
             variant="ghost"
@@ -142,12 +135,12 @@ export function SendMoodBoardDialog({
           </Button>
           <Button
             onClick={handleSend}
-            disabled={!note.trim() || isGenerating || sending}
+            disabled={!note.trim() || isGenerating}
             size="sm"
             className="h-8 rounded-sm bg-foreground text-background hover:bg-foreground/90 font-body text-xs gap-1.5"
           >
             <SendIcon className="h-3.5 w-3.5" />
-            {sending ? "Sending…" : `Send to ${clientName}`}
+            Send to {clientName}
           </Button>
         </div>
       </DialogContent>
