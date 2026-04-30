@@ -5,7 +5,7 @@ import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-
 import { loadStripe, type Stripe, type StripeElementsOptions } from "@stripe/stripe-js";
 import { CheckIcon, StarIcon, XIcon } from "lucide-react";
 import { computeChipAmounts, type TipChipPercentage } from "@/lib/payments/tip-policy";
-import { submitEndSessionFeedback } from "@/app/(client)/sessions/[id]/end-session/actions";
+import { submitEndSessionFeedback } from "@/app/(client-fullbleed)/sessions/[id]/end-session/actions";
 
 const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 let stripePromise: Promise<Stripe | null> | null = null;
