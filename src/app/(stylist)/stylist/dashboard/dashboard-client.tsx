@@ -73,6 +73,7 @@ type LoyaltyTier = "new" | "bronze" | "silver" | "gold" | "vip";
 
 interface MockSession {
   id: string;
+  clientId?: string;
   clientName: string;
   clientInitials: string;
   sessionType: SessionType;
@@ -1448,7 +1449,12 @@ export default function StylistDashboard({
   /* ─── Render ─── */
   return (
     <>
-    <ClientDetailPanel open={detailOpen} onOpenChange={setDetailOpen} sessionId={selectedId} />
+    <ClientDetailPanel
+      open={detailOpen}
+      onOpenChange={setDetailOpen}
+      sessionId={selectedId}
+      clientId={selected?.clientId ?? null}
+    />
     <div className="min-h-screen flex flex-col bg-background">
       {/* Top Bar */}
       <header className="h-14 flex items-center justify-between border-b border-border px-4 md:px-6 bg-background shrink-0">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -154,15 +154,20 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 /* ─── Component ─── */
+type ClientProfileType = (typeof mockClientProfiles)[string];
+
 interface ClientDetailPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sessionId: string | null;
+  /** When provided, panel fetches the real client profile from /api/stylist/clients/[clientId]/profile. */
+  clientId?: string | null;
 }
 
-export default function ClientDetailPanel({ open, onOpenChange, sessionId }: ClientDetailPanelProps) {
+export default function ClientDetailPanel({ open, onOpenChange, sessionId, clientId }: ClientDetailPanelProps) {
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState("");
+  const [fetchedProfile, setFetchedProfile] = useState<ClientProfileType | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const sections = [
@@ -183,7 +188,26 @@ export default function ClientDetailPanel({ open, onOpenChange, sessionId }: Cli
     }
   };
 
-  const profile = sessionId ? mockClientProfiles[sessionId] : null;
+  // Lazy-fetch real client profile when sheet opens with a real clientId.
+  // Falls back to mockClientProfiles[sessionId] for legacy callers (the
+  // LookCreator builder + dashboard pre-real-data calls).
+  useEffect(() => {
+    if (!open || !clientId) return;
+    let cancelled = false;
+    fetch(`/api/stylist/clients/${clientId}/profile`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { profile?: ClientProfileType } | null) => {
+        if (cancelled || !data?.profile) return;
+        setFetchedProfile(data.profile);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [open, clientId]);
+
+  const profile =
+    fetchedProfile ?? (sessionId ? mockClientProfiles[sessionId] : null);
 
   if (!profile) {
     return (
