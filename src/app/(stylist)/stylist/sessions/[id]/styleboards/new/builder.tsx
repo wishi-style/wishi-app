@@ -867,11 +867,14 @@ export function StyleboardBuilder({
     });
   }
 
-  function findFreeSlot(): { x: number; y: number } {
+  function findFreeSlot(near?: { x: number; y: number }): { x: number; y: number } {
     const occupied = (px: number, py: number) =>
       canvas.some(
         (c) => Math.abs(c.x - px) < TILE_PERCENT && Math.abs(c.y - py) < TILE_PERCENT,
       );
+    // If the caller is dropping at a specific spot, prefer it; otherwise
+    // walk the 4×4 grid like Loveable does.
+    if (near && !occupied(near.x, near.y)) return near;
     for (let r = 0; r < 4; r++) {
       for (let c = 0; c < 4; c++) {
         const x = 20 + c * 20;
@@ -879,7 +882,12 @@ export function StyleboardBuilder({
         if (!occupied(x, y)) return { x, y };
       }
     }
-    return { x: 50, y: 50 };
+    // All grid slots taken — jitter near the requested drop (or center).
+    const seed = near ?? { x: 50, y: 50 };
+    return {
+      x: Math.min(88, Math.max(12, seed.x + (Math.random() - 0.5) * 8)),
+      y: Math.min(88, Math.max(12, seed.y + (Math.random() - 0.5) * 8)),
+    };
   }
 
   async function addItem(
@@ -895,7 +903,9 @@ export function StyleboardBuilder({
       return;
     }
     const slot =
-      dropX != null && dropY != null ? { x: dropX, y: dropY } : findFreeSlot();
+      dropX != null && dropY != null
+        ? findFreeSlot({ x: dropX, y: dropY })
+        : findFreeSlot();
     const z = maxZ + 1;
     const res = await fetch(`/api/styleboards/${boardId}/items`, {
       method: "POST",
@@ -992,8 +1002,8 @@ export function StyleboardBuilder({
     if (!rect) return;
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
-    const clampedX = Math.min(90, Math.max(10, x));
-    const clampedY = Math.min(90, Math.max(10, y));
+    const clampedX = Math.min(88, Math.max(12, x));
+    const clampedY = Math.min(88, Math.max(12, y));
     if (movingId.current) {
       const id = movingId.current;
       movingId.current = null;
@@ -1012,17 +1022,28 @@ export function StyleboardBuilder({
     description: string;
     tags: string[];
   }) {
-    const res = await fetch(`/api/styleboards/${boardId}/send`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input),
-    });
+    const toastId = toast.loading(`Saving "${input.title}"…`);
+    let res: Response;
+    try {
+      res = await fetch(`/api/styleboards/${boardId}/send`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      });
+    } catch (err) {
+      toast.dismiss(toastId);
+      throw err;
+    }
     if (!res.ok) {
       const b = (await res.json().catch(() => ({}))) as { error?: string };
+      toast.dismiss(toastId);
       throw new Error(b.error ?? "Send failed");
     }
     setSaveOpen(false);
-    toast.success(`"${input.title}" sent to ${clientName}`);
+    toast.success(`"${input.title}" saved & sent to ${clientName}`, {
+      id: toastId,
+      description: "Redirecting to dashboard…",
+    });
     router.push(`/stylist/dashboard?session=${sessionId}`);
     router.refresh();
   }
@@ -1663,69 +1684,82 @@ export function StyleboardBuilder({
                 ? `inset(${c.crop.top}% ${c.crop.right}% ${c.crop.bottom}% ${c.crop.left}%)`
                 : undefined;
               const peek = canvasSize === "min";
+              const isSelected = !peek && selectedId === c.id;
               return (
                 <div
                   key={c.id}
-                  draggable={!peek}
-                  onDragStart={() => {
-                    if (peek) return;
-                    movingId.current = c.id;
-                  }}
-                  onClick={(e) => {
-                    if (peek) return;
-                    e.stopPropagation();
-                    setSelectedId(c.id);
-                  }}
+                  className={cn(
+                    "absolute aspect-square -translate-x-1/2 -translate-y-1/2",
+                    canvasTileWidthClass[canvasSize],
+                  )}
                   style={{
                     left: `${c.x}%`,
                     top: `${c.y}%`,
                     zIndex: c.zIndex,
                   }}
-                  className={cn(
-                    "absolute aspect-square -translate-x-1/2 -translate-y-1/2 rounded-sm overflow-hidden border-2 bg-card transition-shadow",
-                    canvasTileWidthClass[canvasSize],
-                    peek
-                      ? "pointer-events-none border-transparent"
-                      : "cursor-move",
-                    !peek && selectedId === c.id
-                      ? "border-foreground shadow-lg"
-                      : !peek && "border-transparent hover:border-border",
-                  )}
                 >
-                  {c.imageUrl ? (
-                    <Image
-                      src={c.imageUrl}
-                      alt={c.label ?? ""}
-                      fill
-                      className="object-cover pointer-events-none"
-                      sizes="200px"
-                      style={{ transform, clipPath }}
-                      unoptimized
-                    />
-                  ) : (
-                    <div className="absolute inset-0 flex items-center justify-center bg-muted p-1 text-center text-[10px] text-muted-foreground">
-                      {c.label ?? "Item"}
+                  {/* Anchored selection toolbar — Loveable HEAD parity
+                      (LookCreator.tsx@19f4732:1867-1966). Renders ABOVE
+                      the selected tile so the spatial relationship is
+                      obvious. */}
+                  {isSelected && (
+                    <div className="absolute -top-10 left-1/2 -translate-x-1/2 z-20">
+                      <SelectionBar
+                        onRemove={() => void removeItem(c.id)}
+                        onFront={() => void changeZIndex(c.id, maxZ + 1)}
+                        onBack={() => void changeZIndex(c.id, 0)}
+                        onFlipH={() => void flipItem(c.id, "h")}
+                        onFlipV={() => void flipItem(c.id, "v")}
+                        onCrop={() => setCropTargetId(c.id)}
+                        onBgRemove={() =>
+                          toast(
+                            "Background removal coming soon — Phase 7 feature",
+                          )
+                        }
+                      />
                     </div>
                   )}
+                  <div
+                    draggable={!peek}
+                    onDragStart={() => {
+                      if (peek) return;
+                      movingId.current = c.id;
+                    }}
+                    onClick={(e) => {
+                      if (peek) return;
+                      e.stopPropagation();
+                      setSelectedId(c.id);
+                    }}
+                    className={cn(
+                      "absolute inset-0 rounded-sm overflow-hidden border-2 bg-card transition-shadow",
+                      peek
+                        ? "pointer-events-none border-transparent"
+                        : "cursor-move",
+                      isSelected
+                        ? "border-foreground shadow-lg"
+                        : !peek && "border-transparent hover:border-border",
+                    )}
+                  >
+                    {c.imageUrl ? (
+                      <Image
+                        src={c.imageUrl}
+                        alt={c.label ?? ""}
+                        fill
+                        className="object-cover pointer-events-none"
+                        sizes="200px"
+                        style={{ transform, clipPath }}
+                        unoptimized
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center bg-muted p-1 text-center text-[10px] text-muted-foreground">
+                        {c.label ?? "Item"}
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}
           </div>
-
-          {selectedId && (
-            <SelectionBar
-              onRemove={() => void removeItem(selectedId)}
-              onFront={() => void changeZIndex(selectedId, maxZ + 1)}
-              onBack={() => void changeZIndex(selectedId, 0)}
-              onFlipH={() => void flipItem(selectedId, "h")}
-              onFlipV={() => void flipItem(selectedId, "v")}
-              onCrop={() => setCropTargetId(selectedId)}
-              onBgRemove={() =>
-                toast("Background removal coming soon — Phase 7 feature")
-              }
-              onClose={() => setSelectedId(null)}
-            />
-          )}
         </div>
       </div>
 
@@ -2098,7 +2132,6 @@ function SelectionBar({
   onFlipV,
   onCrop,
   onBgRemove,
-  onClose,
 }: {
   onRemove: () => void;
   onFront: () => void;
@@ -2107,10 +2140,12 @@ function SelectionBar({
   onFlipV: () => void;
   onCrop: () => void;
   onBgRemove: () => void;
-  onClose: () => void;
 }) {
   return (
-    <div className="mt-4 flex items-center gap-1 rounded-full bg-card border border-border shadow-sm px-2 py-1">
+    <div
+      onClick={(e) => e.stopPropagation()}
+      className="flex items-center gap-1 rounded-full bg-card border border-border shadow-md px-2 py-1"
+    >
       <ToolButton title="Bring to front" onClick={onFront}>
         <ArrowUpToLineIcon className="h-3.5 w-3.5" />
       </ToolButton>
@@ -2133,9 +2168,6 @@ function SelectionBar({
       <div className="h-4 w-px bg-border mx-1" />
       <ToolButton title="Remove item" onClick={onRemove}>
         <Trash2Icon className="h-3.5 w-3.5 text-red-600" />
-      </ToolButton>
-      <ToolButton title="Deselect" onClick={onClose}>
-        <XIcon className="h-3.5 w-3.5" />
       </ToolButton>
     </div>
   );
