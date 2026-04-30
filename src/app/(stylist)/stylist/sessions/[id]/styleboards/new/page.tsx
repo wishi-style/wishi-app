@@ -5,7 +5,7 @@ import { listInspirationPhotos } from "@/lib/boards/inspiration.service";
 import { listClosetItems } from "@/lib/boards/closet.service";
 import { mapLoyalty } from "@/lib/stylists/client-profile";
 import { getProduct } from "@/lib/inventory/inventory-client";
-import { StyleboardBuilder, type CartItemView } from "./builder";
+import { StyleboardBuilder } from "./builder";
 
 export const dynamic = "force-dynamic";
 
@@ -119,31 +119,72 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
     ];
   }
 
-  // Loveable surfaces the client's in-progress cart as a sub-tab in the
-  // closet panel. Hydrate via tastegraph in the same request so the builder
-  // doesn't need a second round-trip.
   const cartProductDocs = await Promise.all(
     cartRows.map((c) => getProduct(c.inventoryProductId)),
   );
-  const cartItems: CartItemView[] = cartRows.flatMap((c, i) => {
-    const doc = cartProductDocs[i];
-    if (!doc) return [];
-    return [
-      {
-        id: c.id,
-        inventoryProductId: c.inventoryProductId,
-        imageUrl: doc.primary_image_url ?? doc.image_urls?.[0] ?? null,
-        name: doc.canonical_name,
-        brand: doc.brand_name,
-        priceCents: Math.round(doc.min_price * 100),
-      },
-    ];
-  });
 
   const clientName =
     [session.client.firstName, session.client.lastName]
       .filter(Boolean)
       .join(" ") || "Client";
+  const initials =
+    [session.client.firstName?.[0], session.client.lastName?.[0]]
+      .filter(Boolean)
+      .join("")
+      .toUpperCase() || "C";
+
+  // Adapters: shape real DB rows into Loveable's InventoryItem shape so the
+  // verbatim-ported builder JSX consumes them unchanged. Empty-array adapters
+  // (shopItems, purchasedItems, previousMoodBoardItems, previousStyleBoardItems,
+  // storeItems) are deferred follow-ups — chrome renders correctly with [].
+  const closetInventoryItems = closetItems.map((c) => ({
+    id: c.id,
+    image: c.url,
+    brand: c.designer ?? "Closet",
+    name: c.name ?? "",
+    category: "tops" as const,
+    colors: c.colors ?? [],
+    designer: c.designer ?? undefined,
+  }));
+  const cartInventoryItems = cartRows.flatMap((c, i) => {
+    const doc = cartProductDocs[i];
+    if (!doc) return [];
+    return [
+      {
+        id: c.id,
+        image: doc.primary_image_url ?? doc.image_urls?.[0] ?? "",
+        brand: doc.brand_name,
+        name: doc.canonical_name,
+        price: `$${Math.round(doc.min_price)}`,
+        category: "tops" as const,
+        colors: [] as string[],
+      },
+    ];
+  });
+  const inspirationInventoryItems = inspiration.map((p) => ({
+    id: p.id,
+    image: p.url,
+    brand: "Inspiration",
+    name: p.title ?? "",
+    category: "tops" as const,
+  }));
+
+  const clientProfile = {
+    fullName: clientName,
+    initials,
+    loyaltyTier: mapLoyalty(
+      session.client.loyaltyTier ?? null,
+      completedSessions,
+    ),
+    profilePhotoUrl: session.client.avatarUrl ?? undefined,
+    sizes: clientSizesByCategory,
+    budgets: Object.fromEntries(
+      Object.entries(clientBudgetsByCategory).map(([k, [lo, hi]]) => [
+        k,
+        `$${lo}–$${hi}`,
+      ]),
+    ),
+  };
 
   return (
     <StyleboardBuilder
@@ -158,12 +199,18 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
         completedSessions,
       )}
       initialItems={board.items}
-      closetItems={closetItems}
-      cartItems={cartItems}
-      inspiration={inspiration}
       clientSizesByCategory={clientSizesByCategory}
       clientBudgetsByCategory={clientBudgetsByCategory}
       directSaleProductIds={directSaleProductIds}
+      shopItems={[]}
+      closetItems={closetInventoryItems}
+      cartItems={cartInventoryItems}
+      purchasedItems={[]}
+      inspirationItems={inspirationInventoryItems}
+      previousMoodBoardItems={[]}
+      previousStyleBoardItems={[]}
+      storeItems={[]}
+      clientProfile={clientProfile}
     />
   );
 }

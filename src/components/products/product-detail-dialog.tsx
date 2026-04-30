@@ -1,527 +1,355 @@
 "use client";
 
-import * as React from "react";
-import { toast } from "sonner";
-import {
-  ExternalLinkIcon,
-  HeartIcon,
-  ShoppingBagIcon,
-  XIcon,
-} from "lucide-react";
+import { useState } from "react";
+import Image from "next/image";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { HeartIcon, ArrowLeftIcon, AlertTriangleIcon, CheckCircle2Icon, PlusIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { useIsMobile } from "@/hooks/use-mobile";
+import type { ProductItem } from "@/components/boards/styleboard";
 
-export type ProductVariant = {
-  size: string;
-  color: string;
-  color_family: string;
-  in_stock: boolean;
-};
+const sizes = ["XXS", "XS", "S", "M", "L", "XL"];
 
-export type ProductListing = {
-  listing_id: string;
-  merchant_id: string;
-  merchant_name: string;
-  title: string;
-  product_url: string;
-  affiliate_url: string;
-  primary_image_url: string;
-  base_price: number;
-  sale_price: number;
-  in_stock: boolean;
-  variants: ProductVariant[];
-};
-
-export type ProductDoc = {
-  id: string;
-  canonical_name: string;
-  brand_name: string;
-  category_id: string;
-  gender: string;
-  primary_image_url: string | null;
-  image_urls: string[];
-  available_sizes: string[];
-  available_colors: string[];
-  min_price: number;
-  max_price: number;
-  in_stock: boolean;
-  listings: ProductListing[];
-};
-
-/**
- * When set, the dialog renders in stylist-mode: shows fit + budget
- * check rows for the LookCreator and replaces the Add-to-Bag /
- * Shop-at-Retailer CTAs with a single "Add to canvas" button.
- */
-export interface PdpStylistContext {
-  clientSize: string | null;
-  availableSizes: string[];
-  budgetRange: [number, number] | null;
-  productPriceDollars: number;
-  onAddToCanvas: () => void;
+export interface StylistClientContext {
+  clientName: string;
+  /** e.g. "M" or "8" — preferred size for this category */
+  clientSize?: string;
+  /** sizes the product is actually available in */
+  availableSizes?: string[];
+  /** numeric price of the product */
+  productPrice?: number;
+  /** budget range [min, max] for this category */
+  budgetRange?: [number, number];
+  /** display string for budget e.g. "$50–$100" */
+  budgetLabel?: string;
+  categoryLabel?: string;
 }
 
-export interface ProductDetailDialogProps {
+interface ProductDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** inventoryProductId — used for all API calls */
-  productId: string | null;
-  /**
-   * Active session that the "Add to Bag" button should associate with. When
-   * null or omitted, the Add-to-Bag button is hidden (non-session surfaces
-   * like the /feed page fall through to the retailer link).
-   */
-  sessionId?: string | null;
-  /**
-   * Whether the product is merchandised direct-sale. When false, hide the
-   * Add to Bag CTA and only show Shop at Retailer. Consumers that don't
-   * know can pass `undefined` and we hide on failure.
-   */
-  isDirectSale?: boolean;
-  /** Starting payload from the caller — we still hydrate fresh data on open. */
-  seed?: Partial<ProductDoc>;
-  /** Called after a successful affiliate click-through. */
-  onAffiliateClick?: (listingId: string, retailer: string) => void;
-  /** When provided, renders the stylist-mode chrome instead of the cart flow. */
-  stylistContext?: PdpStylistContext;
+  product: ProductItem | null;
+  onAddToCart?: (productId: string) => void;
+  /** When provided, dialog renders in stylist mode (client fit/budget checks, no buy buttons) */
+  stylistContext?: StylistClientContext;
+  addLabel?: string;
 }
 
-type SimilarItem = {
-  id: string;
-  canonical_name: string;
-  brand_name: string;
-  primary_image_url: string | null;
-  min_price: number;
-};
+export function ProductDetailDialog({ open, onOpenChange, product, onAddToCart, stylistContext, addLabel }: ProductDetailDialogProps) {
+  const [selectedSize, setSelectedSize] = useState<string | null>(null);
+  const [wishlisted, setWishlisted] = useState(false);
+  const isMobile = useIsMobile();
 
-function formatPrice(cents: number): string {
-  // Inventory service returns dollars (not cents) for min/max/base prices.
-  return `$${Math.round(cents)}`;
-}
+  if (!product) return null;
 
-/**
- * Product detail with size/color selectors, Add-to-Bag (direct-sale) + Shop
- * at Retailer (affiliate) tracks, and a Similar Items carousel sourced from
- * the phase-10 `/api/ai/similar-items` stub (swapped for real vector search
- * when Phase 7 ships).
- */
-export function ProductDetailDialog({
-  open,
-  onOpenChange,
-  productId,
-  sessionId,
-  isDirectSale,
-  seed,
-  onAffiliateClick,
-  stylistContext,
-}: ProductDetailDialogProps) {
-  const [product, setProduct] = React.useState<ProductDoc | null>(
-    seed && seed.id ? (seed as ProductDoc) : null,
+  const isStylist = !!stylistContext;
+
+  // Stylist-mode checks
+  const sizeAvailable = stylistContext?.clientSize && stylistContext.availableSizes
+    ? stylistContext.availableSizes.map((s) => s.toLowerCase()).includes(stylistContext.clientSize.toLowerCase())
+    : null;
+  const overBudget = stylistContext?.productPrice != null && stylistContext.budgetRange
+    ? stylistContext.productPrice > stylistContext.budgetRange[1]
+    : false;
+  const underBudget = stylistContext?.productPrice != null && stylistContext.budgetRange
+    ? stylistContext.productPrice < stylistContext.budgetRange[0]
+    : false;
+
+  const renderStylistChecks = () => (
+    <div className="space-y-3">
+      {/* Client size check */}
+      <div
+        className={cn(
+          "rounded-md border p-3 flex items-start gap-3",
+          sizeAvailable === false
+            ? "border-destructive/40 bg-destructive/5"
+            : sizeAvailable === true
+            ? "border-emerald-600/30 bg-emerald-50"
+            : "border-border bg-muted/30"
+        )}
+      >
+        {sizeAvailable === false ? (
+          <AlertTriangleIcon className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+        ) : sizeAvailable === true ? (
+          <CheckCircle2Icon className="h-5 w-5 text-emerald-700 shrink-0 mt-0.5" />
+        ) : (
+          <AlertTriangleIcon className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <p className="font-body text-sm font-semibold text-foreground">
+              Client size{stylistContext?.categoryLabel ? ` (${stylistContext.categoryLabel})` : ""}:{" "}
+              <span className="font-normal">{stylistContext?.clientSize ?? "—"}</span>
+            </p>
+            {sizeAvailable === false && (
+              <span className="text-[10px] uppercase tracking-wide font-body font-semibold text-destructive bg-destructive/10 px-2 py-0.5 rounded">
+                Not available
+              </span>
+            )}
+            {sizeAvailable === true && (
+              <span className="text-[10px] uppercase tracking-wide font-body font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
+                In stock
+              </span>
+            )}
+          </div>
+          <p className="font-body text-xs text-muted-foreground">
+            Available: {stylistContext?.availableSizes?.join(", ") || "—"}
+          </p>
+        </div>
+      </div>
+
+      {/* Budget check */}
+      <div
+        className={cn(
+          "rounded-md border p-3 flex items-start gap-3",
+          overBudget
+            ? "border-destructive/40 bg-destructive/5"
+            : underBudget
+            ? "border-border bg-muted/30"
+            : "border-emerald-600/30 bg-emerald-50"
+        )}
+      >
+        {overBudget ? (
+          <AlertTriangleIcon className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+        ) : (
+          <CheckCircle2Icon className="h-5 w-5 text-emerald-700 shrink-0 mt-0.5" />
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <p className="font-body text-sm font-semibold text-foreground">
+              Client budget{stylistContext?.categoryLabel ? ` (${stylistContext.categoryLabel})` : ""}:{" "}
+              <span className="font-normal">{stylistContext?.budgetLabel ?? "—"}</span>
+            </p>
+            {overBudget && (
+              <span className="text-[10px] uppercase tracking-wide font-body font-semibold text-destructive bg-destructive/10 px-2 py-0.5 rounded">
+                Over budget
+              </span>
+            )}
+            {!overBudget && stylistContext?.productPrice != null && (
+              <span className="text-[10px] uppercase tracking-wide font-body font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
+                In range
+              </span>
+            )}
+          </div>
+          <p className="font-body text-xs text-muted-foreground">
+            Item price: {product.price}
+          </p>
+        </div>
+      </div>
+    </div>
   );
-  const [loading, setLoading] = React.useState(false);
-  const [size, setSize] = React.useState<string | null>(null);
-  const [color, setColor] = React.useState<string | null>(null);
-  const [addingToBag, setAddingToBag] = React.useState(false);
-  const [favorited, setFavorited] = React.useState(false);
-  const [similar, setSimilar] = React.useState<SimilarItem[] | null>(null);
 
-  React.useEffect(() => {
-    if (!open || !productId) return;
-    let cancelled = false;
-    setLoading(true);
-    fetch(`/api/products/${productId}`, { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: ProductDoc | null) => {
-        if (cancelled) return;
-        if (data) {
-          setProduct(data);
-          setSize(data.available_sizes?.[0] ?? null);
-          setColor(data.available_colors?.[0] ?? null);
-        }
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, productId]);
-
-  React.useEffect(() => {
-    if (!open || !productId) return;
-    let cancelled = false;
-    fetch(`/api/ai/similar-items?productId=${productId}&limit=6`, {
-      cache: "no-store",
-    })
-      .then((r) => r.json())
-      .then((data: { results?: SimilarItem[] }) => {
-        if (cancelled) return;
-        setSimilar(data.results ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setSimilar([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, productId]);
-
-  const addToBag = async () => {
-    if (!productId || !sessionId) return;
-    setAddingToBag(true);
-    try {
-      const res = await fetch(`/api/cart`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          inventoryProductId: productId,
-          sessionId,
-          quantity: 1,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error ?? "Couldn't add to bag");
-      }
-      toast.success("Added to your bag");
-    } catch (err) {
-      toast.error((err as Error).message);
-    } finally {
-      setAddingToBag(false);
-    }
+  const handleAdd = () => {
+    onAddToCart?.(product.id);
+    onOpenChange(false);
   };
-
-  const toggleFavorite = async () => {
-    if (!productId) return;
-    try {
-      if (favorited) {
-        const res = await fetch(
-          `/api/favorites/items?inventoryProductId=${productId}`,
-          { method: "DELETE" },
-        );
-        if (!res.ok) throw new Error("Couldn't remove from wishlist");
-        setFavorited(false);
-      } else {
-        const res = await fetch(`/api/favorites/items`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ inventoryProductId: productId }),
-        });
-        if (!res.ok) throw new Error("Couldn't save to wishlist");
-        setFavorited(true);
-      }
-    } catch (err) {
-      toast.error((err as Error).message);
-    }
-  };
-
-  const trackAffiliateClick = async (listing: ProductListing) => {
-    try {
-      await fetch("/api/affiliate/click", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          inventoryProductId: productId,
-          inventoryListingId: listing.listing_id,
-          retailer: listing.merchant_name,
-          url: listing.affiliate_url ?? listing.product_url,
-        }),
-      });
-    } catch {
-      // Click tracking is best-effort; don't block the redirect.
-    }
-    onAffiliateClick?.(listing.listing_id, listing.merchant_name);
-  };
-
-  const hero = product?.primary_image_url ?? product?.image_urls?.[0] ?? null;
-  const priceRange = product
-    ? product.min_price === product.max_price
-      ? formatPrice(product.min_price)
-      : `${formatPrice(product.min_price)}–${formatPrice(product.max_price)}`
-    : "";
-
-  const listings = product?.listings ?? [];
-  const canAddToBag = isDirectSale === true && !!sessionId;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl p-0 gap-0 overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <div className="text-xs uppercase tracking-widest text-dark-taupe">
-            Product details
-          </div>
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            aria-label="Close"
-            className="h-8 w-8 rounded-full hover:bg-muted flex items-center justify-center"
-          >
-            <XIcon className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="max-h-[75vh] overflow-y-auto">
-          <div className="grid md:grid-cols-2 gap-0">
-            <div className="bg-muted">
-              {hero ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={hero}
-                  alt={product?.canonical_name ?? ""}
-                  className="w-full aspect-square object-cover"
-                />
-              ) : (
-                <div className="w-full aspect-square" />
-              )}
+    <Dialog open={open} onOpenChange={(o) => {
+      if (!o) { setSelectedSize(null); setWishlisted(false); }
+      onOpenChange(o);
+    }}>
+      <DialogContent
+        className={cn(
+          "p-0 gap-0 overflow-hidden",
+          isMobile
+            ? "fixed inset-0 w-full h-full max-w-none max-h-none rounded-none translate-x-0 translate-y-0 top-0 left-0 border-0"
+            : "max-w-3xl"
+        )}
+      >
+        {isMobile ? (
+          /* ── Mobile ── */
+          <div className="h-full overflow-y-auto bg-background">
+            <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 bg-background/90 backdrop-blur-sm border-b border-border">
+              <button onClick={() => onOpenChange(false)} className="flex items-center gap-1 text-sm font-body text-foreground">
+                <ArrowLeftIcon className="h-5 w-5" />
+              </button>
+              <button
+                onClick={() => setWishlisted(!wishlisted)}
+                className="h-9 w-9 rounded-full flex items-center justify-center"
+              >
+                <HeartIcon className={cn("h-5 w-5", wishlisted ? "fill-foreground text-foreground" : "text-foreground")} />
+              </button>
             </div>
-            <div className="p-6 space-y-5">
-              {loading && !product ? (
-                <p className="text-sm text-muted-foreground">Loading…</p>
-              ) : product ? (
+
+            <div className="w-full">
+              <Image src={product.image} alt={product.brand} width={400} height={533} unoptimized className="w-full aspect-[3/4] object-cover" />
+            </div>
+
+            <div className="p-5 flex flex-col gap-5">
+              <div>
+                <p className="font-body text-sm text-muted-foreground mb-1">{product.brand}</p>
+                <h2 className="font-display text-xl mb-1">{product.brand}</h2>
+                <p className="font-display text-lg">{product.soldOut ? "Sold out" : product.price}</p>
+              </div>
+
+              {isStylist ? (
                 <>
-                  <div>
-                    <p className="text-xs uppercase tracking-widest text-dark-taupe">
-                      {product.brand_name}
-                    </p>
-                    <h2 className="font-display text-2xl mt-1">
-                      {product.canonical_name}
-                    </h2>
-                    <p className="mt-2 text-lg">{priceRange}</p>
-                  </div>
-
-                  {product.available_sizes.length > 0 ? (
-                    <div>
-                      <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2">
-                        Size
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {product.available_sizes.map((s) => (
-                          <button
-                            key={s}
-                            type="button"
-                            onClick={() => setSize(s)}
-                            className={cn(
-                              "rounded-full border px-3 py-1.5 text-xs transition-colors",
-                              size === s
-                                ? "border-foreground bg-foreground text-background"
-                                : "border-border text-muted-foreground hover:border-foreground/50",
-                            )}
-                          >
-                            {s}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {product.available_colors.length > 0 ? (
-                    <div>
-                      <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2">
-                        Color
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {product.available_colors.map((c) => (
-                          <button
-                            key={c}
-                            type="button"
-                            onClick={() => setColor(c)}
-                            className={cn(
-                              "rounded-full border px-3 py-1.5 text-xs transition-colors",
-                              color === c
-                                ? "border-foreground bg-foreground text-background"
-                                : "border-border text-muted-foreground hover:border-foreground/50",
-                            )}
-                          >
-                            {c}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {stylistContext ? (
-                    <StylistContextRows
-                      ctx={stylistContext}
-                      productInStock={product.in_stock}
-                    />
-                  ) : null}
-
-                  <div className="flex items-center gap-2 pt-2">
-                    {stylistContext ? (
-                      <button
-                        type="button"
-                        onClick={stylistContext.onAddToCanvas}
-                        className="flex-1 inline-flex h-11 items-center justify-center gap-2 rounded-full bg-foreground px-5 text-sm font-medium text-background hover:bg-foreground/90 transition-colors"
-                      >
-                        Add to canvas
-                      </button>
-                    ) : canAddToBag ? (
-                      <button
-                        type="button"
-                        onClick={addToBag}
-                        disabled={addingToBag || !product.in_stock}
-                        className="flex-1 inline-flex h-11 items-center justify-center gap-2 rounded-full bg-foreground px-5 text-sm font-medium text-background hover:bg-foreground/90 disabled:opacity-50 transition-colors"
-                      >
-                        <ShoppingBagIcon className="h-4 w-4" />
-                        {addingToBag
-                          ? "Adding…"
-                          : product.in_stock
-                            ? "Add to bag"
-                            : "Out of stock"}
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={toggleFavorite}
-                      aria-label={favorited ? "Remove from wishlist" : "Save to wishlist"}
-                      className={cn(
-                        "h-11 w-11 flex items-center justify-center rounded-full border transition-colors",
-                        favorited
-                          ? "border-foreground bg-foreground text-background"
-                          : "border-border hover:border-foreground/50",
-                      )}
-                    >
-                      <HeartIcon
-                        className={cn(
-                          "h-4 w-4",
-                          favorited ? "fill-current" : "",
-                        )}
-                      />
-                    </button>
-                  </div>
-
-                  {!stylistContext && listings.length > 0 ? (
-                    <div className="pt-2 space-y-2">
-                      <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                        Shop at retailer
-                      </p>
-                      {listings.map((listing) => (
-                        <a
-                          key={listing.listing_id}
-                          href={listing.affiliate_url ?? listing.product_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={() => trackAffiliateClick(listing)}
-                          className="flex items-center justify-between gap-3 rounded-lg border border-border px-4 py-3 hover:bg-muted/50 transition-colors"
-                        >
-                          <div className="min-w-0">
-                            <p className="text-sm">{listing.merchant_name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {listing.sale_price &&
-                              listing.sale_price < listing.base_price
-                                ? `${formatPrice(listing.sale_price)} · was ${formatPrice(listing.base_price)}`
-                                : formatPrice(listing.base_price)}
-                            </p>
-                          </div>
-                          <ExternalLinkIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                        </a>
-                      ))}
-                    </div>
-                  ) : null}
+                  {renderStylistChecks()}
+                  <button
+                    onClick={handleAdd}
+                    className="w-full rounded-lg bg-foreground text-background py-3.5 text-sm font-body font-medium hover:bg-foreground/90 transition-colors inline-flex items-center justify-center gap-2"
+                  >
+                    <PlusIcon className="h-4 w-4" />
+                    {addLabel ?? "Add to canvas"}
+                  </button>
                 </>
               ) : (
-                <p className="text-sm text-muted-foreground">
-                  We couldn&apos;t load this product.
-                </p>
-              )}
-            </div>
-          </div>
+                <>
+                  {!product.soldOut && (
+                    <div>
+                      <p className="font-body text-sm font-medium text-foreground mb-3">Size:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {sizes.map((size) => (
+                          <button
+                            key={size}
+                            onClick={() => setSelectedSize(size)}
+                            className={cn(
+                              "h-11 min-w-[3.25rem] px-3 rounded-md border text-sm font-body transition-colors",
+                              selectedSize === size
+                                ? "border-foreground bg-foreground text-background"
+                                : "border-border text-foreground hover:border-foreground"
+                            )}
+                          >
+                            {size}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-          {similar && similar.length > 0 ? (
-            <div className="px-6 py-6 border-t border-border">
-              <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-3">
-                Similar items
-              </p>
-              <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-                {similar.map((s) => (
-                  <div key={s.id} className="text-left">
-                    {s.primary_image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={s.primary_image_url}
-                        alt={s.canonical_name}
-                        className="w-full aspect-square object-cover rounded-md bg-muted"
-                      />
-                    ) : (
-                      <div className="w-full aspect-square rounded-md bg-muted" />
-                    )}
-                    <p className="mt-1.5 text-[10px] uppercase tracking-wider text-dark-taupe truncate">
-                      {s.brand_name}
-                    </p>
-                    <p className="text-xs truncate">{s.canonical_name}</p>
-                  </div>
-                ))}
+                  {!product.soldOut ? (
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => {
+                          if (!selectedSize) { toast.error("Please select a size"); return; }
+                          onAddToCart?.(product.id);
+                          onOpenChange(false);
+                        }}
+                        className="flex-1 rounded-lg bg-foreground text-background py-3.5 text-sm font-body font-medium hover:bg-foreground/90 transition-colors"
+                      >
+                        Add to Bag
+                      </button>
+                      <button className="flex-1 rounded-lg border border-foreground text-foreground py-3.5 text-sm font-body font-medium hover:bg-secondary transition-colors">
+                        Buy Now
+                      </button>
+                    </div>
+                  ) : (
+                    <button disabled className="w-full rounded-lg bg-muted text-muted-foreground py-3.5 text-sm font-body font-medium cursor-not-allowed">
+                      Sold Out
+                    </button>
+                  )}
+                </>
+              )}
+
+              <p className="text-xs font-body text-muted-foreground">Free Shipping & Returns</p>
+
+              <div className="border-t border-border pt-5">
+                <h3 className="font-body text-sm font-semibold text-foreground mb-3">Description</h3>
+                <ul className="space-y-1.5 text-sm font-body text-muted-foreground">
+                  <li>• Curated by your stylist for your style profile</li>
+                  <li>• Versatile piece for multiple occasions</li>
+                  <li>• Premium quality materials</li>
+                  <li>• Easy to style with existing wardrobe</li>
+                </ul>
               </div>
             </div>
-          ) : null}
-        </div>
+          </div>
+        ) : (
+          /* ── Desktop ── */
+          <div className="flex flex-row max-h-[85vh]">
+            <div className="relative w-1/2 shrink-0 bg-card">
+              <div className="aspect-[3/4] overflow-hidden">
+                <Image src={product.image} alt={product.brand} width={400} height={533} unoptimized className="w-full h-full object-cover" />
+              </div>
+              <button
+                onClick={() => setWishlisted(!wishlisted)}
+                className="absolute top-4 right-4 h-10 w-10 rounded-full bg-background/80 backdrop-blur-sm flex items-center justify-center hover:bg-background transition-colors"
+              >
+                <HeartIcon className={cn("h-5 w-5", wishlisted ? "fill-foreground text-foreground" : "text-foreground")} />
+              </button>
+            </div>
+
+            <div className="w-1/2 overflow-y-auto p-8 flex flex-col">
+              <p className="font-body text-sm text-muted-foreground mb-1">{product.brand}</p>
+              <h2 className="font-display text-2xl mb-2">{product.brand}</h2>
+              <p className="font-display text-xl mb-5">{product.soldOut ? "Sold out" : product.price}</p>
+
+              {isStylist ? (
+                <>
+                  <div className="mb-6">{renderStylistChecks()}</div>
+                  <button
+                    onClick={handleAdd}
+                    className="w-full rounded-lg bg-foreground text-background py-3.5 text-sm font-body font-medium hover:bg-foreground/90 transition-colors mb-6 inline-flex items-center justify-center gap-2"
+                  >
+                    <PlusIcon className="h-4 w-4" />
+                    {addLabel ?? "Add to canvas"}
+                  </button>
+                </>
+              ) : (
+                <>
+                  {!product.soldOut && (
+                    <div className="mb-6">
+                      <p className="font-body text-sm font-medium text-foreground mb-3">Size:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {sizes.map((size) => (
+                          <button
+                            key={size}
+                            onClick={() => setSelectedSize(size)}
+                            className={cn(
+                              "h-10 min-w-[3rem] px-3 rounded-md border text-sm font-body transition-colors",
+                              selectedSize === size
+                                ? "border-foreground bg-foreground text-background"
+                                : "border-border text-foreground hover:border-foreground"
+                            )}
+                          >
+                            {size}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {!product.soldOut ? (
+                    <div className="flex gap-3 mb-6">
+                      <button
+                        onClick={() => {
+                          if (!selectedSize) { toast.error("Please select a size"); return; }
+                          onAddToCart?.(product.id);
+                          onOpenChange(false);
+                        }}
+                        className="flex-1 rounded-lg bg-foreground text-background py-3.5 text-sm font-body font-medium hover:bg-foreground/90 transition-colors"
+                      >
+                        Add to Bag
+                      </button>
+                      <button className="flex-1 rounded-lg border border-foreground text-foreground py-3.5 text-sm font-body font-medium hover:bg-secondary transition-colors">
+                        Buy Now
+                      </button>
+                    </div>
+                  ) : (
+                    <button disabled className="w-full rounded-lg bg-muted text-muted-foreground py-3.5 text-sm font-body font-medium cursor-not-allowed mb-6">
+                      Sold Out
+                    </button>
+                  )}
+                </>
+              )}
+
+              <p className="text-xs font-body text-muted-foreground mb-6">Free Shipping & Returns</p>
+
+              <div className="border-t border-border pt-5">
+                <h3 className="font-body text-sm font-semibold text-foreground mb-3">Description</h3>
+                <ul className="space-y-1.5 text-sm font-body text-muted-foreground">
+                  <li>• Curated by your stylist for your style profile</li>
+                  <li>• Versatile piece for multiple occasions</li>
+                  <li>• Premium quality materials</li>
+                  <li>• Easy to style with existing wardrobe</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
-  );
-}
-
-function StylistContextRows({
-  ctx,
-  productInStock,
-}: {
-  ctx: PdpStylistContext;
-  productInStock: boolean;
-}) {
-  const sizeAvailable =
-    ctx.clientSize != null && ctx.availableSizes.includes(ctx.clientSize);
-  const inBudget =
-    ctx.budgetRange != null &&
-    ctx.productPriceDollars >= ctx.budgetRange[0] &&
-    ctx.productPriceDollars <= ctx.budgetRange[1];
-
-  // Loveable LookCreator.tsx@19f4732:1610 renders these as inline rows
-  // above the CTAs — green when satisfied, red when violating, neutral
-  // when the client hasn't filled in that part of their style profile.
-  return (
-    <div className="space-y-2 pt-2 border-t border-border mt-2">
-      {ctx.clientSize ? (
-        <div
-          className={cn(
-            "flex items-center justify-between rounded-md border px-3 py-2 text-xs",
-            !productInStock || !sizeAvailable
-              ? "border-red-300 bg-red-50 text-red-800"
-              : "border-emerald-300 bg-emerald-50 text-emerald-800",
-          )}
-        >
-          <span className="font-medium">Client size: {ctx.clientSize}</span>
-          <span>
-            {!productInStock
-              ? "Out of stock"
-              : sizeAvailable
-                ? "In stock"
-                : "Not available"}
-          </span>
-        </div>
-      ) : (
-        <div className="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">
-          Client hasn&apos;t set a size for this category yet.
-        </div>
-      )}
-      {ctx.budgetRange ? (
-        <div
-          className={cn(
-            "flex items-center justify-between rounded-md border px-3 py-2 text-xs",
-            inBudget
-              ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-              : "border-red-300 bg-red-50 text-red-800",
-          )}
-        >
-          <span className="font-medium">
-            Client budget: ${ctx.budgetRange[0]}–${ctx.budgetRange[1]}
-          </span>
-          <span>{inBudget ? "In range" : "Over budget"}</span>
-        </div>
-      ) : (
-        <div className="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">
-          Client hasn&apos;t set a budget for this category yet.
-        </div>
-      )}
-    </div>
   );
 }
