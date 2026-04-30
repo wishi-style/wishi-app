@@ -8,7 +8,6 @@ import { planTierOrder, type PlanTier } from "@/lib/ui/plan-copy";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
 import { Reveal } from "@/components/primitives/reveal";
-import { PillButton } from "@/components/primitives/pill-button";
 import { FaqList } from "@/components/primitives/faq";
 
 export const metadata: Metadata = {
@@ -187,12 +186,20 @@ export default async function HomePage() {
                   incorporating what you already own to build your perfect wardrobe.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start">
-                  <PillButton href="/match-quiz" variant="solid" size="lg">
+                  {/* Verbatim port of smart-spark-craft Index.tsx:230-243 — same
+                      class strings, Next Link in place of react-router Link. */}
+                  <Link
+                    href="/match-quiz"
+                    className="inline-flex items-center justify-center rounded-full bg-foreground text-background px-8 py-3.5 text-sm font-body font-medium hover:bg-foreground/90 transition-colors"
+                  >
                     Let&apos;s Get Styling
-                  </PillButton>
-                  <PillButton href="/how-it-works" variant="outline" size="lg">
+                  </Link>
+                  <Link
+                    href="/how-it-works"
+                    className="inline-flex items-center justify-center rounded-full border border-foreground text-foreground px-8 py-3.5 text-sm font-body font-medium hover:bg-foreground hover:text-background transition-colors"
+                  >
                     How It Works
-                  </PillButton>
+                  </Link>
                 </div>
               </div>
 
@@ -312,14 +319,22 @@ export default async function HomePage() {
             </div>
 
             <div className="text-center mt-10">
-              <PillButton href={matchHref} variant="solid" size="lg">
+              {/* Verbatim port of smart-spark-craft Index.tsx:347-353 */}
+              <Link
+                href={matchHref}
+                className="inline-flex items-center justify-center rounded-full bg-foreground text-background px-8 py-3 text-sm font-body font-medium hover:bg-foreground/90 transition-colors"
+              >
                 Find Your Best Match
-              </PillButton>
+              </Link>
             </div>
           </div>
         </section>
 
-        {/* How it Works */}
+        {/* How it Works — verbatim port of smart-spark-craft Index.tsx:357-396.
+            Loveable wraps the section with no bg + `container max-w-5xl py-14
+            md:py-20`; staging adds `bg-muted/30 border-y` to give the section a
+            visible band, which matches the muted-section rhythm used elsewhere
+            on the page. The inner content is the literal Loveable markup. */}
         <section className="bg-muted/30 border-y border-border">
           <div className="mx-auto max-w-5xl px-6 md:px-10 py-14 md:py-20">
             <Reveal>
@@ -352,14 +367,18 @@ export default async function HomePage() {
             </div>
 
             <div className="text-center mt-10">
-              <PillButton href="/how-it-works" variant="outline" size="md">
+              {/* Verbatim port of smart-spark-craft Index.tsx:387-394 */}
+              <Link
+                href="/how-it-works"
+                className="inline-flex items-center justify-center rounded-full border border-foreground text-foreground px-8 py-3 text-sm font-body font-medium hover:bg-foreground hover:text-background transition-colors"
+              >
                 Learn More
-              </PillButton>
+              </Link>
             </div>
           </div>
         </section>
 
-        {/* Pricing teaser */}
+        {/* Pricing — verbatim port of smart-spark-craft Index.tsx:398-444. */}
         <section className="py-16 md:py-24">
           <div className="mx-auto max-w-5xl px-6 md:px-10">
             <Reveal>
@@ -373,30 +392,24 @@ export default async function HomePage() {
                   <div className="rounded-xl border border-border bg-card flex flex-col h-full hover:shadow-md transition-shadow overflow-hidden">
                     <div className={`h-1.5 w-full ${tierAccent[tier]}`} />
                     <div className="p-8 flex flex-col flex-1">
-                      <p className="text-xs text-foreground uppercase tracking-wider text-center mb-3 font-medium">
+                      <p className="font-body text-sm text-foreground text-center mb-3">
                         {tierLandingLabel[tier]}
                       </p>
                       <h3 className="font-display text-2xl text-center mb-2">{tierName[tier]}</h3>
                       <p className="font-display text-4xl text-center mb-6">{`$${priceFor[tier]}`}</p>
-                      <ul className="space-y-3 flex-1">
+                      <div className="space-y-3 flex-1">
                         {tierShortFeatures[tier].map((f) => (
-                          <li
-                            key={f}
-                            className="text-sm text-foreground flex items-start gap-2"
-                          >
-                            <span className="mt-1 h-1.5 w-1.5 rounded-full bg-foreground shrink-0" />
+                          <p key={f} className="font-body text-sm text-foreground">
                             {f}
-                          </li>
+                          </p>
                         ))}
-                      </ul>
-                      <PillButton
+                      </div>
+                      <Link
                         href="/pricing"
-                        variant="outline"
-                        size="md"
-                        className="mt-8 w-full"
+                        className="mt-8 inline-flex items-center justify-center rounded-lg border border-foreground text-foreground px-6 py-2.5 text-sm font-body font-medium hover:bg-foreground hover:text-background transition-colors text-center"
                       >
                         Learn More
-                      </PillButton>
+                      </Link>
                     </div>
                   </div>
                 </Reveal>
@@ -475,50 +488,67 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* Reviews */}
-        <section className="py-16 md:py-24">
-          <div className="mx-auto max-w-6xl px-6 md:px-10">
+        {/* Reviews — verbatim port of smart-spark-craft Index.tsx:515-562.
+            Loveable runs an infinite-scroll marquee with the doubled-array
+            trick + fixed 320px card width. */}
+        <section className="py-16 md:py-24 overflow-hidden">
+          <div className="mx-auto max-w-5xl px-6 md:px-10">
             <Reveal>
               <h2 className="font-display text-3xl md:text-4xl text-center mb-12">
                 Our Clients Tell It How It Is
               </h2>
             </Reveal>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {reviews.map((r, i) => (
-                <Reveal key={r.author} delay={i * 80}>
-                  <div className="flex flex-col h-full border border-border rounded-xl overflow-hidden bg-card">
-                    {r.photo && (
-                      <div className="relative aspect-[4/3] overflow-hidden">
-                        <Image
-                          src={r.photo}
-                          alt={`${r.author}'s look`}
-                          fill
-                          sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
-                          className="object-cover"
+          </div>
+
+          <div className="relative">
+            <div className="flex animate-marquee gap-8" style={{ width: "max-content" }}>
+              {[...reviews, ...reviews].map((r, idx) => (
+                <div
+                  key={`${r.author}-${idx}`}
+                  className="flex flex-col w-[320px] shrink-0 border border-border rounded-xl overflow-hidden"
+                >
+                  {r.photo && (
+                    <div className="relative aspect-[4/3] overflow-hidden">
+                      <Image
+                        src={r.photo}
+                        alt={`${r.author}'s look`}
+                        fill
+                        sizes="320px"
+                        className="object-cover"
+                      />
+                    </div>
+                  )}
+                  <div className="p-5 flex flex-col flex-1">
+                    <div className="flex gap-1 mb-3">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <StarIcon
+                          key={i}
+                          className="h-4 w-4 fill-foreground text-foreground"
                         />
-                      </div>
-                    )}
-                    <div className="p-5 flex flex-col flex-1">
-                      <div className="flex gap-1 mb-3">
-                        {Array.from({ length: 5 }).map((_, idx) => (
-                          <StarIcon
-                            key={idx}
-                            className="h-4 w-4 fill-foreground text-foreground"
-                          />
-                        ))}
-                      </div>
-                      <p className="text-sm text-foreground leading-relaxed flex-1 italic">
-                        &ldquo;{r.text}&rdquo;
+                      ))}
+                    </div>
+                    <p className="font-body text-sm text-foreground leading-relaxed flex-1 italic line-clamp-4">
+                      &ldquo;{r.text}&rdquo;
+                    </p>
+                    <div className="mt-3 pt-3 border-t border-border">
+                      <p className="font-display text-sm">{r.author}</p>
+                      <p className="font-body text-xs text-muted-foreground">
+                        Styled by {r.stylist}
                       </p>
-                      <div className="mt-4 pt-4 border-t border-border">
-                        <p className="font-display text-base">{r.author}</p>
-                        <p className="text-xs text-muted-foreground">Styled by {r.stylist}</p>
-                      </div>
                     </div>
                   </div>
-                </Reveal>
+                </div>
               ))}
             </div>
+          </div>
+
+          <div className="mx-auto max-w-5xl px-6 md:px-10 mt-10 text-center">
+            <Link
+              href="/reviews"
+              className="inline-flex items-center justify-center rounded-[4px] border border-foreground text-foreground px-8 py-3 text-sm font-body font-medium hover:bg-foreground hover:text-background transition-colors"
+            >
+              Read More Reviews
+            </Link>
           </div>
         </section>
 
@@ -541,12 +571,16 @@ export default async function HomePage() {
               <h2 className="font-display text-3xl md:text-5xl mb-4">
                 Ready to Transform Your Wardrobe?
               </h2>
-              <p className="text-base text-muted-foreground max-w-md mx-auto mb-8">
+              <p className="font-body text-base text-muted-foreground max-w-md mx-auto mb-8">
                 Take a quick style quiz and get matched with a stylist who truly gets your vibe.
               </p>
-              <PillButton href="/match-quiz" variant="solid" size="lg">
+              {/* Verbatim port of smart-spark-craft Index.tsx:590-595 */}
+              <Link
+                href="/match-quiz"
+                className="inline-flex items-center justify-center rounded-full bg-foreground text-background px-10 py-4 text-sm font-body font-medium hover:bg-foreground/90 transition-colors"
+              >
                 Let&apos;s Get Styling
-              </PillButton>
+              </Link>
             </Reveal>
           </div>
         </section>
