@@ -77,6 +77,9 @@ export default async function ProfilePage() {
     title: fb.board.title,
     thumbnailUrl:
       photoByBoard.get(fb.board.id) ?? itemImageByBoard.get(fb.board.id) ?? null,
+    stylistName: fb.board.session?.stylist
+      ? `${fb.board.session.stylist.firstName} ${fb.board.session.stylist.lastName}`.trim()
+      : null,
   }));
 
   // "In N Outfits" carousel inside ClosetItemDialog. For each closet item,

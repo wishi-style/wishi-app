@@ -45,6 +45,7 @@ interface Look {
   sessionId: string | null;
   title: string | null;
   thumbnailUrl: string | null;
+  stylistName: string | null;
 }
 
 interface OutfitPreview {
@@ -116,12 +117,43 @@ export function ProfilePageClient({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [gridSize, setGridSize] = useState<"normal" | "compact">("normal");
   const [detailItem, setDetailItem] = useState<ClosetItem | null>(null);
+  const [looksStylistFilter, setLooksStylistFilter] = useState<Set<string>>(
+    new Set(),
+  );
 
   const facets = useMemo(() => computeClosetFacets(items), [items]);
   const filteredItems = useMemo(
     () => filterClosetItems(items, filters),
     [items, filters],
   );
+
+  const looksStylists = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          looks.map((l) => l.stylistName).filter((s): s is string => Boolean(s)),
+        ),
+      ).sort(),
+    [looks],
+  );
+  const filteredLooks = useMemo(
+    () =>
+      looksStylistFilter.size === 0
+        ? looks
+        : looks.filter(
+            (l) => l.stylistName && looksStylistFilter.has(l.stylistName),
+          ),
+    [looks, looksStylistFilter],
+  );
+
+  function toggleLooksStylist(name: string) {
+    setLooksStylistFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
 
   const activeFilterCount = useMemo(
     () =>
@@ -602,17 +634,59 @@ export function ProfilePageClient({
             </button>
           </div>
 
+          {/* Stylist filter chips — Loveable Profile.tsx:1066-1100 has a four-
+              facet row (Stylist/Occasion/Season/Style). Stylist is the only
+              one we can derive without new schema fields, so we ship that
+              chip row now and leave the rest as Phase-11 polish. */}
+          {looksStylists.length > 0 && (
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <span className="mr-1 font-body text-xs uppercase tracking-widest text-muted-foreground">
+                Stylist
+              </span>
+              {looksStylists.map((name) => {
+                const active = looksStylistFilter.has(name);
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => toggleLooksStylist(name)}
+                    className={cn(
+                      "rounded-full border px-3 py-1 font-body text-xs transition-colors",
+                      active
+                        ? "border-foreground bg-foreground text-background"
+                        : "border-border text-foreground hover:bg-muted",
+                    )}
+                  >
+                    {name}
+                  </button>
+                );
+              })}
+              {looksStylistFilter.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setLooksStylistFilter(new Set())}
+                  className="ml-1 font-body text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
+
           <p className="mb-4 font-body text-xs uppercase tracking-widest text-muted-foreground">
-            {looks.length} {looks.length === 1 ? "Look" : "Looks"}
+            {filteredLooks.length}{" "}
+            {filteredLooks.length === 1 ? "Look" : "Looks"}
           </p>
 
-          {looks.length === 0 ? (
+          {filteredLooks.length === 0 ? (
             <p className="py-20 text-center text-sm text-muted-foreground">
-              No saved looks yet. Tap the heart on a styleboard to save it here.
+              {looks.length === 0
+                ? "No saved looks yet. Tap the heart on a styleboard to save it here."
+                : "No looks match the current filters."}
             </p>
           ) : (
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-3">
-              {looks.map((look) => (
+              {filteredLooks.map((look) => (
                 <Link
                   key={look.id}
                   href={

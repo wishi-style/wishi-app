@@ -78,7 +78,20 @@ export async function unfavoriteBoard(userId: string, boardId: string): Promise<
 export async function listFavoriteBoards(userId: string) {
   return prisma.favoriteBoard.findMany({
     where: { userId },
-    include: { board: true },
+    include: {
+      board: {
+        include: {
+          // Pulled into the /profile Looks tab so each card can show its
+          // stylist name and the tab's filter chip row can derive
+          // facets without a second query.
+          session: {
+            select: {
+              stylist: { select: { firstName: true, lastName: true } },
+            },
+          },
+        },
+      },
+    },
     orderBy: { createdAt: "desc" },
   });
 }
