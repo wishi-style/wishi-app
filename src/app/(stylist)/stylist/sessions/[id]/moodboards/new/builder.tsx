@@ -215,7 +215,7 @@ export function MoodboardBuilder({
       <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-3">
           <Link
-            href={`/stylist/sessions/${sessionId}/workspace`}
+            href={`/stylist/dashboard?session=${sessionId}`}
             className="text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeftIcon className="h-5 w-5" />

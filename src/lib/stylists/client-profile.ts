@@ -55,7 +55,12 @@ export function initialsFrom(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-function mapLoyalty(tier: string | null, totalSessions: number): ViewLoyaltyTier {
+// Loveable's view supports 5 tiers (new/bronze/silver/gold/vip) but the
+// staging schema only models 3 (BRONZE/GOLD/PLATINUM, with thresholds
+// 0-2 / 3-7 / 8+ — see lib/loyalty/service.ts). Map directly; the "silver"
+// tier is currently unreachable. Documented gap until the backend grows a
+// SILVER tier.
+export function mapLoyalty(tier: string | null, totalSessions: number): ViewLoyaltyTier {
   if (totalSessions === 0) return "new";
   switch (tier) {
     case "PLATINUM":
@@ -63,10 +68,49 @@ function mapLoyalty(tier: string | null, totalSessions: number): ViewLoyaltyTier
     case "GOLD":
       return "gold";
     case "BRONZE":
-      return totalSessions >= 2 ? "silver" : "bronze";
+      return "bronze";
     default:
       return "new";
   }
+}
+
+// Free-text quiz answers like "Straight, Wide Leg" or "Skinny;Flare" arrive
+// as a single string; Loveable's view shape is `string[]`. Split on common
+// delimiters so multi-value answers render as multi-chip — single-value
+// answers degrade to a single-element array.
+export function splitToChips(value: string | null | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(/[,;\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+// Map StyleProfile.comfortZoneLevel (Int 1-10, "1 = Keep it safe, 10 = Push
+// my boundaries" per the quiz helper) to Loveable's phrase vocabulary.
+export function comfortZoneLabel(level: number | null | undefined): string {
+  if (level == null) return "";
+  if (level <= 3) return "Stay close";
+  if (level <= 7) return "A little outside";
+  return "Push my boundaries";
+}
+
+// Loveable's socialLinks values are handles ("@feizhen.style", "feizhen_d"),
+// not URLs. Extract the trailing path segment from a URL; preserve handles
+// that are already in `@handle` form. Instagram convention is `@`-prefixed;
+// Pinterest / Facebook are bare.
+export function extractHandle(raw: string, prefix: "@" | ""): string {
+  if (!raw) return "";
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("@")) return trimmed;
+  // Pull the last non-empty path segment from a URL-ish string.
+  const segments = trimmed
+    .replace(/^https?:\/\//, "")
+    .replace(/\/+$/, "")
+    .split("/")
+    .filter(Boolean);
+  const handle = segments[segments.length - 1] ?? trimmed;
+  return prefix + handle;
 }
 
 function formatDollarRange(minCents: number, maxCents: number): string {
@@ -198,9 +242,9 @@ export async function resolveClientProfileView(
   const social: ClientProfileView["socialLinks"] = {};
   for (const s of socialLinks) {
     const key = s.platform.toLowerCase();
-    if (key === "instagram") social.instagram = s.url || "";
-    else if (key === "pinterest") social.pinterest = s.url || "";
-    else if (key === "facebook") social.facebook = s.url || "";
+    if (key === "instagram") social.instagram = extractHandle(s.url ?? "", "@");
+    else if (key === "pinterest") social.pinterest = extractHandle(s.url ?? "", "");
+    else if (key === "facebook") social.facebook = extractHandle(s.url ?? "", "");
   }
 
   return {
@@ -212,15 +256,17 @@ export async function resolveClientProfileView(
     totalSessions: completedSessions,
     profilePhotoUrl: user.avatarUrl ?? undefined,
     stylingGoal: styleProfile?.needsDescription ?? "",
-    bodyIssues: bodyProfile?.bodyIssues ? [bodyProfile.bodyIssues] : [],
+    // BodyProfile.bodyIssues is a single nullable text field — Loveable's
+    // shape splits chips (short labels) from notes (free text). Schema can't
+    // distinguish, so we surface the text only as notes; chips stay empty
+    // until the schema grows a separate chip-list field.
+    bodyIssues: [],
     bodyIssueNotes: bodyProfile?.bodyIssues ?? "",
     bodyType: bodyProfile?.bodyType ?? "",
     highlightAreas: bodyProfile?.highlightAreas ?? [],
     style: styleProfile?.stylePreferences ?? [],
     styleIcons: styleProfile?.styleIcons ?? [],
-    comfortZone: styleProfile?.comfortZoneLevel != null
-      ? `${styleProfile.comfortZoneLevel}/10`
-      : "",
+    comfortZone: comfortZoneLabel(styleProfile?.comfortZoneLevel),
     typicallyWears: styleProfile?.typicallyWears ?? "",
     sizes,
     budgets: budgetMap,
@@ -234,10 +280,10 @@ export async function resolveClientProfileView(
     colorsDislike: colors.filter((c) => !c.isLiked).map((c) => c.color),
     fabricsDislike: fabrics.filter((f) => f.isDisliked).map((f) => f.fabric),
     patternsDislike: patterns.filter((p) => p.isDisliked).map((p) => p.pattern),
-    denimFit: specific?.denimFit ? [specific.denimFit] : [],
+    denimFit: splitToChips(specific?.denimFit),
     dressStyles: specific?.dressStyles ?? [],
     heelPreference: specific?.heelPreference ?? "",
-    jewelryType: specific?.jewelryPreference ? [specific.jewelryPreference] : [],
+    jewelryType: splitToChips(specific?.jewelryPreference),
     socialLinks: social,
     favoriteLooks: favoriteBoards
       .map((f) => f.board?.title)

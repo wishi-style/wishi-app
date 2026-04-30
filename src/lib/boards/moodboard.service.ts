@@ -209,7 +209,7 @@ export async function rateMoodboard(
       rating === "LOVE"
         ? `${client?.firstName ?? "Your client"} loved the moodboard.`
         : `${client?.firstName ?? "Your client"} wasn't feeling the moodboard.`,
-    url: `/stylist/sessions/${sessionId}/workspace`,
+    url: `/stylist/dashboard?session=${sessionId}`,
   });
 
   return updated;

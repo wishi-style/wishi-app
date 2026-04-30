@@ -809,7 +809,7 @@ export function StyleboardBuilder({
     }
     setSaveOpen(false);
     toast.success(`"${input.title}" sent to ${clientName}`);
-    router.push(`/stylist/sessions/${sessionId}/workspace`);
+    router.push(`/stylist/dashboard?session=${sessionId}`);
     router.refresh();
   }
 
@@ -828,7 +828,7 @@ export function StyleboardBuilder({
       <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-3">
           <Link
-            href={`/stylist/sessions/${sessionId}/workspace`}
+            href={`/stylist/dashboard?session=${sessionId}`}
             className="text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeftIcon className="h-5 w-5" />
@@ -843,8 +843,12 @@ export function StyleboardBuilder({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* TODO(commit-4): Loveable's LookCreator opens ClientDetailPanel
+              inline as a sheet — staging navigates back to dashboard for
+              now (where Details opens the same panel). Re-add inline sheet
+              in the LookCreator parity pass. */}
           <Link
-            href={`/stylist/clients/${clientId}`}
+            href={`/stylist/dashboard?session=${sessionId}`}
             className="inline-flex items-center gap-1.5 h-8 rounded-sm border border-border px-3 font-body text-xs hover:bg-muted transition-colors"
           >
             <UserIcon className="h-3.5 w-3.5" />

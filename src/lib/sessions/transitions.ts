@@ -194,7 +194,7 @@ export async function declineEnd(sessionId: string): Promise<Session> {
     event: "session.end_declined",
     title: "End-session declined",
     body: "Your client declined the end-session request. The session continues.",
-    url: `/stylist/sessions/${sessionId}/workspace`,
+    url: `/stylist/dashboard?session=${sessionId}`,
   });
   return updated;
 }

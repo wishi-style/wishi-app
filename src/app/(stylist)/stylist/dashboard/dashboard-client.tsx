@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -140,12 +140,12 @@ export default function StylistDashboard({
   sessions: MockSession[];
   stylistInitials: string;
 }) {
-  // Pre-select first session so the right pane isn't empty on desktop. Use
-  // a lazy initializer that reads the sessions array directly (no `window`
-  // branch — that caused SSR/client divergence and hydration mismatches).
-  const [selectedId, setSelectedId] = useState<string | null>(
-    () => mockSessions[0]?.id ?? null,
-  );
+  // Start with no session selected. Loveable's auto-select (StylistDashboard
+  // .tsx:366-370) gates on `!isMobile` — but `useIsMobile()` returns `false`
+  // during SSR / first render, so a lazy initializer here would fire on
+  // mobile too and shove the user straight into the chat panel. Defer to
+  // the effect below, which sees the resolved `isMobile` value.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<StatFilter | null>(null);
   const [sessionTypeFilter, setSessionTypeFilter] = useState<SessionType | "all">("all");
@@ -177,6 +177,12 @@ export default function StylistDashboard({
   // 24h post-completion mark moves to Archive without a manual refresh.
   const [, setNowTick] = useState(0);
   const router = useRouter();
+  // Deep-link target. Notification fan-outs in lib/boards/* and
+  // lib/sessions/transitions.ts pass `?session=<id>` so the user lands
+  // straight on the right chat thread. Falls through to auto-select on
+  // desktop / no-selection on mobile.
+  const searchParams = useSearchParams();
+  const deepLinkSessionId = searchParams.get("session");
   const chatEndRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
 
@@ -185,17 +191,31 @@ export default function StylistDashboard({
     return () => clearInterval(t);
   }, []);
 
-  // Auto-select the first session in the current folder when nothing is
-  // selected — keeps the right pane populated when the user switches tabs.
+  // Resolve initial selection. Priority:
+  //   1. `?session=<id>` deep-link from notifications / builder back-links
+  //      (works on mobile too — the user clicked the link expecting a
+  //      specific thread).
+  //   2. Desktop auto-select first visible session — mirrors Loveable's
+  //      `!isMobile && selectedId === null` gate (StylistDashboard.tsx:366-370).
+  //   3. Mobile no-selection — keeps the queue full-screen until a tap.
   useEffect(() => {
-    if (selectedId === null) {
-      const firstVisible = mockSessions.find((s) =>
-        folder === "archive" ? !!s.endedAt && Date.now() - new Date(s.endedAt).getTime() >= ARCHIVE_DELAY_MS : !(s.endedAt && Date.now() - new Date(s.endedAt).getTime() >= ARCHIVE_DELAY_MS),
-      );
-      if (firstVisible) setSelectedId(firstVisible.id);
+    if (selectedId !== null) return;
+    if (deepLinkSessionId) {
+      const target = mockSessions.find((s) => s.id === deepLinkSessionId);
+      if (target) {
+        setSelectedId(target.id);
+        return;
+      }
     }
+    if (isMobile) return;
+    const firstVisible = mockSessions.find((s) =>
+      folder === "archive"
+        ? !!s.endedAt && Date.now() - new Date(s.endedAt).getTime() >= ARCHIVE_DELAY_MS
+        : !(s.endedAt && Date.now() - new Date(s.endedAt).getTime() >= ARCHIVE_DELAY_MS),
+    );
+    if (firstVisible) setSelectedId(firstVisible.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [folder, selectedId]);
+  }, [folder, selectedId, isMobile, deepLinkSessionId]);
 
   // Auto-archive 24h after `endedAt`. Mirrors Loveable HEAD's client-side
   // predicate so we don't need a worker / column flip on the backend.
@@ -879,15 +899,15 @@ export default function StylistDashboard({
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedId(session.id);
+                        // Loveable: only "Create Moodboard" / "Create Look"
+                        // navigate. Every other label (View session, Start
+                        // styling, View summary, Awaiting approval) is a
+                        // no-op selector — the chat IS the workspace.
                         if (session.actionLabel === "Create Moodboard") {
                           router.push(`/stylist/sessions/${session.id}/moodboards/new`);
-                          return;
-                        }
-                        if (session.actionLabel === "Create Look") {
+                        } else if (session.actionLabel === "Create Look") {
                           router.push(`/stylist/sessions/${session.id}/styleboards/new`);
-                          return;
                         }
-                        router.push(`/stylist/sessions/${session.id}/workspace`);
                       }}
                       className={cn(
                         "w-full rounded-sm py-2 text-xs font-body font-medium text-center transition-colors",
@@ -946,13 +966,18 @@ export default function StylistDashboard({
             variant="outline"
             size="sm"
             className="font-body text-xs h-8 rounded-sm"
+            disabled={
+              selected.actionLabel !== "Create Moodboard" &&
+              selected.actionLabel !== "Create Look"
+            }
             onClick={() => {
+              // Loveable parity: only "Create Moodboard" / "Create Look"
+              // navigate. View session / Start styling / View summary /
+              // Awaiting approval are status labels with no destination.
               if (selected.actionLabel === "Create Moodboard") {
                 router.push(`/stylist/sessions/${selected.id}/moodboards/new`);
               } else if (selected.actionLabel === "Create Look") {
                 router.push(`/stylist/sessions/${selected.id}/styleboards/new`);
-              } else {
-                router.push(`/stylist/sessions/${selected.id}/workspace`);
               }
             }}
           >
