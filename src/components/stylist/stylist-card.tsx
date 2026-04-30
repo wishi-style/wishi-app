@@ -1,11 +1,14 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
-import { ClockIcon } from "lucide-react";
+import { ClockIcon, HeartIcon } from "lucide-react";
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
 } from "@/components/ui/avatar";
+import { cn } from "@/lib/utils";
 
 interface StylistCardProps {
   id: string;
@@ -18,11 +21,18 @@ interface StylistCardProps {
   isAvailable: boolean;
   /**
    * Optional hero/portfolio image. Falls back to the avatar when the stylist
-   * hasn't uploaded a portfolio cover yet — real portfolio wiring lands in a
-   * follow-on sweep once `StylistProfile.featuredBoards` is materialized into
-   * a cover image.
+   * hasn't uploaded a portfolio cover yet.
    */
   portfolioUrl?: string | null;
+  /**
+   * Optional location string (e.g. "New York"). When absent, the first
+   * styleSpecialty is rendered in the same slot so the card structure
+   * matches Loveable's `font-body text-xs uppercase tracking-widest` line.
+   */
+  location?: string | null;
+  /** When provided, the card renders Loveable's heart-toggle button. */
+  favorited?: boolean;
+  onToggleFavorite?: () => void;
 }
 
 export function StylistCard({
@@ -33,6 +43,9 @@ export function StylistCard({
   matchScore,
   isAvailable,
   portfolioUrl,
+  location,
+  favorited,
+  onToggleFavorite,
 }: StylistCardProps) {
   const heroImage = portfolioUrl ?? avatarUrl;
   const initials = name
@@ -42,10 +55,12 @@ export function StylistCard({
     .slice(0, 2)
     .join("");
   const firstName = name.split(" ")[0] || name;
+  const subtitle = location ?? styleSpecialties[0] ?? "";
 
   return (
     <Link href={`/stylists/${id}`} className="group block">
-      <div className="relative aspect-square overflow-hidden bg-muted">
+      {/* Portfolio image — Loveable Stylists.tsx:69-96 */}
+      <div className="relative aspect-square overflow-hidden mb-0">
         {heroImage ? (
           <Image
             src={heroImage}
@@ -59,19 +74,42 @@ export function StylistCard({
             {initials || name.charAt(0)}
           </div>
         )}
+        {onToggleFavorite ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onToggleFavorite();
+            }}
+            aria-label={favorited ? `Unfavorite ${name}` : `Favorite ${name}`}
+            className="absolute top-3 right-3 h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm flex items-center justify-center hover:bg-background transition-colors"
+          >
+            <HeartIcon
+              className={cn(
+                "h-4 w-4 transition-colors",
+                favorited
+                  ? "fill-foreground text-foreground"
+                  : "text-foreground",
+              )}
+            />
+          </button>
+        ) : null}
       </div>
 
-      <div className="flex flex-col items-center text-center bg-card px-4 py-5 border-x border-b border-border rounded-b-xl">
-        <Avatar className="h-12 w-12 -mt-10 mb-2 border-2 border-background shadow-sm">
+      {/* Info — Loveable Stylists.tsx:99-122. No outer borders / rounded
+          corners; bg-card sits flush below the portrait. */}
+      <div className="flex flex-col items-center text-center bg-card px-4 py-5">
+        <Avatar className="h-12 w-12 mb-2 border-2 border-background shadow-sm -mt-10">
           {avatarUrl ? <AvatarImage src={avatarUrl} alt={name} /> : null}
-          <AvatarFallback className="text-xs bg-secondary text-secondary-foreground">
+          <AvatarFallback className="font-body text-xs bg-secondary text-secondary-foreground">
             {initials || name.charAt(0)}
           </AvatarFallback>
         </Avatar>
         <h3 className="font-display text-lg">{name}</h3>
-        {styleSpecialties.length > 0 ? (
-          <p className="text-xs uppercase tracking-widest text-dark-taupe mt-0.5">
-            {styleSpecialties.slice(0, 2).join(" · ")}
+        {subtitle ? (
+          <p className="font-body text-xs uppercase tracking-widest text-dark-taupe mt-0.5">
+            {subtitle}
           </p>
         ) : null}
         {matchScore !== null && matchScore !== undefined ? (
@@ -80,10 +118,10 @@ export function StylistCard({
         {!isAvailable ? (
           <div className="flex items-center gap-1.5 mt-1.5 text-muted-foreground">
             <ClockIcon className="h-3.5 w-3.5" />
-            <span className="text-xs">Waitlist only</span>
+            <span className="font-body text-xs">Waitlist only</span>
           </div>
         ) : null}
-        <span className="mt-3 w-full max-w-[220px] rounded-full bg-foreground text-background py-2.5 text-sm font-medium group-hover:bg-foreground/90 transition-colors text-center block">
+        <span className="mt-3 w-full max-w-[220px] rounded-full bg-foreground text-background py-2.5 text-sm font-body font-medium group-hover:bg-foreground/90 transition-colors text-center block">
           {isAvailable ? `Meet ${firstName}` : "Join waitlist"}
         </span>
       </div>

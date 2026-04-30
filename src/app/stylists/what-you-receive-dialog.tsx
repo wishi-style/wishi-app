@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 
 const receiveFeatures = [
-  { title: "Personalized Mood Board", image: "/img/hiw-moodboard.png" },
+  { title: "Personalized Moodboard", image: "/img/hiw-moodboard.png" },
   { title: "Shoppable Outfit Boards", image: "/img/hiw-styleboards.png" },
   { title: "Direct Stylist Chat", image: "/img/hiw-chat.png" },
   { title: "Purchase Links", image: "/img/hiw-purchaselinks.png" },
@@ -38,7 +38,7 @@ export function WhatYouReceiveDialog() {
             <DialogTitle className="font-display text-2xl text-center font-normal">
               What You Receive
             </DialogTitle>
-            <p className="text-sm text-muted-foreground text-center mt-1">
+            <p className="font-body text-sm text-muted-foreground text-center mt-1">
               Everything you need for a complete style transformation.
             </p>
           </DialogHeader>
