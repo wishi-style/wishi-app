@@ -152,28 +152,36 @@ export function SessionCard({ session }: { session: SessionData }) {
   const isHighPriority = status === "new_board";
   const lastTimestamp = session.messages[0]?.createdAt ?? session.createdAt;
 
+  const stylistProfileHref = session.stylist?.stylistProfile?.id
+    ? `/stylists/${session.stylist.stylistProfile.id}`
+    : null;
+
   return (
     <div
-      className={`group flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 rounded-sm border border-border bg-card p-4 sm:p-6 transition-shadow hover:shadow-sm ${
+      className={`group flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 rounded-sm bg-card p-4 sm:p-6 transition-all hover:shadow-md ${
         isHighPriority ? "border-l-2 border-l-warm-beige" : ""
       }`}
     >
       <div className="flex items-center gap-3 sm:contents">
-        <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-full bg-muted sm:h-20 sm:w-20">
-          {session.stylist?.avatarUrl ? (
-            <Image
-              src={session.stylist.avatarUrl}
-              alt={stylistName}
-              fill
-              sizes="(min-width: 640px) 80px, 56px"
-              className="object-cover"
+        {stylistProfileHref ? (
+          <Link
+            href={stylistProfileHref}
+            className="shrink-0 transition-opacity hover:opacity-80"
+            aria-label={`View ${stylistName}'s profile`}
+          >
+            <SessionAvatar
+              stylistName={stylistName}
+              avatarUrl={session.stylist?.avatarUrl ?? null}
+              initials={initials}
             />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center font-display text-xl text-muted-foreground">
-              {initials || "—"}
-            </div>
-          )}
-        </div>
+          </Link>
+        ) : (
+          <SessionAvatar
+            stylistName={stylistName}
+            avatarUrl={session.stylist?.avatarUrl ?? null}
+            initials={initials}
+          />
+        )}
         <div className="sm:hidden">
           <div className="flex items-center gap-2">
             <h3 className="font-display text-lg">{stylistName}</h3>
@@ -210,14 +218,42 @@ export function SessionCard({ session }: { session: SessionData }) {
 
       <Link
         href={actionHref(status, session)}
-        className={`shrink-0 rounded-sm px-8 py-2.5 text-xs font-medium uppercase tracking-widest transition-colors ${
+        className={`shrink-0 rounded-sm px-8 py-2.5 text-xs font-body tracking-widest transition-colors ${
           isHighPriority
             ? "bg-foreground text-background hover:bg-foreground/90"
-            : "border border-border text-foreground hover:bg-secondary"
+            : "border border-input text-foreground hover:bg-accent hover:text-accent-foreground"
         }`}
       >
         {actionLabel(status, firstName)}
       </Link>
+    </div>
+  );
+}
+
+function SessionAvatar({
+  stylistName,
+  avatarUrl,
+  initials,
+}: {
+  stylistName: string;
+  avatarUrl: string | null;
+  initials: string;
+}) {
+  return (
+    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-full bg-secondary sm:h-20 sm:w-20">
+      {avatarUrl ? (
+        <Image
+          src={avatarUrl}
+          alt={stylistName}
+          fill
+          sizes="(min-width: 640px) 80px, 56px"
+          className="object-cover"
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center font-display text-xl text-secondary-foreground">
+          {initials || "—"}
+        </div>
+      )}
     </div>
   );
 }

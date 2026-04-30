@@ -211,18 +211,18 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* Press Logos */}
-        <section className="bg-foreground py-10">
-          <div className="mx-auto max-w-6xl px-6 md:px-10">
-            <p className="text-center font-display text-xl md:text-2xl italic text-background/70 mb-6">
-              &ldquo;Best Personalized Styling App&rdquo;
-            </p>
-            <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-6">
-              {pressLogos.map((src, i) => (
+        {/* Press Logos — verbatim port of smart-spark-craft Index.tsx:259-276 */}
+        <section className="bg-foreground py-8 overflow-hidden">
+          <p className="text-center font-display text-xl md:text-2xl italic text-background/70 mb-6">
+            &ldquo;Best Personalized Styling App&rdquo;
+          </p>
+          <div className="relative">
+            <div className="flex animate-marquee w-max items-center gap-12">
+              {[...pressLogos, ...pressLogos].map((src, i) => (
                 <Image
-                  key={src}
+                  key={`${src}-${i}`}
                   src={src}
-                  alt={`Press logo ${i + 1}`}
+                  alt="Press logo"
                   width={120}
                   height={32}
                   className="h-6 md:h-8 w-auto object-contain opacity-70 brightness-0 invert"
