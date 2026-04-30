@@ -100,6 +100,11 @@ export default async function StylistMatchPage() {
           firstName: true,
           lastName: true,
           avatarUrl: true,
+          locations: {
+            where: { isPrimary: true },
+            select: { city: true, state: true },
+            take: 1,
+          },
         },
       },
       profileBoards: {
@@ -120,6 +125,15 @@ export default async function StylistMatchPage() {
     },
   });
 
+  function formatLocation(
+    loc: { city: string | null; state: string | null } | undefined,
+  ): string | null {
+    if (!loc) return null;
+    if (loc.city && loc.state) return `${loc.city}, ${loc.state}`;
+    return loc.city ?? loc.state ?? null;
+  }
+  const topLocation = formatLocation(topProfile.user.locations[0]);
+
   const portfolioImages: string[] = topProfile.profileBoards
     .flatMap((b) => b.photos.map((p) => p.url))
     .filter((url): url is string => Boolean(url));
@@ -134,9 +148,21 @@ export default async function StylistMatchPage() {
     where: { id: { in: others.map((s) => s.id) } },
     select: {
       id: true,
-      user: { select: { firstName: true, lastName: true, avatarUrl: true } },
+      user: {
+        select: {
+          firstName: true,
+          lastName: true,
+          avatarUrl: true,
+          locations: {
+            where: { isPrimary: true },
+            select: { city: true, state: true },
+            take: 1,
+          },
+        },
+      },
     },
   });
+  const scoreById = new Map(others.map((s) => [s.id, s.score] as const));
   // Preserve ranked order
   const otherProfilesById = new Map(otherProfiles.map((p) => [p.id, p]));
   const orderedOthers = others
@@ -179,6 +205,11 @@ export default async function StylistMatchPage() {
                     <h2 className="font-display text-3xl tracking-tight">
                       {fullName}
                     </h2>
+                    {topLocation && (
+                      <p className="mt-1 font-body text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        {topLocation}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -287,6 +318,12 @@ export default async function StylistMatchPage() {
               const otherFullName =
                 `${profile.user.firstName} ${profile.user.lastName}`.trim();
               const otherFirstName = profile.user.firstName ?? otherFullName;
+              const otherLocation = formatLocation(profile.user.locations[0]);
+              const score = scoreById.get(profile.id) ?? 0;
+              const otherMatch = Math.min(
+                99,
+                Math.round((score / maxPossibleScore) * 99),
+              );
               return (
                 <div
                   key={profile.id}
@@ -306,9 +343,17 @@ export default async function StylistMatchPage() {
                     />
                   )}
                   <p className="font-display text-lg">{otherFirstName}</p>
+                  {otherLocation && (
+                    <p className="font-body text-xs text-muted-foreground mb-0.5">
+                      {otherLocation}
+                    </p>
+                  )}
+                  <p className="font-body text-xs text-muted-foreground mb-4">
+                    {otherMatch}%
+                  </p>
                   <Link
                     href={`/stylists/${profile.id}`}
-                    className="block w-full mt-4 rounded-md bg-foreground text-background py-2.5 text-xs font-body font-medium hover:bg-foreground/90 transition-colors"
+                    className="block w-full rounded-md bg-foreground text-background py-2.5 text-xs font-body font-medium hover:bg-foreground/90 transition-colors"
                   >
                     Meet {otherFirstName}
                   </Link>

@@ -45,6 +45,11 @@ export default async function ClientChatPage({ params }: Props) {
           avatarUrl: true,
           clerkId: true,
           stylistProfile: { select: { id: true } },
+          locations: {
+            where: { isPrimary: true },
+            select: { city: true, state: true },
+            take: 1,
+          },
         },
       },
     },
@@ -81,6 +86,12 @@ export default async function ClientChatPage({ params }: Props) {
   const bookCtaHref = stylistProfileId
     ? `/bookings/new?stylistId=${stylistProfileId}`
     : null;
+  const stylistLocation = (() => {
+    const loc = session.stylist?.locations[0];
+    if (!loc) return null;
+    if (loc.city && loc.state) return `${loc.city}, ${loc.state}`;
+    return loc.city ?? loc.state ?? null;
+  })();
 
   const { boards, curated, cart, progress } = await getWorkspaceData(
     session.id,
@@ -94,6 +105,7 @@ export default async function ClientChatPage({ params }: Props) {
         currentIdentity={user.clerkId!}
         otherUserName={stylistName}
         otherUserAvatar={session.stylist?.avatarUrl ?? null}
+        otherUserLocation={stylistLocation}
         sessionStatus={session.status}
         viewerRole="CLIENT"
         boards={boards}

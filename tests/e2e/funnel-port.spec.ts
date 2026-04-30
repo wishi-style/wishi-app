@@ -144,6 +144,75 @@ test("/stylist-match guest is bounced to /match-quiz", async ({ page }) => {
   await expect(page).toHaveURL(/\/match-quiz$/);
 });
 
+test("/stylist-match shows top match's primary location subtitle", async ({
+  page,
+}) => {
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const clientEmail = `loc-client-${stamp}@e2e.wishi.test`;
+  const stylistEmail = `loc-stylist-${stamp}@e2e.wishi.test`;
+
+  const client = await ensureClientUser({
+    clerkId: `e2e_loc_c_${stamp}`,
+    email: clientEmail,
+    firstName: "Loc",
+    lastName: "Tester",
+  });
+  const stylist = await ensureStylistUser({
+    clerkId: `e2e_loc_s_${stamp}`,
+    email: stylistEmail,
+    firstName: "Daphne",
+    lastName: "Located",
+  });
+  await ensureStylistProfile({
+    userId: stylist.id,
+    matchEligible: true,
+    isAvailable: true,
+    genderPreference: ["FEMALE"],
+    styleSpecialties: ["Minimal"],
+  });
+
+  // Seed primary location for the stylist + a match quiz result for the
+  // client so /stylist-match doesn't redirect away.
+  await getPool().query(
+    `INSERT INTO user_locations (id, user_id, city, state, is_primary, created_at, updated_at)
+     VALUES ($1, $2, 'New York', 'NY', true, NOW(), NOW())`,
+    [`loc_${stamp}`, stylist.id],
+  );
+  await getPool().query(
+    `INSERT INTO match_quiz_results
+       (id, user_id, gender_to_style, style_direction, completed_at)
+     VALUES ($1, $2, 'FEMALE', $3, NOW())`,
+    [`mqr_${stamp}`, client.id, ["Minimal"]],
+  );
+
+  try {
+    // Use the explicit e2e backdoor — the shared signIn helper above hits the
+    // Clerk hosted form, which strict-mode-fails on social provider buttons.
+    await page.goto("/sign-in?e2e=1");
+    await page.getByLabel("Email").fill(clientEmail);
+    await page.getByRole("button", { name: "Sign In" }).click();
+    await expect(page).not.toHaveURL(/\/sign-in/);
+
+    await page.goto("/stylist-match");
+    await page.waitForLoadState("networkidle");
+
+    // Loveable shows the location uppercase tracked under the stylist name.
+    // Our renderer keeps the original casing, so just match the city/state.
+    await expect(page.getByText("New York, NY").first()).toBeVisible();
+  } finally {
+    await getPool().query(
+      `DELETE FROM match_quiz_results WHERE user_id = $1`,
+      [client.id],
+    );
+    await getPool().query(`DELETE FROM user_locations WHERE user_id = $1`, [
+      stylist.id,
+    ]);
+    await cleanupStylistProfile(stylist.id);
+    await cleanupE2EUserByEmail(clientEmail);
+    await cleanupE2EUserByEmail(stylistEmail);
+  }
+});
+
 test("/stylists/[id] Continue is a <button> for guests (no href, opens Clerk modal client-side)", async ({
   page,
 }) => {
