@@ -77,6 +77,65 @@ test("/reviews renders a seeded session review with stylist attribution", async 
   }
 });
 
+test("/reviews exposes Loveable's Read more / Show less toggle on long quotes", async ({
+  page,
+}) => {
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const clientEmail = `rv-long-client-${stamp}@e2e.wishi.test`;
+  const stylistEmail = `rv-long-stylist-${stamp}@e2e.wishi.test`;
+
+  const client = await ensureClientUser({
+    clerkId: `e2e_rv_long_c_${stamp}`,
+    email: clientEmail,
+    firstName: "Quinn",
+    lastName: "LongRead",
+  });
+  const stylist = await ensureStylistUser({
+    clerkId: `e2e_rv_long_s_${stamp}`,
+    email: stylistEmail,
+    firstName: "Kai",
+    lastName: "LongQuoter",
+  });
+  await ensureStylistProfile({ userId: stylist.id });
+
+  const session = await createSessionForClient({
+    clientId: client.id,
+    stylistId: stylist.id,
+    planType: "MAJOR",
+    status: "COMPLETED",
+  });
+
+  // > 120 chars triggers Loveable's clamp + button
+  const longText =
+    `${stamp} — working with Kai genuinely changed how I think about getting dressed. ` +
+    `Every look was thoughtful, the fit was perfect, and they took the time to explain ` +
+    `the why behind every piece. Truly the best investment I've made for myself this year.`;
+
+  await getPool().query(
+    `UPDATE sessions
+     SET rating = 5, review_text = $2, rated_at = NOW(), completed_at = NOW()
+     WHERE id = $1`,
+    [session.id, longText],
+  );
+
+  try {
+    await page.goto("/reviews");
+    await page.waitForLoadState("networkidle");
+
+    const readMore = page.getByRole("button", { name: "Read more" }).first();
+    await expect(readMore).toBeVisible();
+
+    await readMore.click();
+    await expect(
+      page.getByRole("button", { name: "Show less" }).first(),
+    ).toBeVisible();
+  } finally {
+    await cleanupStylistProfile(stylist.id);
+    await cleanupE2EUserByEmail(clientEmail);
+    await cleanupE2EUserByEmail(stylistEmail);
+  }
+});
+
 test("/stylists/[id]/reviews renders the dedicated review list and back link", async ({
   page,
 }) => {

@@ -5,6 +5,7 @@ import { StarIcon } from "lucide-react";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
 import { listFeaturedReviews } from "@/lib/stylists/review.service";
+import { ExpandableReviewText } from "./expandable-review-text";
 
 export const dynamic = "force-dynamic";
 
@@ -48,9 +49,7 @@ export default async function ReviewsPage() {
                           />
                         ))}
                       </div>
-                      <p className="font-body text-base text-foreground leading-relaxed flex-1 italic">
-                        &ldquo;{review.reviewText}&rdquo;
-                      </p>
+                      <ExpandableReviewText text={review.reviewText} />
                       <div className="mt-4 pt-4 border-t border-border flex items-center gap-3">
                         <div className="relative h-9 w-9 flex-shrink-0 overflow-hidden rounded-full bg-muted">
                           {review.stylist.avatarUrl ? (
