@@ -3,6 +3,15 @@ import { prisma } from "@/lib/prisma";
 export type FeedGender = "WOMEN" | "MEN";
 type Gender = "MALE" | "FEMALE" | "NON_BINARY" | "PREFER_NOT_TO_SAY";
 
+export type FeedProduct = {
+  id: string;
+  brand: string | null;
+  name: string | null;
+  priceInCents: number | null;
+  imageUrl: string;
+  url: string | null;
+};
+
 export type FeedBoard = {
   id: string;
   title: string | null;
@@ -15,6 +24,13 @@ export type FeedBoard = {
     name: string;
     avatarUrl: string | null;
   };
+  /**
+   * Up to 12 web-sourced products from the board, used to populate Loveable's
+   * right-column product grid on each FeedCard. Inventory-sourced items are
+   * not enriched here — that requires a fan-out to the inventory service and
+   * is tracked under Phase 11 polish.
+   */
+  products: FeedProduct[];
 };
 
 export type FeedPage = {
@@ -60,6 +76,22 @@ export async function listFeedBoards(params: {
         take: 1,
         select: { url: true },
       },
+      items: {
+        where: {
+          source: "WEB_ADDED",
+          webItemImageUrl: { not: null },
+        },
+        orderBy: { orderIndex: "asc" },
+        take: 12,
+        select: {
+          id: true,
+          webItemBrand: true,
+          webItemTitle: true,
+          webItemPriceInCents: true,
+          webItemImageUrl: true,
+          webItemUrl: true,
+        },
+      },
       stylistProfile: {
         select: {
           id: true,
@@ -99,6 +131,16 @@ export async function listFeedBoards(params: {
       const sp = b.stylistProfile!;
       const firstName = sp.user.firstName ?? "";
       const lastName = sp.user.lastName ?? "";
+      const products: FeedProduct[] = b.items
+        .filter((it) => it.webItemImageUrl !== null)
+        .map((it) => ({
+          id: it.id,
+          brand: it.webItemBrand,
+          name: it.webItemTitle,
+          priceInCents: it.webItemPriceInCents,
+          imageUrl: it.webItemImageUrl as string,
+          url: it.webItemUrl,
+        }));
       return {
         id: b.id,
         title: b.title,
@@ -111,6 +153,7 @@ export async function listFeedBoards(params: {
           name: `${firstName} ${lastName}`.trim(),
           avatarUrl: sp.user.avatarUrl,
         },
+        products,
       };
     }),
     nextCursor: hasMore ? page[page.length - 1].id : null,
