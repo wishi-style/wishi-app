@@ -12,6 +12,7 @@ interface Props {
 }
 
 const CHAT_STATUSES = [
+  "INQUIRY",
   "ACTIVE",
   "PENDING_END",
   "PENDING_END_APPROVAL",
@@ -20,9 +21,10 @@ const CHAT_STATUSES = [
 
 /**
  * Client StylingRoom — chat + styleboards + curated pieces + cart in a
- * single view with a right-rail progress sidebar (viewer.role === CLIENT).
- * Replaces the bare ChatWindow shell with the full Phase 10 workspace
- * layout so all session-scoped surfaces are one click away.
+ * single view with a left-rail progress sidebar (viewer.role === CLIENT).
+ * INQUIRY sessions render a chat-only shell with a "Book {firstName}"
+ * CTA in place of Buy Looks / Upgrade Plan, mirroring Loveable's
+ * `StylingRoom` inquiry contract.
  */
 export default async function ClientChatPage({ params }: Props) {
   const { id } = await params;
@@ -42,6 +44,7 @@ export default async function ClientChatPage({ params }: Props) {
           lastName: true,
           avatarUrl: true,
           clerkId: true,
+          stylistProfile: { select: { id: true } },
         },
       },
     },
@@ -52,21 +55,32 @@ export default async function ClientChatPage({ params }: Props) {
   if (!CHAT_STATUSES.includes(session.status)) redirect(`/sessions/${id}`);
   if (!session.twilioChannelSid) redirect(`/sessions/${id}`);
 
-  // Style-quiz hard gate: this is the first time a client lands in the
-  // session room, so it's the right pinch point to require the style
-  // profile that powers personalization. Pre-booking gates were dropped
-  // — guests shouldn't fill out two quizzes back-to-back before paying.
-  const styleProfile = await prisma.styleProfile.findUnique({
-    where: { userId: user.id },
-    select: { quizCompletedAt: true },
-  });
-  if (!styleProfile?.quizCompletedAt) {
-    redirect(`/sessions/${id}/style-quiz`);
+  // Forward-compat: INQUIRY isn't in the SessionStatus enum yet — see the
+  // schema. Cast for the comparison so the inquiry-shell code path is wired
+  // and ready for the day the enum is extended + the contact-stylist entry
+  // point lands. Until then, this branch is dead code on production data.
+  const isInquiry = (session.status as string) === "INQUIRY";
+
+  // Style-quiz hard gate: paid sessions only. Inquiries are pre-purchase
+  // chats (Loveable-equivalent of the contact flow) and shouldn't push the
+  // quiz before the client has even decided to book.
+  if (!isInquiry) {
+    const styleProfile = await prisma.styleProfile.findUnique({
+      where: { userId: user.id },
+      select: { quizCompletedAt: true },
+    });
+    if (!styleProfile?.quizCompletedAt) {
+      redirect(`/sessions/${id}/style-quiz`);
+    }
   }
 
   const stylistName = session.stylist
     ? `${session.stylist.firstName} ${session.stylist.lastName}`
     : "Your Stylist";
+  const stylistProfileId = session.stylist?.stylistProfile?.id ?? null;
+  const bookCtaHref = stylistProfileId
+    ? `/bookings/new?stylistId=${stylistProfileId}`
+    : null;
 
   const { boards, curated, cart, progress } = await getWorkspaceData(
     session.id,
@@ -86,6 +100,9 @@ export default async function ClientChatPage({ params }: Props) {
         curated={curated}
         cart={cart}
         progress={progress}
+        stylistProfileId={stylistProfileId}
+        bookCtaHref={bookCtaHref}
+        stylistFirstName={session.stylist?.firstName ?? null}
       />
       <PushPermission />
     </>
