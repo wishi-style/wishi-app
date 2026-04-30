@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { unauthorized } from "next/navigation";
+import { MoreVerticalIcon } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { listClosetItems } from "@/lib/boards/closet.service";
@@ -83,21 +85,32 @@ export default async function ProfilePage() {
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-6xl px-6 md:px-10 py-10 md:py-14">
-        <header className="mb-8 flex items-center gap-4">
-          <Avatar className="h-16 w-16">
-            {user.avatarUrl ? (
-              <AvatarImage src={user.avatarUrl} alt={user.firstName} />
-            ) : null}
-            <AvatarFallback className="bg-primary text-primary-foreground font-display text-xl">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
-          <div>
-            <h1 className="font-display text-2xl md:text-3xl">{displayName}</h1>
-            <p className="mt-0.5 font-body text-xs uppercase tracking-widest text-muted-foreground">
-              {LOYALTY_LABEL[user.loyaltyTier]}
-            </p>
+        <header className="mb-8 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Avatar className="h-16 w-16">
+              {user.avatarUrl ? (
+                <AvatarImage src={user.avatarUrl} alt={user.firstName} />
+              ) : null}
+              <AvatarFallback className="bg-primary text-primary-foreground font-display text-xl">
+                {initials}
+              </AvatarFallback>
+            </Avatar>
+            <div>
+              <h1 className="font-display text-2xl md:text-3xl">
+                {displayName}
+              </h1>
+              <p className="mt-0.5 font-body text-xs uppercase tracking-widest text-muted-foreground">
+                {LOYALTY_LABEL[user.loyaltyTier]}
+              </p>
+            </div>
           </div>
+          <Link
+            href="/settings"
+            aria-label="Settings"
+            className="rounded-full p-2 transition-colors hover:bg-muted"
+          >
+            <MoreVerticalIcon className="h-5 w-5 text-muted-foreground" />
+          </Link>
         </header>
         <ProfilePageClient
           initialItems={closetItems}

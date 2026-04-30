@@ -48,12 +48,37 @@ interface Props {
   collections: CollectionWithPreview[];
 }
 
-const FILTER_LABELS: Record<FilterKey, string> = {
-  category: "Category",
+// Loveable Profile.tsx renders the Category filter as a top horizontal
+// strip (10 hardcoded categories with underline active state) and keeps
+// Designer / Season / Color in the left sidebar. Mirror that split.
+const SIDEBAR_FILTER_KEYS: Exclude<FilterKey, "category">[] = [
+  "designer",
+  "season",
+  "color",
+];
+
+const SIDEBAR_FILTER_LABELS: Record<
+  Exclude<FilterKey, "category">,
+  string
+> = {
   designer: "Designer",
   season: "Season",
   color: "Color",
 };
+
+// Loveable's hardcoded category list — Profile.tsx:50.
+const LOVEABLE_CATEGORIES = [
+  "All",
+  "Tops",
+  "Bottoms",
+  "Dresses",
+  "Outerwear",
+  "Shoes",
+  "Bags",
+  "Accessories",
+  "Active & Lounge",
+  "Swim & Beauty",
+] as const;
 
 export function ProfilePageClient({
   initialItems,
@@ -158,6 +183,47 @@ export function ProfilePageClient({
 
         {/* Items tab — sidebar filters + grid + add dialog */}
         <TabsContent value="items" className="mt-6">
+          {/* Loveable's top horizontal category strip — Profile.tsx:368-396.
+              "All" clears any category selection; clicking a category toggles
+              it in/out of `filters.category`. The Designer/Season/Color
+              sidebar continues to layer on top of this. */}
+          <div className="mb-5 flex items-center gap-4 overflow-x-auto pb-2">
+            {LOVEABLE_CATEGORIES.map((cat) => {
+              const selectedCats = filters.category ?? [];
+              const isAll = cat === "All";
+              const isActive = isAll
+                ? selectedCats.length === 0
+                : selectedCats.includes(cat);
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => {
+                    if (isAll) {
+                      setFilters((prev) => ({ ...prev, category: [] }));
+                      return;
+                    }
+                    setFilters((prev) => {
+                      const current = prev.category ?? [];
+                      const next = current.includes(cat)
+                        ? current.filter((v) => v !== cat)
+                        : [...current, cat];
+                      return { ...prev, category: next };
+                    });
+                  }}
+                  className={cn(
+                    "shrink-0 whitespace-nowrap font-body text-sm transition-colors",
+                    isActive
+                      ? "font-medium text-foreground underline underline-offset-4"
+                      : "text-foreground/70 hover:text-foreground",
+                  )}
+                >
+                  {cat}
+                </button>
+              );
+            })}
+          </div>
+
           <div className="flex gap-8">
             {/* Filter sidebar */}
             <aside className="hidden w-52 shrink-0 lg:block">
@@ -173,7 +239,7 @@ export function ProfilePageClient({
                   </button>
                 ) : null}
               </div>
-              {(Object.keys(FILTER_LABELS) as FilterKey[]).map((key) => {
+              {SIDEBAR_FILTER_KEYS.map((key) => {
                 const values = facets[key];
                 const selected = filters[key] ?? [];
                 const isOpen = openFilter === key;
@@ -185,7 +251,7 @@ export function ProfilePageClient({
                       className="flex w-full items-center justify-between py-3 text-left text-sm text-foreground hover:text-muted-foreground"
                     >
                       <span>
-                        {FILTER_LABELS[key]}
+                        {SIDEBAR_FILTER_LABELS[key]}
                         {selected.length > 0 && (
                           <span className="ml-2 text-xs text-muted-foreground">
                             · {selected.length}
@@ -249,20 +315,21 @@ export function ProfilePageClient({
               {/* Active filter chips */}
               {activeFilterCount > 0 && (
                 <div className="mb-5 flex flex-wrap items-center gap-2">
-                  {(Object.keys(FILTER_LABELS) as FilterKey[]).flatMap((key) =>
-                    (filters[key] ?? []).map((value) => (
-                      <button
-                        key={`${key}:${value}`}
-                        type="button"
-                        onClick={() => toggleFilter(key, value)}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs capitalize text-foreground hover:bg-muted"
-                      >
-                        {value}
-                        <span aria-hidden className="text-muted-foreground">
-                          ×
-                        </span>
-                      </button>
-                    )),
+                  {(["designer", "season", "color", "category"] as FilterKey[]).flatMap(
+                    (key) =>
+                      (filters[key] ?? []).map((value) => (
+                        <button
+                          key={`${key}:${value}`}
+                          type="button"
+                          onClick={() => toggleFilter(key, value)}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs capitalize text-foreground hover:bg-muted"
+                        >
+                          {value}
+                          <span aria-hidden className="text-muted-foreground">
+                            ×
+                          </span>
+                        </button>
+                      )),
                   )}
                   <button
                     type="button"
