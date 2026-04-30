@@ -12,6 +12,7 @@ import {
   ArrowLeftIcon,
   SearchIcon,
   PlusIcon,
+  SaveIcon,
   SendIcon,
   Trash2Icon,
   UserIcon,
@@ -180,7 +181,9 @@ export function MoodboardBuilder({
     // period before navigation so the stylist sees confirmation before the
     // page shifts. Redirect goes to the stylist's home (the dashboard) —
     // the rebuild's perspective inversion of Loveable's "/" target.
-    toast.success(`Mood board sent to ${clientName}`);
+    toast.success(`Mood board sent to ${clientName}`, {
+      description: "Redirecting to dashboard…",
+    });
     setTimeout(() => {
       router.push(`/stylist/dashboard`);
       router.refresh();
@@ -239,15 +242,31 @@ export function MoodboardBuilder({
             Client info
           </button>
           {photos.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => void clearCanvas()}
-              className="font-body text-xs text-muted-foreground h-8 gap-1"
-            >
-              <Trash2Icon className="h-3.5 w-3.5" />
-              Clear
-            </Button>
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void clearCanvas()}
+                className="font-body text-xs text-muted-foreground h-8 gap-1"
+              >
+                <Trash2Icon className="h-3.5 w-3.5" />
+                Clear
+              </Button>
+              {/* Loveable parity: each photo POST already saves the draft
+                  server-side, so this button surfaces the affordance
+                  Loveable's MoodBoardCreator.tsx:180-189 contract requires
+                  without re-POSTing — explicit "your work is saved"
+                  confirmation. */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => toast.success("Draft saved")}
+                className="font-body text-xs h-8 gap-1.5 rounded-sm"
+              >
+                <SaveIcon className="h-3.5 w-3.5" />
+                Save draft
+              </Button>
+            </>
           )}
           <Button
             onClick={() => setSendOpen(true)}
@@ -283,21 +302,21 @@ export function MoodboardBuilder({
               </SelectContent>
             </Select>
             <span className="font-body text-sm text-muted-foreground">
-              {filtered.length} results
+              {filtered.length} Results
             </span>
             <div className="ml-auto relative">
               <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                placeholder="Search…"
+                placeholder="Search..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-[180px] h-8 pl-8 font-body text-xs rounded-sm"
+                className="w-[160px] h-8 pl-8 font-body text-xs rounded-sm"
               />
             </div>
           </div>
 
           <ScrollArea className="flex-1">
-            <div className="columns-3 md:columns-4 gap-2 p-5">
+            <div className="columns-4 gap-2 p-5">
               {filtered.map((p) => {
                 const isAdded = addedInspirationIds.has(p.id);
                 return (
@@ -345,7 +364,7 @@ export function MoodboardBuilder({
         </div>
 
         {/* Canvas preview */}
-        <div className="w-[400px] shrink-0 hidden md:flex flex-col items-center justify-center p-6 bg-muted/30">
+        <div className="w-[400px] shrink-0 flex flex-col items-center justify-center p-6 bg-muted/30">
           <div className="w-full max-w-[360px]">
             <div className="flex items-center justify-between mb-3">
               <span className="font-display text-sm font-medium">Board</span>

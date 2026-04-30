@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { addMoodboardPhoto } from "@/lib/boards/moodboard.service";
+import {
+  addMoodboardPhoto,
+  MoodboardPhotoCapError,
+} from "@/lib/boards/moodboard.service";
 import { getBoardPhotoPresignedUrl } from "@/lib/s3";
 
 export const dynamic = "force-dynamic";
@@ -42,10 +45,20 @@ export async function POST(
   if (!body.s3Key || !body.url) {
     return NextResponse.json({ error: "s3Key and url required" }, { status: 400 });
   }
-  const photo = await addMoodboardPhoto(id, {
-    s3Key: body.s3Key,
-    url: body.url,
-    inspirationPhotoId: body.inspirationPhotoId ?? null,
-  });
-  return NextResponse.json(photo, { status: 201 });
+  try {
+    const photo = await addMoodboardPhoto(id, {
+      s3Key: body.s3Key,
+      url: body.url,
+      inspirationPhotoId: body.inspirationPhotoId ?? null,
+    });
+    return NextResponse.json(photo, { status: 201 });
+  } catch (err) {
+    if (err instanceof MoodboardPhotoCapError) {
+      return NextResponse.json(
+        { error: err.message, code: err.code, cap: err.cap },
+        { status: 400 },
+      );
+    }
+    throw err;
+  }
 }

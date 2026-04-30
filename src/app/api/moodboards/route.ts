@@ -30,6 +30,12 @@ export async function GET(req: Request) {
       sentAt: null,
       stylistProfileId: stylist.id,
       sessionId: { not: null },
+      // Loveable parity: only surface drafts that actually have content.
+      // The page-load auto-create at moodboards/new/page.tsx leaves empty
+      // Board rows behind on every visit; filtering here keeps the
+      // dashboard rail pixel-faithful to Loveable while the deferred-
+      // creation refactor lands on its own commit.
+      photos: { some: {} },
     },
     orderBy: { updatedAt: "desc" },
     select: {
