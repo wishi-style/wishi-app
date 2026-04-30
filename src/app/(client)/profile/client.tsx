@@ -37,6 +37,7 @@ import {
   type ClosetFilterKey as FilterKey,
   type ClosetFilters,
 } from "@/lib/closet/filter";
+import { ClosetItemDialog } from "./closet-item-dialog";
 
 interface Look {
   id: string;
@@ -106,6 +107,7 @@ export function ProfilePageClient({
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [gridSize, setGridSize] = useState<"normal" | "compact">("normal");
+  const [detailItem, setDetailItem] = useState<ClosetItem | null>(null);
 
   const facets = useMemo(() => computeClosetFacets(items), [items]);
   const filteredItems = useMemo(
@@ -143,6 +145,11 @@ export function ProfilePageClient({
       else next.add(id);
       return next;
     });
+  }
+
+  async function deleteSingleItem(id: string) {
+    const res = await fetch(`/api/closet/${id}`, { method: "DELETE" });
+    if (res.ok) setItems((p) => p.filter((i) => i.id !== id));
   }
 
   async function deleteSelectedItems() {
@@ -500,9 +507,7 @@ export function ProfilePageClient({
                         type="button"
                         onClick={() => {
                           if (selectMode) toggleItemSelect(item.id);
-                          // Outside select mode the tile is non-interactive
-                          // for now — Loveable opens a ClosetItemDialog
-                          // detail view here, that port is deferred.
+                          else setDetailItem(item);
                         }}
                         className={cn(
                           "relative overflow-hidden rounded-xl border bg-card text-left transition-all",
@@ -700,6 +705,17 @@ export function ProfilePageClient({
         open={addOpen}
         onOpenChange={setAddOpen}
         onItemCreated={handleItemAdded}
+      />
+
+      <ClosetItemDialog
+        item={detailItem}
+        open={detailItem !== null}
+        onOpenChange={(open) => {
+          if (!open) setDetailItem(null);
+        }}
+        onDelete={async (id) => {
+          await deleteSingleItem(id);
+        }}
       />
     </>
   );

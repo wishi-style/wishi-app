@@ -169,3 +169,64 @@ test("guests on /onboarding redirect to /match-quiz (Loveable parity)", async ({
   expect([302, 307]).toContain(res.status());
   expect(res.headers()["location"]).toMatch(/\/match-quiz/);
 });
+
+test("§3.6 — clicking a closet tile opens the ClosetItemDialog detail view", async ({
+  page,
+}) => {
+  const ts = Date.now();
+  const email = `p2-profile-dlg-${ts}@e2e.wishi.test`;
+  const user = await ensureClientUser({
+    clerkId: `e2e_p2_profile_dlg_${ts}`,
+    email,
+    firstName: "Dialog",
+    lastName: "Tester",
+  });
+
+  // Seed a single closet item we can click on. Raw SQL keeps the spec
+  // independent of any closet upload helper.
+  const itemId = `ci_${ts}`;
+  const { Pool } = await import("pg");
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    await pool.query(
+      `INSERT INTO closet_items
+         (id, user_id, s3_key, url, name, designer, category, colors, size, material, season, created_at, updated_at)
+       VALUES ($1, $2, 'test/key.jpg', 'https://example.com/img.jpg',
+               'Mesh Polo Shirt', 'Ralph Lauren', 'Tops', $3, 'M',
+               'Cotton', 'All Season', NOW(), NOW())`,
+      [itemId, user.id, ["Grey"]],
+    );
+
+    await signInAsClient(page, email);
+    await page.goto("/profile");
+    await page.waitForLoadState("networkidle");
+
+    // Click the seeded tile (outside select-mode → opens dialog).
+    await page
+      .getByRole("button")
+      .filter({ hasText: "Ralph Lauren" })
+      .first()
+      .click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    // Dialog title renders the item name.
+    await expect(
+      dialog.getByRole("heading", { name: "Mesh Polo Shirt" }),
+    ).toBeVisible();
+    // Detail chips render Color/Size/Material/Season values inside the dialog.
+    await expect(dialog.getByText("Grey", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("Cotton", { exact: true })).toBeVisible();
+    // Action buttons render: Share / Download / Edit / Delete.
+    await expect(
+      dialog.getByRole("button", { name: "Share", exact: true }),
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole("button", { name: "Delete", exact: true }),
+    ).toBeVisible();
+  } finally {
+    await pool.query(`DELETE FROM closet_items WHERE id = $1`, [itemId]);
+    await pool.end();
+    await cleanupE2EUserByEmail(email);
+  }
+});
