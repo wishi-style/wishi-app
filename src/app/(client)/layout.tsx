@@ -1,5 +1,5 @@
 import { requireRole } from "@/lib/auth";
-import { ClientNav } from "@/components/nav/client-nav";
+import { SiteHeader } from "@/components/primitives/site-header";
 
 export default async function ClientLayout({
   children,
@@ -10,7 +10,7 @@ export default async function ClientLayout({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <ClientNav />
+      <SiteHeader />
       <main className="flex-1">{children}</main>
     </div>
   );
