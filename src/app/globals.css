@@ -75,8 +75,10 @@
 }
 
 :root {
-  /* Loveable HSL palette — editorial luxury / refined minimalism, light-first */
-  --background: hsl(0 0% 100%);
+  /* Loveable HSL palette — editorial luxury / refined minimalism, light-first.
+     Background tracks smart-spark-craft/src/index.css `36 100% 98%` (warm
+     near-white), not pure `0 0% 100%`. */
+  --background: hsl(36 100% 98%);
   --foreground: hsl(0 0% 0%);
 
   --card: hsl(0 0% 100%);
@@ -92,7 +94,7 @@
   --secondary-foreground: hsl(28 20% 30%);
 
   --muted: hsl(0 0% 96%);
-  --muted-foreground: hsl(27 14% 66%);
+  --muted-foreground: hsl(0 0% 28%);
 
   --accent: hsl(183 59% 30%);
   --accent-foreground: hsl(0 0% 100%);
