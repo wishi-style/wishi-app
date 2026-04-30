@@ -9,6 +9,10 @@ import {
   Globe,
   Trash2,
   ChevronRight,
+  Grid3X3Icon,
+  LayoutGridIcon,
+  SlidersHorizontalIcon,
+  XIcon,
 } from "lucide-react";
 import {
   Tabs,
@@ -66,7 +70,7 @@ const SIDEBAR_FILTER_LABELS: Record<
   color: "Color",
 };
 
-// Loveable's hardcoded category list — Profile.tsx:50.
+// Loveable's hardcoded category list — Profile.tsx:52.
 const LOVEABLE_CATEGORIES = [
   "All",
   "Tops",
@@ -80,6 +84,12 @@ const LOVEABLE_CATEGORIES = [
   "Swim & Beauty",
 ] as const;
 
+// Loveable's mobile chip rows show Season + Color (Items tab).
+const MOBILE_CHIP_KEYS = ["season", "color"] as const satisfies readonly Exclude<
+  FilterKey,
+  "category" | "designer"
+>[];
+
 export function ProfilePageClient({
   initialItems,
   looks,
@@ -90,7 +100,12 @@ export function ProfilePageClient({
   const [filters, setFilters] = useState<ClosetFilters>({});
   const [openFilter, setOpenFilter] = useState<FilterKey | null>("category");
   const [addOpen, setAddOpen] = useState(false);
-  const [looksTab, setLooksTab] = useState<"styleboards" | "favorites">("styleboards");
+  const [looksTab, setLooksTab] = useState<"styleboards" | "favorites">(
+    "styleboards",
+  );
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [gridSize, setGridSize] = useState<"normal" | "compact">("normal");
 
   const facets = useMemo(() => computeClosetFacets(items), [items]);
   const filteredItems = useMemo(
@@ -121,10 +136,35 @@ export function ProfilePageClient({
     setFilters({});
   }
 
-  async function deleteItem(id: string) {
-    if (!confirm("Remove this item from your closet?")) return;
-    const res = await fetch(`/api/closet/${id}`, { method: "DELETE" });
-    if (res.ok) setItems((p) => p.filter((i) => i.id !== id));
+  function toggleItemSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function deleteSelectedItems() {
+    if (selected.size === 0) return;
+    const count = selected.size;
+    if (
+      !confirm(
+        `Remove ${count} item${count > 1 ? "s" : ""} from your closet?`,
+      )
+    )
+      return;
+    const ids = Array.from(selected);
+    const results = await Promise.all(
+      ids.map((id) => fetch(`/api/closet/${id}`, { method: "DELETE" })),
+    );
+    const okIds = ids.filter((_, i) => results[i]?.ok);
+    if (okIds.length > 0) {
+      const okSet = new Set(okIds);
+      setItems((p) => p.filter((i) => !okSet.has(i.id)));
+    }
+    setSelected(new Set());
+    setSelectMode(false);
   }
 
   function handleItemAdded(item: ClosetItem) {
@@ -183,6 +223,51 @@ export function ProfilePageClient({
 
         {/* Items tab — sidebar filters + grid + add dialog */}
         <TabsContent value="items" className="mt-6">
+          {/* Mobile-only chip filters — Loveable Profile.tsx:316-366. Season +
+              Color rows are stacked above the category strip on small screens.
+              Hidden at lg+ since the desktop sidebar covers these facets. */}
+          <div className="mb-4 flex flex-col gap-3 lg:hidden">
+            {activeFilterCount > 0 && (
+              <button
+                type="button"
+                onClick={clearAllFilters}
+                className="self-end font-body text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              >
+                Clear all
+              </button>
+            )}
+            {MOBILE_CHIP_KEYS.map((key) => {
+              const values = facets[key] ?? [];
+              if (values.length === 0) return null;
+              const selectedValues = filters[key] ?? [];
+              return (
+                <div key={key} className="flex flex-wrap gap-2">
+                  <span className="mr-1 self-center font-body text-xs uppercase tracking-widest text-muted-foreground">
+                    {SIDEBAR_FILTER_LABELS[key]}
+                  </span>
+                  {values.map((v) => {
+                    const active = selectedValues.includes(v);
+                    return (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => toggleFilter(key, v)}
+                        className={cn(
+                          "rounded-full border px-3 py-1 font-body text-xs capitalize transition-colors",
+                          active
+                            ? "border-foreground bg-foreground text-background"
+                            : "border-border text-foreground hover:bg-muted",
+                        )}
+                      >
+                        {v}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+
           {/* Loveable's top horizontal category strip — Profile.tsx:368-396.
               "All" clears any category selection; clicking a category toggles
               it in/out of `filters.category`. The Designer/Season/Color
@@ -241,7 +326,7 @@ export function ProfilePageClient({
               </div>
               {SIDEBAR_FILTER_KEYS.map((key) => {
                 const values = facets[key];
-                const selected = filters[key] ?? [];
+                const selectedFacet = filters[key] ?? [];
                 const isOpen = openFilter === key;
                 return (
                   <div key={key} className="border-b border-border">
@@ -252,9 +337,9 @@ export function ProfilePageClient({
                     >
                       <span>
                         {SIDEBAR_FILTER_LABELS[key]}
-                        {selected.length > 0 && (
+                        {selectedFacet.length > 0 && (
                           <span className="ml-2 text-xs text-muted-foreground">
-                            · {selected.length}
+                            · {selectedFacet.length}
                           </span>
                         )}
                       </span>
@@ -268,11 +353,13 @@ export function ProfilePageClient({
                     {isOpen && (
                       <div className="pb-3">
                         {values.length === 0 ? (
-                          <p className="text-xs text-muted-foreground">None yet</p>
+                          <p className="text-xs text-muted-foreground">
+                            None yet
+                          </p>
                         ) : (
                           <ul className="space-y-1">
                             {values.map((v) => {
-                              const active = selected.includes(v);
+                              const active = selectedFacet.includes(v);
                               return (
                                 <li key={v}>
                                   <button
@@ -280,7 +367,8 @@ export function ProfilePageClient({
                                     onClick={() => toggleFilter(key, v)}
                                     className={cn(
                                       "block w-full rounded px-2 py-1 text-left text-xs capitalize hover:bg-muted",
-                                      active && "bg-muted font-medium text-foreground",
+                                      active &&
+                                        "bg-muted font-medium text-foreground",
                                     )}
                                   >
                                     {v}
@@ -298,38 +386,86 @@ export function ProfilePageClient({
             </aside>
 
             <div className="min-w-0 flex-1">
+              {/* Toolbar: grid toggle (left), count + select (right) —
+                  Loveable Profile.tsx:573-609 */}
               <div className="mb-5 flex items-center justify-between">
-                <p className="text-xs uppercase tracking-wider text-muted-foreground">
-                  {filteredItems.length}{" "}
-                  {filteredItems.length === 1 ? "item" : "items"}
-                </p>
-                <Button
-                  size="sm"
-                  className="rounded-full"
-                  onClick={() => setAddOpen(true)}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setGridSize(gridSize === "normal" ? "compact" : "normal")
+                  }
+                  aria-label={
+                    gridSize === "normal"
+                      ? "Switch to compact grid"
+                      : "Switch to normal grid"
+                  }
+                  className="rounded-lg border border-border p-2 transition-colors hover:bg-muted"
                 >
-                  <Plus className="h-4 w-4" /> Add Item
-                </Button>
+                  {gridSize === "normal" ? (
+                    <Grid3X3Icon className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <LayoutGridIcon className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </button>
+                <div className="flex items-center gap-4">
+                  <span className="font-body text-sm uppercase tracking-wider text-muted-foreground">
+                    {filteredItems.length}{" "}
+                    {filteredItems.length === 1 ? "Item" : "Items"}
+                  </span>
+                  {selectMode ? (
+                    <div className="flex items-center gap-3">
+                      {selected.size > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => void deleteSelectedItems()}
+                          className="font-body text-sm text-destructive hover:underline"
+                        >
+                          <Trash2 className="mr-1 inline h-4 w-4" />
+                          Delete ({selected.size})
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectMode(false);
+                          setSelected(new Set());
+                        }}
+                        className="font-body text-sm text-muted-foreground hover:text-foreground"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setSelectMode(true)}
+                      className="font-body text-sm text-muted-foreground hover:text-foreground"
+                    >
+                      Select
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Active filter chips */}
               {activeFilterCount > 0 && (
                 <div className="mb-5 flex flex-wrap items-center gap-2">
-                  {(["designer", "season", "color", "category"] as FilterKey[]).flatMap(
-                    (key) =>
-                      (filters[key] ?? []).map((value) => (
-                        <button
-                          key={`${key}:${value}`}
-                          type="button"
-                          onClick={() => toggleFilter(key, value)}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs capitalize text-foreground hover:bg-muted"
-                        >
-                          {value}
-                          <span aria-hidden className="text-muted-foreground">
-                            ×
-                          </span>
-                        </button>
-                      )),
+                  {(
+                    ["designer", "season", "color", "category"] as FilterKey[]
+                  ).flatMap((key) =>
+                    (filters[key] ?? []).map((value) => (
+                      <button
+                        key={`${key}:${value}`}
+                        type="button"
+                        onClick={() => toggleFilter(key, value)}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs capitalize text-foreground hover:bg-muted"
+                      >
+                        {value}
+                        <span aria-hidden className="text-muted-foreground">
+                          ×
+                        </span>
+                      </button>
+                    )),
                   )}
                   <button
                     type="button"
@@ -348,29 +484,63 @@ export function ProfilePageClient({
                     : "No items match the current filters."}
                 </p>
               ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                  {filteredItems.map((item) => (
-                    <div key={item.id} className="group">
-                      <div className="relative overflow-hidden rounded-xl border border-border bg-card">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={item.url}
-                          alt={item.name ?? ""}
-                          className="aspect-square w-full object-cover"
-                        />
-                        <button
-                          onClick={() => void deleteItem(item.id)}
-                          aria-label="Remove from closet"
-                          className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-background/80 text-foreground opacity-0 backdrop-blur transition-opacity hover:text-destructive group-hover:opacity-100"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                      <p className="mt-2 truncate font-body text-xs uppercase tracking-wider text-foreground">
-                        {item.designer ?? item.name ?? "—"}
-                      </p>
-                    </div>
-                  ))}
+                <div
+                  className={cn(
+                    "grid gap-3",
+                    gridSize === "normal"
+                      ? "grid-cols-3 md:grid-cols-4"
+                      : "grid-cols-4 md:grid-cols-5",
+                  )}
+                >
+                  {filteredItems.map((item) => {
+                    const isSelected = selected.has(item.id);
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          if (selectMode) toggleItemSelect(item.id);
+                          // Outside select mode the tile is non-interactive
+                          // for now — Loveable opens a ClosetItemDialog
+                          // detail view here, that port is deferred.
+                        }}
+                        className={cn(
+                          "relative overflow-hidden rounded-xl border bg-card text-left transition-all",
+                          isSelected
+                            ? "border-foreground ring-2 ring-foreground"
+                            : "border-border",
+                          selectMode && "cursor-pointer",
+                        )}
+                      >
+                        {selectMode && (
+                          <div
+                            className={cn(
+                              "absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border-2",
+                              isSelected
+                                ? "border-foreground bg-foreground"
+                                : "border-muted-foreground/40 bg-background/80",
+                            )}
+                          >
+                            {isSelected && (
+                              <div className="h-2 w-2 rounded-full bg-background" />
+                            )}
+                          </div>
+                        )}
+                        <div className="aspect-square bg-muted">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={item.url}
+                            alt={item.name ?? ""}
+                            className="h-full w-full object-cover"
+                            loading="lazy"
+                          />
+                        </div>
+                        <p className="truncate px-2 pb-2 pt-5 font-body text-xs text-foreground">
+                          {item.designer ?? item.name ?? "—"}
+                        </p>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -379,15 +549,28 @@ export function ProfilePageClient({
 
         {/* Looks tab — favorited styleboards */}
         <TabsContent value="looks" className="mt-6">
-          <div className="mb-5 flex items-center gap-6 border-b border-border">
+          {/* Pill sub-tabs + mobile filter button — Loveable Profile.tsx:1042-1064.
+              Loveable's desktop sidebar (Stylist/Occasion/Season/Style) and
+              filter chip row are deferred — the data needs to be enriched on
+              the Look type from the Board → Session → StylistProfile chain
+              + Board.occasion / season / style fields that don't exist yet.
+              Tracked under Phase 11 polish in WISHI-REBUILD-PLAN.md. */}
+          <div className="mb-4 flex items-center gap-3">
+            <button
+              type="button"
+              aria-label="Open filters"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-border transition-colors hover:bg-muted/50 lg:hidden"
+            >
+              <SlidersHorizontalIcon className="h-4 w-4 text-muted-foreground" />
+            </button>
             <button
               type="button"
               onClick={() => setLooksTab("styleboards")}
               className={cn(
-                "border-b-2 px-0 pb-3 font-body text-sm transition-colors",
+                "rounded-full px-5 py-2 font-body text-sm font-medium transition-colors",
                 looksTab === "styleboards"
-                  ? "border-foreground text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
+                  ? "bg-foreground text-background"
+                  : "bg-muted text-foreground hover:bg-muted/80",
               )}
             >
               Style boards
@@ -396,43 +579,44 @@ export function ProfilePageClient({
               type="button"
               onClick={() => setLooksTab("favorites")}
               className={cn(
-                "border-b-2 px-0 pb-3 font-body text-sm transition-colors",
+                "rounded-full px-5 py-2 font-body text-sm font-medium transition-colors",
                 looksTab === "favorites"
-                  ? "border-foreground text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
+                  ? "bg-foreground text-background"
+                  : "bg-muted text-foreground hover:bg-muted/80",
               )}
             >
               Favorites
             </button>
           </div>
+
+          <p className="mb-4 font-body text-xs uppercase tracking-widest text-muted-foreground">
+            {looks.length} {looks.length === 1 ? "Look" : "Looks"}
+          </p>
+
           {looks.length === 0 ? (
             <p className="py-20 text-center text-sm text-muted-foreground">
               No saved looks yet. Tap the heart on a styleboard to save it here.
             </p>
           ) : (
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-3">
               {looks.map((look) => (
                 <Link
                   key={look.id}
                   href={
-                    look.sessionId
-                      ? `/sessions/${look.sessionId}`
-                      : `/profile`
+                    look.sessionId ? `/sessions/${look.sessionId}` : `/profile`
                   }
-                  className="group block overflow-hidden rounded-2xl border border-border bg-card transition-shadow hover:shadow-md"
+                  className="group relative block overflow-hidden rounded-2xl border border-border bg-card transition-shadow hover:shadow-md"
                 >
-                  <div className="relative aspect-square overflow-hidden bg-muted">
+                  <div className="aspect-square overflow-hidden bg-muted">
                     {look.thumbnailUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={look.thumbnailUrl}
                         alt={look.title ?? "Styleboard"}
-                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        className="h-full w-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
+                        loading="lazy"
                       />
                     ) : null}
-                  </div>
-                  <div className="p-3 font-body text-sm text-foreground">
-                    {look.title ?? "Styleboard"}
                   </div>
                 </Link>
               ))}
@@ -445,13 +629,14 @@ export function ProfilePageClient({
           <div className="mb-5 flex items-center justify-between">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">
               {collections.length}{" "}
-              {collections.length === 1 ? "collection" : "collections"}
+              {collections.length === 1 ? "Collection" : "Collections"}
             </p>
             <CreateCollectionButton onCreate={createCollection} />
           </div>
           {collections.length === 0 ? (
             <p className="py-20 text-center text-sm text-muted-foreground">
-              No collections yet. Create one to group items by occasion or season.
+              No collections yet. Create one to group items by occasion or
+              season.
             </p>
           ) : (
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 md:grid-cols-3">
@@ -487,7 +672,8 @@ export function ProfilePageClient({
                         {c.name}
                       </p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        {c.itemCount} {c.itemCount === 1 ? "item" : "items"}
+                        {c.itemCount}{" "}
+                        {c.itemCount === 1 ? "item" : "items"}
                       </p>
                     </div>
                     <span className="flex h-8 w-8 items-center justify-center rounded-full transition-colors group-hover:bg-muted">
@@ -609,7 +795,9 @@ function AddItemDialog({ open, onOpenChange, onItemCreated }: AddDialogProps) {
               <span className="block text-sm font-medium text-foreground">
                 Take a Photo
               </span>
-              <span className="block text-xs text-muted-foreground">Use your camera</span>
+              <span className="block text-xs text-muted-foreground">
+                Use your camera
+              </span>
             </span>
             <input
               type="file"
@@ -714,11 +902,7 @@ function CreateCollectionButton({
 
   return (
     <>
-      <Button
-        size="sm"
-        className="rounded-full"
-        onClick={() => setOpen(true)}
-      >
+      <Button size="sm" className="rounded-full" onClick={() => setOpen(true)}>
         <Plus className="h-4 w-4" /> New Collection
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -728,23 +912,23 @@ function CreateCollectionButton({
               New Collection
             </DialogTitle>
           </DialogHeader>
-        <div className="space-y-4 pt-2">
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Spring Capsule"
-            maxLength={80}
-            autoFocus
-          />
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button
-            className="w-full"
-            onClick={submit}
-            disabled={busy || !name.trim()}
-          >
-            {busy ? "Creating…" : "Create"}
-          </Button>
-        </div>
+          <div className="space-y-4 pt-2">
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Spring Capsule"
+              maxLength={80}
+              autoFocus
+            />
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <Button
+              className="w-full"
+              onClick={submit}
+              disabled={busy || !name.trim()}
+            >
+              {busy ? "Creating…" : "Create"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </>
