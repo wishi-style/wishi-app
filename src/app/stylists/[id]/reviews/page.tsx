@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import { ArrowLeftIcon, StarIcon } from "lucide-react";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
@@ -38,14 +37,13 @@ export default async function StylistReviewsPage({ params }: Props) {
       id: true,
       averageRating: true,
       user: {
-        select: { firstName: true, lastName: true, avatarUrl: true },
+        select: { firstName: true },
       },
     },
   });
   if (!profile) notFound();
 
   const firstName = profile.user.firstName;
-  const fullName = `${profile.user.firstName} ${profile.user.lastName}`.trim();
 
   const { reviews, total } = await listStylistReviews(profile.id, {
     limit: 100,
@@ -64,50 +62,29 @@ export default async function StylistReviewsPage({ params }: Props) {
             Back to {firstName}&apos;s profile
           </Link>
 
-          <header className="mb-8 flex items-center gap-4">
-            <div className="relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-full bg-muted">
-              {profile.user.avatarUrl ? (
-                <Image
-                  src={profile.user.avatarUrl}
-                  alt={fullName}
-                  fill
-                  sizes="56px"
-                  className="object-cover"
+          <div className="mb-2 flex items-center gap-4">
+            <h1 className="font-display text-2xl md:text-3xl">
+              What {firstName}&apos;s clients say
+            </h1>
+          </div>
+          <div className="mb-8 flex items-center gap-2">
+            <div className="flex gap-0.5">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <StarIcon
+                  key={i}
+                  className="h-4 w-4 fill-foreground text-foreground"
                 />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center font-display text-lg text-muted-foreground">
-                  {firstName.charAt(0)}
-                </div>
-              )}
+              ))}
             </div>
-            <div>
-              <h1 className="font-display text-2xl md:text-3xl">
-                What {firstName}&apos;s clients say
-              </h1>
-              {(profile.averageRating !== null || total > 0) && (
-                <div className="mt-1 flex items-center gap-2">
-                  {profile.averageRating !== null && (
-                    <>
-                      <div className="flex gap-0.5">
-                        {Array.from({ length: 5 }).map((_, i) => (
-                          <StarIcon
-                            key={i}
-                            className="h-4 w-4 fill-foreground text-foreground"
-                          />
-                        ))}
-                      </div>
-                      <span className="text-sm font-medium">
-                        {profile.averageRating.toFixed(1)}
-                      </span>
-                    </>
-                  )}
-                  <span className="text-sm text-muted-foreground">
-                    · {total} {total === 1 ? "Review" : "Reviews"}
-                  </span>
-                </div>
-              )}
-            </div>
-          </header>
+            {profile.averageRating !== null && (
+              <span className="font-body text-sm font-medium">
+                {profile.averageRating.toFixed(1)}
+              </span>
+            )}
+            <span className="font-body text-sm text-muted-foreground">
+              · {total} {total === 1 ? "Review" : "Reviews"}
+            </span>
+          </div>
 
           {reviews.length > 0 ? (
             <div className="space-y-4">

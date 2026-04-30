@@ -56,6 +56,12 @@ interface Props {
   currentIdentity: string;
   otherUserName: string;
   otherUserAvatar: string | null;
+  /**
+   * Loveable's StylingRoom shows the stylist's primary location ("Los Angeles")
+   * as a small subtitle under the name in the left rail. Threads through from
+   * the page-level Prisma query (User.locations[isPrimary=true]).
+   */
+  otherUserLocation?: string | null;
   sessionStatus: string;
   viewerRole: ViewerRole;
   boards: WorkspaceBoard[];
@@ -102,6 +108,7 @@ export function SessionWorkspace({
   currentIdentity,
   otherUserName,
   otherUserAvatar,
+  otherUserLocation = null,
   sessionStatus,
   viewerRole,
   boards,
@@ -186,6 +193,11 @@ export function SessionWorkspace({
                   <h2 className="font-display text-lg leading-tight truncate">
                     {otherUserName}
                   </h2>
+                  {otherUserLocation && (
+                    <p className="truncate text-xs font-body text-muted-foreground">
+                      {otherUserLocation}
+                    </p>
+                  )}
                 </div>
               </div>
             );
@@ -385,6 +397,13 @@ export function SessionWorkspace({
                 sessionStatus={sessionStatus}
                 viewerRole={viewerRole}
                 hideHeader
+                bookCtaHref={bookCtaHref}
+                stylistFirstName={stylistFirstName}
+                recapHref={
+                  viewerRole === "CLIENT"
+                    ? `/sessions/${sessionId}/end-session`
+                    : null
+                }
               />
             </div>
             {suggestedRepliesEnabled && viewerRole === "STYLIST" ? (

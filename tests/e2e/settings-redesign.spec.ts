@@ -13,7 +13,11 @@ import { ensureClientUser, cleanupE2EUserByEmail } from "./db";
  */
 
 async function signIn(page: Page, email: string) {
-  await page.goto("/sign-in");
+  // The Clerk-hosted /sign-in page (no e2e flag) shows social-provider
+  // buttons whose accessible names contain "Sign In", which makes a bare
+  // `getByRole('button', { name: 'Sign In' })` fail strict-mode. The
+  // E2E backdoor at /sign-in?e2e=1 renders only the email + button.
+  await page.goto("/sign-in?e2e=1");
   await page.getByLabel("Email").fill(email);
   await page.getByRole("button", { name: "Sign In" }).click();
   await expect(page).not.toHaveURL(/\/sign-in/);
@@ -36,12 +40,13 @@ test("/settings renders hero + all 7 settings cards", async ({ page }) => {
     const body = await page.locator("body").innerText();
     for (const cardTitle of [
       "Personal info",
-      "Membership",
-      "Loyalty rewards",
+      "Style info",
       "Payment method",
+      "Membership",
       "Orders",
-      "Closet",
-      "Favorites",
+      "Payment history",
+      "Edit password",
+      "Loyalty rewards",
     ]) {
       expect(body).toContain(cardTitle);
     }
@@ -50,7 +55,7 @@ test("/settings renders hero + all 7 settings cards", async ({ page }) => {
   }
 });
 
-test("/settings clicking the Personal info card expands the ProfileForm inline", async ({
+test("/settings clicking the Personal info card expands the PersonalInfoPanel inline", async ({
   page,
 }) => {
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -70,10 +75,11 @@ test("/settings clicking the Personal info card expands the ProfileForm inline",
     await personalInfoBtn.click();
     await expect(personalInfoBtn).toHaveAttribute("aria-expanded", "true");
 
-    await expect(page.getByLabel("First name")).toBeVisible();
-    await expect(page.getByLabel("Last name")).toBeVisible();
+    // View mode shows the Loveable label set + an Edit button.
+    await expect(page.getByText("First name", { exact: true })).toBeVisible();
+    await expect(page.getByText("Last name", { exact: true })).toBeVisible();
     await expect(
-      page.getByRole("button", { name: /Save changes/i }),
+      page.getByRole("button", { name: "Edit", exact: true }),
     ).toBeVisible();
   } finally {
     await cleanupE2EUserByEmail(email);
@@ -90,15 +96,11 @@ test("/settings static link cards point to the right routes", async ({ page }) =
     await page.goto("/settings");
     await page.waitForLoadState("networkidle");
 
+    // Orders is the only link-card on /settings. Closet/Favorites have moved
+    // off this page (Closet → /profile, Favorites surfaces from the header).
     await expect(
-      page.getByRole("link", { name: /Orders.+Review every order/i }),
+      page.getByRole("link", { name: /Orders.+Review all your orders/i }),
     ).toHaveAttribute("href", "/orders");
-    await expect(
-      page.getByRole("link", { name: /Closet.+pieces you already own/i }),
-    ).toHaveAttribute("href", "/closet");
-    await expect(
-      page.getByRole("link", { name: /Favorites.+stylists you/i }),
-    ).toHaveAttribute("href", "/favorites");
   } finally {
     await cleanupE2EUserByEmail(email);
   }

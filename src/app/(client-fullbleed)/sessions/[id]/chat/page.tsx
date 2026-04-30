@@ -17,6 +17,14 @@ const CHAT_STATUSES = [
   "PENDING_END",
   "PENDING_END_APPROVAL",
   "END_DECLINED",
+  // Loveable's StylingRoom renders for closed sessions too — the chat goes
+  // read-only and the composer is replaced with a Session Recap + Book a new
+  // session row. Without these in the allowlist, our /sessions/[id]/chat
+  // redirects to /sessions/[id] (a non-Loveable detail page) and the user
+  // never sees the recap CTA.
+  "COMPLETED",
+  "CANCELLED",
+  "REASSIGNED",
 ];
 
 /**
@@ -45,6 +53,11 @@ export default async function ClientChatPage({ params }: Props) {
           avatarUrl: true,
           clerkId: true,
           stylistProfile: { select: { id: true } },
+          locations: {
+            where: { isPrimary: true },
+            select: { city: true, state: true },
+            take: 1,
+          },
         },
       },
     },
@@ -81,6 +94,12 @@ export default async function ClientChatPage({ params }: Props) {
   const bookCtaHref = stylistProfileId
     ? `/bookings/new?stylistId=${stylistProfileId}`
     : null;
+  const stylistLocation = (() => {
+    const loc = session.stylist?.locations[0];
+    if (!loc) return null;
+    if (loc.city && loc.state) return `${loc.city}, ${loc.state}`;
+    return loc.city ?? loc.state ?? null;
+  })();
 
   const { boards, curated, cart, progress } = await getWorkspaceData(
     session.id,
@@ -94,6 +113,7 @@ export default async function ClientChatPage({ params }: Props) {
         currentIdentity={user.clerkId!}
         otherUserName={stylistName}
         otherUserAvatar={session.stylist?.avatarUrl ?? null}
+        otherUserLocation={stylistLocation}
         sessionStatus={session.status}
         viewerRole="CLIENT"
         boards={boards}

@@ -24,6 +24,17 @@ interface ChatWindowProps {
   /** Optional callback for the "Inspiration library" item in the attach
    *  Popover. When omitted the option is hidden. */
   onInspirationLibrary?: () => void;
+  /** Loveable's StylingRoom inquiry shell renders a mobile-only Book CTA
+   *  above the composer (desktop has it in the left rail). When session
+   *  status is INQUIRY and this href is set, the button shows. */
+  bookCtaHref?: string | null;
+  /** First name used in the "Book {firstName}" inquiry CTA. */
+  stylistFirstName?: string | null;
+  /** Loveable's closed-state shell shows a "Session Recap" button next to
+   *  "Book a new session". Clients land on /sessions/[id]/end-session — the
+   *  page either renders the post-session flow or, if already rated, a
+   *  thank-you screen. Stylists don't have a recap so we pass null. */
+  recapHref?: string | null;
 }
 
 /** Session statuses where the chat is read-only. The composer is replaced by
@@ -47,6 +58,9 @@ export function ChatWindow({
   viewerRole,
   hideHeader,
   onInspirationLibrary,
+  bookCtaHref = null,
+  stylistFirstName = null,
+  recapHref = null,
 }: ChatWindowProps) {
   const {
     messages,
@@ -124,7 +138,9 @@ export function ChatWindow({
   }
 
   const isClosed = CLOSED_STATUSES.has(sessionStatus.toUpperCase());
+  const isInquiry = sessionStatus.toUpperCase() === "INQUIRY";
   const recipientFirstName = otherUserName.split(" ").filter(Boolean)[0] ?? null;
+  const inquiryFirstName = stylistFirstName ?? recipientFirstName;
   // Clients book a new session through their sessions list; stylists return to
   // their dashboard.
   const closedSessionHref =
@@ -154,27 +170,47 @@ export function ChatWindow({
       />
 
       {isClosed ? (
-        <div className="border-t border-border py-6 text-center">
-          <p className="text-sm text-muted-foreground">
-            This session has ended.{" "}
+        <div className="space-y-3 border-t border-border py-6 text-center">
+          <p className="text-sm text-muted-foreground">This session has ended.</p>
+          <div className="flex items-center justify-center gap-3">
+            {recapHref && (
+              <Link
+                href={recapHref}
+                className="inline-flex h-9 items-center rounded-full bg-foreground px-4 text-sm font-medium text-background transition-colors hover:bg-foreground/90"
+              >
+                Session Recap
+              </Link>
+            )}
             <Link
               href={closedSessionHref}
-              className="text-accent underline underline-offset-4 hover:text-accent/80"
+              className="text-sm text-accent underline underline-offset-4 hover:text-accent/80"
             >
               Book a new session
             </Link>
-          </p>
+          </div>
         </div>
       ) : (
-        <ChatInput
-          onSendText={handleSendText}
-          onAttachFile={handleAttachFile}
-          onCameraCapture={handleCameraCapture}
-          onInspirationLibrary={onInspirationLibrary}
-          recipientFirstName={recipientFirstName}
-          disabled={!isConnected}
-          dictation={dictation}
-        />
+        <>
+          {isInquiry && bookCtaHref && (
+            <div className="border-t border-border px-4 pt-3 md:hidden md:px-8">
+              <Link
+                href={bookCtaHref}
+                className="flex w-full items-center justify-center rounded-lg bg-foreground px-4 py-2.5 text-sm font-medium text-background transition-colors hover:bg-foreground/90"
+              >
+                Book {inquiryFirstName ?? "stylist"}
+              </Link>
+            </div>
+          )}
+          <ChatInput
+            onSendText={handleSendText}
+            onAttachFile={handleAttachFile}
+            onCameraCapture={handleCameraCapture}
+            onInspirationLibrary={onInspirationLibrary}
+            recipientFirstName={recipientFirstName}
+            disabled={!isConnected}
+            dictation={dictation}
+          />
+        </>
       )}
 
       <input

@@ -55,7 +55,16 @@ export default async function MatchesPage() {
     where,
     include: {
       user: {
-        select: { firstName: true, lastName: true, avatarUrl: true },
+        select: {
+          firstName: true,
+          lastName: true,
+          avatarUrl: true,
+          locations: {
+            where: { isPrimary: true },
+            select: { city: true, state: true },
+            take: 1,
+          },
+        },
       },
       profileBoards: {
         where: { isFeaturedOnProfile: true, sessionId: null },
@@ -99,12 +108,21 @@ export default async function MatchesPage() {
     );
   }
 
+  function formatLocation(
+    loc: { city: string | null; state: string | null } | undefined,
+  ): string | null {
+    if (!loc) return null;
+    if (loc.city && loc.state) return `${loc.city}, ${loc.state}`;
+    return loc.city ?? loc.state ?? null;
+  }
+
   const top = scored[0];
   const alternates = scored.slice(1, 4);
   const firstName = top.name.split(" ")[0] || top.name;
   const initials =
     `${top.user.firstName?.[0] ?? ""}${top.user.lastName?.[0] ?? ""}`.toUpperCase() ||
     top.name.charAt(0);
+  const topLocation = formatLocation(top.user.locations[0]);
 
   // Fall back to avatar as the only portfolio image when no profile boards
   // have been featured yet — keeps the carousel visually populated for new
@@ -146,6 +164,11 @@ export default async function MatchesPage() {
                       <h2 className="font-display text-3xl tracking-tight">
                         {top.name}
                       </h2>
+                      {topLocation && (
+                        <p className="mt-1 font-body text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                          {topLocation}
+                        </p>
+                      )}
                       {!top.isAvailable && (
                         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mt-1">
                           Currently on waitlist
@@ -285,6 +308,7 @@ export default async function MatchesPage() {
                 `${s.user.firstName?.[0] ?? ""}${s.user.lastName?.[0] ?? ""}`.toUpperCase() ||
                 s.name.charAt(0);
               const altFirstName = s.name.split(" ")[0] || s.name;
+              const altLocation = formatLocation(s.user.locations[0]);
               return (
                 <Reveal key={s.id} delay={i * 70}>
                   <div className="rounded-xl border border-border bg-card p-6 text-center w-[220px]">
@@ -297,6 +321,11 @@ export default async function MatchesPage() {
                       </AvatarFallback>
                     </Avatar>
                     <p className="font-display text-lg">{s.name}</p>
+                    {altLocation && (
+                      <p className="text-xs text-muted-foreground mb-0.5">
+                        {altLocation}
+                      </p>
+                    )}
                     {s.score !== null && s.score !== undefined && (
                       <p className="text-xs text-muted-foreground mb-4">
                         {s.score}% match

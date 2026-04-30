@@ -1,18 +1,17 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Image from "next/image";
-import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getServerAuth } from "@/lib/auth/server-auth";
 import { cosmeticMatchScore } from "@/lib/matching/score";
 import { WaitlistButton } from "@/components/stylist/waitlist-button";
-import { FavoriteStylistButton } from "@/components/stylist/favorite-stylist-button";
-import { isStylistFavorited } from "@/lib/stylists/favorite-stylist.service";
 import { listStylistReviews } from "@/lib/stylists/review.service";
 import { WriteReviewDialog } from "@/components/stylist/write-review-dialog";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
 import { ContinueWithStylistButton } from "./continue-with-stylist-button";
+import { PlanPicker } from "./plan-picker";
+import { getPlanPricesForUi } from "@/lib/plans";
 import {
   StarIcon,
   ClockIcon,
@@ -21,6 +20,30 @@ import {
   RepeatIcon,
   HeartIcon,
 } from "lucide-react";
+
+// Lucide 1.x dropped brand glyphs (per CLAUDE.md). Inline SVG matches
+// Loveable's Instagram icon dimensions + stroke.
+function InstagramIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+      <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+    </svg>
+  );
+}
 
 export const dynamic = "force-dynamic";
 
@@ -99,18 +122,14 @@ export default async function StylistProfilePage({ params }: Props) {
     name.charAt(0);
 
   const heroImage = stylist.profileBoards[0]?.photos[0]?.url ?? null;
-  const additionalBoards = stylist.profileBoards.slice(heroImage ? 1 : 0);
+  const styledLooks = stylist.profileBoards.slice(heroImage ? 1 : 0).slice(0, 4);
 
   let matchScore: number | null = null;
-  let favorited = false;
   let canReview = false;
   const { userId: clerkId } = await getServerAuth().catch(() => ({
     userId: null as string | null,
   }));
   const signedIn = Boolean(clerkId);
-  // Authed-only enrichment: match score, favorite state, can-review gate.
-  // Swallow failures so a flaky lookup degrades to unauthed defaults rather
-  // than bouncing the public profile to the root error boundary.
   if (clerkId) {
     try {
       const user = await prisma.user.findUnique({
@@ -118,14 +137,13 @@ export default async function StylistProfilePage({ params }: Props) {
         select: { id: true },
       });
       if (user) {
-        const [quizResult, isFav, completedCount] = await Promise.all([
+        const [quizResult, completedCount] = await Promise.all([
           prisma.matchQuizResult
             .findFirst({
               where: { userId: user.id },
               orderBy: { completedAt: "desc" },
             })
             .catch(() => null),
-          isStylistFavorited(user.id, stylist.id).catch(() => false),
           prisma.session
             .count({
               where: {
@@ -137,7 +155,6 @@ export default async function StylistProfilePage({ params }: Props) {
             .catch(() => 0),
         ]);
         if (quizResult) matchScore = cosmeticMatchScore(stylist, quizResult);
-        favorited = isFav;
         canReview = completedCount > 0;
       }
     } catch (err) {
@@ -145,16 +162,38 @@ export default async function StylistProfilePage({ params }: Props) {
     }
   }
 
-  // Reviews are nice-to-have on this page — never block the render. If the
-  // aggregation fails (transient DB error, malformed seed data, etc.), the
-  // reviews section just shows the "No reviews yet" empty state instead of
-  // bouncing the whole profile to the root error boundary.
-  const { reviews, total: totalReviews } = await listStylistReviews(stylist.id, {
-    limit: 20,
-  }).catch((err) => {
-    console.error("[stylists/[id]] listStylistReviews failed", err);
-    return { reviews: [], total: 0 };
-  });
+  const [{ reviews, total: totalReviews }, planPrices] = await Promise.all([
+    listStylistReviews(stylist.id, { limit: 20 }).catch((err) => {
+      console.error("[stylists/[id]] listStylistReviews failed", err);
+      return { reviews: [], total: 0 };
+    }),
+    getPlanPricesForUi(),
+  ]);
+
+  // Loveable PlanPicker rows. Prices flow from the Plan table — never
+  // hardcoded — and the Lux summary skips locked-out copy ("seasonal
+  // capsules" / "virtual fitting") per CLAUDE.md.
+  const planPickerRows = [
+    {
+      id: "MINI" as const,
+      name: "Wishi Mini",
+      priceDisplay: `$${planPrices.mini.displayDollars}`,
+      summary: "2 Style Boards · Revisions · Any brand worldwide",
+    },
+    {
+      id: "MAJOR" as const,
+      name: "Wishi Major",
+      priceDisplay: `$${planPrices.major.displayDollars}`,
+      popular: true,
+      summary: "5 Style Boards · Closet styling · Beauty advice · Revisions",
+    },
+    {
+      id: "LUX" as const,
+      name: "Wishi Lux",
+      priceDisplay: `$${planPrices.lux.displayDollars}`,
+      summary: "30-min intro call · 8 Style Boards · Bespoke styling",
+    },
+  ];
 
   const personLd = {
     "@context": "https://schema.org",
@@ -197,7 +236,26 @@ export default async function StylistProfilePage({ params }: Props) {
     {
       icon: HeartIcon,
       title: "Shop your closet",
-      desc: "We help you rediscover what you already own and style it in new ways.",
+      desc: "We help you rediscover what you already own and fit it in new styles.",
+    },
+  ];
+
+  // "What you'll get" — Loveable StylistProfile.tsx:638-663.
+  const whatYouGetSteps = [
+    {
+      num: "01",
+      title: "Share your needs",
+      desc: "Tell us about your lifestyle, body, preferences, brands, occasions, goals, and budget.",
+    },
+    {
+      num: "02",
+      title: "Receive personalized looks",
+      desc: "Get a curated selection of shoppable outfits tailored to your style and budget.",
+    },
+    {
+      num: "03",
+      title: "Refine & shop confidently",
+      desc: "Give feedback to fine-tune your looks, then shop knowing every piece was handpicked for you.",
     },
   ];
 
@@ -209,11 +267,11 @@ export default async function StylistProfilePage({ params }: Props) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(personLd) }}
       />
       <SiteHeader />
-      <main className="min-h-screen bg-background pb-20">
-        {/* Hero */}
-        <section className="container mx-auto max-w-5xl px-6 py-10 md:py-14">
-          <div className="flex flex-col items-center gap-8 md:flex-row md:items-start md:gap-12">
-            <div className="w-full overflow-hidden rounded-lg bg-muted md:w-[465px] md:flex-shrink-0">
+      <div className="min-h-screen bg-background">
+        {/* Hero — Loveable StylistProfile.tsx:285-346 */}
+        <section className="bg-background container max-w-5xl py-10 md:py-14">
+          <div className="flex flex-col md:flex-row gap-8 md:gap-12 items-center">
+            <div className="w-full md:w-[465px] shrink-0 overflow-hidden rounded-lg bg-muted">
               {heroImage ? (
                 <Image
                   src={heroImage}
@@ -242,35 +300,31 @@ export default async function StylistProfilePage({ params }: Props) {
             </div>
 
             <div className="flex-1">
-              <div className="flex items-center gap-3">
-                <h1 className="font-display text-4xl md:text-5xl">{name}</h1>
-                {clerkId && (
-                  <FavoriteStylistButton
-                    stylistProfileId={stylist.id}
-                    initialFavorited={favorited}
-                  />
-                )}
-              </div>
-              {stylist.yearsExperience && (
-                <p className="mt-1 text-sm uppercase tracking-widest text-muted-foreground">
+              <h1 className="font-display text-4xl md:text-5xl mb-1">{name}</h1>
+              {stylist.yearsExperience ? (
+                <p className="font-body text-sm uppercase tracking-widest text-muted-foreground mb-5">
                   {stylist.yearsExperience}+ years experience
                 </p>
+              ) : (
+                <p className="mb-5" aria-hidden />
               )}
 
-              {matchScore !== null && (
-                <div className="mt-6">
-                  <div className="flex items-baseline gap-3">
+              {matchScore !== null ? (
+                <>
+                  <div className="flex items-baseline gap-3 mb-1">
                     <span className="font-display text-4xl">{matchScore}%</span>
-                    <span className="text-sm text-muted-foreground">style match</span>
+                    <span className="font-body text-sm text-muted-foreground">
+                      style match
+                    </span>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
+                  <p className="font-body text-xs text-muted-foreground mb-5">
                     Based on your style and needs
                   </p>
-                </div>
-              )}
+                </>
+              ) : null}
 
-              {stylist.averageRating !== null && totalReviews > 0 && (
-                <div className="mt-6 flex items-center gap-3">
+              {stylist.averageRating !== null && totalReviews > 0 ? (
+                <div className="flex items-center gap-3 mb-6">
                   <div className="flex gap-0.5">
                     {Array.from({ length: 5 }).map((_, i) => (
                       <StarIcon
@@ -279,50 +333,48 @@ export default async function StylistProfilePage({ params }: Props) {
                       />
                     ))}
                   </div>
-                  <span className="text-sm font-medium">
+                  <span className="font-body text-sm font-medium">
                     {stylist.averageRating.toFixed(1)}
                   </span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="font-body text-xs text-muted-foreground">
                     {totalReviews} {totalReviews === 1 ? "Review" : "Reviews"}
                   </span>
                 </div>
-              )}
+              ) : null}
 
-              {!stylist.isAvailable && (
-                <div className="mt-6 flex items-center gap-2 rounded-lg bg-muted px-3 py-2">
-                  <ClockIcon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                  <p className="text-xs text-muted-foreground">
+              {!stylist.isAvailable ? (
+                <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg bg-muted">
+                  <ClockIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <p className="font-body text-xs text-muted-foreground">
                     {firstName} is currently unavailable. Join the waitlist to be
                     notified when they&apos;re back.
                   </p>
                 </div>
-              )}
+              ) : null}
 
-              <div className="mt-8 flex gap-4">
-                {stylist.isAvailable ? (
-                  <ContinueWithStylistButton
-                    stylistProfileId={stylist.id}
-                    firstName={firstName}
-                    signedIn={signedIn}
-                    size="lg"
-                  />
-                ) : (
-                  <WaitlistButton stylistProfileId={stylist.id} />
-                )}
-              </div>
+              {stylist.isAvailable ? (
+                <ContinueWithStylistButton
+                  stylistProfileId={stylist.id}
+                  firstName={firstName}
+                  signedIn={signedIn}
+                  size="lg"
+                />
+              ) : (
+                <WaitlistButton stylistProfileId={stylist.id} />
+              )}
             </div>
           </div>
         </section>
 
-        {/* Meet [Name] */}
+        {/* Meet [Name] — Loveable StylistProfile.tsx:349-424 */}
         {(stylist.bio || stylist.directorPick || stylist.philosophy) && (
           <section className="border-t border-border">
-            <div className="container mx-auto max-w-5xl px-6 py-10 md:py-14">
-              <h2 className="mb-8 font-display text-2xl">Meet {firstName}</h2>
+            <div className="container max-w-5xl py-10 md:py-14">
+              <h2 className="font-display text-2xl mb-8">Meet {firstName}</h2>
 
-              <div className="grid gap-10 md:grid-cols-2">
+              <div className="grid md:grid-cols-2 gap-10">
                 <div>
-                  <div className="aspect-square overflow-hidden rounded-xl bg-muted">
+                  <div className="overflow-hidden rounded-xl aspect-square bg-muted">
                     {stylist.user.avatarUrl ? (
                       <Image
                         src={stylist.user.avatarUrl}
@@ -331,6 +383,7 @@ export default async function StylistProfilePage({ params }: Props) {
                         height={600}
                         sizes="(min-width: 768px) 50vw, 100vw"
                         className="h-full w-full object-cover"
+                        loading="lazy"
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center font-display text-5xl text-muted-foreground">
@@ -338,195 +391,252 @@ export default async function StylistProfilePage({ params }: Props) {
                       </div>
                     )}
                   </div>
-                  {stylist.instagramHandle && (
-                    <a
-                      href={`https://instagram.com/${stylist.instagramHandle}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-3 inline-block text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-                    >
-                      @{stylist.instagramHandle}
-                    </a>
-                  )}
+                  {stylist.instagramHandle ? (
+                    <div className="flex items-center gap-4 mt-3">
+                      <a
+                        href={`https://instagram.com/${stylist.instagramHandle}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                        aria-label={`${name} on Instagram`}
+                      >
+                        <InstagramIcon className="h-5 w-5" />
+                      </a>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="space-y-6">
-                  {stylist.bio && (
+                  {stylist.bio ? (
                     <div>
-                      <p className="mb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                      <p className="font-body text-xs uppercase tracking-widest text-muted-foreground mb-2">
                         My Approach
                       </p>
-                      <p className="text-sm leading-relaxed text-foreground">
+                      <p className="font-body text-sm text-foreground leading-relaxed">
                         {stylist.bio}
                       </p>
                     </div>
-                  )}
+                  ) : null}
 
-                  {stylist.directorPick && (
+                  {stylist.directorPick ? (
                     <div className="border-l-2 border-secondary pl-4">
-                      <p className="mb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                        Director&apos;s Pick
+                      <p className="font-body text-xs uppercase tracking-widest text-muted-foreground mb-2">
+                        Client Spotlight
                       </p>
-                      <p className="text-sm italic leading-relaxed text-foreground">
-                        “{stylist.directorPick}”
+                      <p className="font-body text-sm italic text-foreground leading-relaxed">
+                        &ldquo;{stylist.directorPick}&rdquo;
                       </p>
                     </div>
-                  )}
+                  ) : null}
 
-                  {stylist.philosophy && (
+                  {stylist.philosophy ? (
                     <div>
-                      <p className="mb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                        Style Philosophy
+                      <p className="font-body text-xs uppercase tracking-widest text-muted-foreground mb-2">
+                        Bio
                       </p>
-                      <p className="text-sm leading-relaxed text-foreground">
+                      <p className="font-body text-sm text-foreground leading-relaxed">
                         {stylist.philosophy}
                       </p>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
             </div>
           </section>
         )}
 
+        {/* Styled by — Loveable StylistProfile.tsx:427-452. 2-col grid with
+            caption above each image. */}
+        {styledLooks.length > 0 && (
+          <section className="border-t border-border">
+            <div className="container max-w-5xl py-10 md:py-14">
+              <h2 className="font-display text-2xl text-center mb-8">
+                Styled by {firstName}
+              </h2>
+              <div className="grid grid-cols-2 gap-4 justify-items-center">
+                {styledLooks.map((look) => {
+                  const caption = look.profileStyle
+                    ? look.profileStyle.toString().toLowerCase()
+                    : "";
+                  return (
+                    <div key={look.id} className="w-[450px] max-w-full">
+                      {caption ? (
+                        <p className="font-body text-xs uppercase tracking-widest text-muted-foreground mb-2">
+                          {caption}
+                        </p>
+                      ) : null}
+                      <div className="aspect-square overflow-hidden group cursor-pointer">
+                        {look.photos[0]?.url ? (
+                          <Image
+                            src={look.photos[0].url}
+                            alt={caption || "styled look"}
+                            width={450}
+                            height={450}
+                            sizes="(min-width: 768px) 450px, 100vw"
+                            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-muted text-xs text-muted-foreground">
+                            {caption}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* Why this stylist — Loveable StylistProfile.tsx:455-484 */}
         {stylist.styleSpecialties.length > 0 && (
           <section className="border-t border-border">
-            <div className="container mx-auto max-w-5xl px-6 py-10 md:py-14">
-              <h2 className="mb-3 text-center font-display text-2xl">
+            <div className="container max-w-5xl py-10 md:py-14">
+              <h2 className="font-display text-2xl text-center mb-3">
                 Why {firstName}?
               </h2>
-              <p className="mb-6 text-center text-xs text-muted-foreground">
+              <p className="font-body text-xs text-muted-foreground text-center mb-4">
                 Good for:
               </p>
-              <div className="flex flex-wrap justify-center gap-2">
-                {stylist.styleSpecialties.map((s: string) => (
+
+              <div className="flex flex-wrap justify-center gap-2 mb-8">
+                {stylist.styleSpecialties.slice(0, 3).map((tag) => (
                   <span
-                    key={s}
-                    className="rounded-full bg-foreground px-4 py-1.5 text-xs font-medium capitalize text-background"
+                    key={tag}
+                    className="rounded-full bg-foreground text-background px-4 py-1.5 text-xs font-body font-medium capitalize"
                   >
-                    {s}
+                    {tag}
                   </span>
                 ))}
               </div>
+
+              {stylist.bodySpecialties.length > 0 ? (
+                <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
+                  {stylist.bodySpecialties.map((spec) => (
+                    <div key={spec} className="flex items-center gap-2">
+                      <div className="h-2 w-2 rounded-full bg-foreground shrink-0" />
+                      <span className="font-body text-sm text-foreground capitalize">
+                        {spec}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </section>
         )}
 
-        {additionalBoards.length > 0 && (
-          <section className="border-t border-border">
-            <div className="container mx-auto max-w-5xl px-6 py-10 md:py-14">
-              <h2 className="mb-6 text-center font-display text-2xl">
-                Styled by {firstName}
-              </h2>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {additionalBoards.map((b) => (
-                  <div
-                    key={b.id}
-                    className="overflow-hidden rounded-xl border border-border bg-card"
-                  >
-                    {b.photos[0]?.url ? (
-                      <Image
-                        src={b.photos[0].url}
-                        alt={b.profileStyle ?? "profile board"}
-                        width={400}
-                        height={400}
-                        sizes="(min-width: 640px) 33vw, 50vw"
-                        className="aspect-square w-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex aspect-square items-center justify-center text-xs text-muted-foreground">
-                        {b.profileStyle ?? ""}
-                      </div>
-                    )}
-                    {b.profileStyle && (
-                      <div className="p-2 text-center text-xs capitalize text-muted-foreground">
-                        {b.profileStyle.toLowerCase()}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* Reviews */}
+        {/* Client Reviews — Loveable StylistProfile.tsx:487-601 */}
         <section className="border-t border-border">
-          <div className="container mx-auto max-w-5xl px-6 py-10 md:py-14">
-            <div className="mb-6 flex items-center justify-between">
+          <div className="container max-w-5xl py-10 md:py-14">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-8">
               <h2 className="font-display text-xl">
                 What {firstName}&apos;s clients say
               </h2>
-              {canReview && (
-                <WriteReviewDialog
-                  stylistProfileId={stylist.id}
-                  stylistFirstName={firstName}
-                />
-              )}
+              <div className="flex items-center gap-3 flex-wrap">
+                {stylist.averageRating !== null && totalReviews > 0 ? (
+                  <div className="flex items-center gap-2">
+                    <StarIcon className="h-4 w-4 fill-foreground text-foreground" />
+                    <span className="font-body text-sm font-medium">
+                      {stylist.averageRating.toFixed(1)}
+                    </span>
+                    <span className="font-body text-xs text-muted-foreground">
+                      See Reviews
+                    </span>
+                  </div>
+                ) : null}
+                {canReview ? (
+                  <WriteReviewDialog
+                    stylistProfileId={stylist.id}
+                    stylistFirstName={firstName}
+                  />
+                ) : null}
+              </div>
             </div>
+
             {reviews.length > 0 ? (
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                {reviews.map((review) => (
-                  <article
-                    key={review.id}
-                    className="rounded-xl border border-border bg-card p-5"
-                  >
-                    <header className="mb-2 flex items-center gap-2">
-                      <span className="text-sm font-medium text-foreground">
-                        {review.author.firstName} {review.author.lastNameInitial}.
-                      </span>
-                      <span className="inline-flex items-center gap-0.5 text-xs text-foreground">
-                        {Array.from({ length: review.rating }).map((_, i) => (
-                          <StarIcon
-                            key={i}
-                            className="h-3 w-3 fill-foreground text-foreground"
-                          />
-                        ))}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {review.createdAt.toLocaleDateString()}
-                      </span>
-                    </header>
-                    <p className="text-sm leading-relaxed text-foreground">
-                      {review.reviewText}
-                    </p>
-                  </article>
-                ))}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {reviews.slice(0, 4).map((review) => {
+                  const reviewerName =
+                    `${review.author.firstName} ${review.author.lastNameInitial}.`.trim();
+                  const reviewerInitial =
+                    review.author.firstName?.[0]?.toUpperCase() ?? "?";
+                  return (
+                    <div key={review.id} className="rounded-xl bg-background p-5">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted font-body text-xs text-foreground">
+                          {reviewerInitial}
+                        </div>
+                        <span className="font-body text-sm font-medium">
+                          {reviewerName}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="flex gap-0.5">
+                          {Array.from({ length: review.rating }).map((_, j) => (
+                            <StarIcon
+                              key={j}
+                              className="h-3 w-3 fill-foreground text-foreground"
+                            />
+                          ))}
+                        </div>
+                        <span className="font-body text-xs text-muted-foreground">
+                          {review.createdAt.toLocaleDateString()}
+                        </span>
+                      </div>
+                      <p className="font-body text-sm text-foreground leading-relaxed">
+                        {review.reviewText}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">
+              <p className="font-body text-sm text-muted-foreground">
                 No reviews yet.
-                {canReview && " Be the first to share your experience."}
+                {canReview ? " Be the first to share your experience." : ""}
               </p>
             )}
 
-            {totalReviews > reviews.length && (
-              <div className="mt-6">
-                <Link
-                  href={`/stylists/${stylist.id}/reviews`}
-                  className="inline-flex items-center rounded-full border border-foreground px-6 py-2 text-sm font-medium text-foreground transition-colors hover:bg-foreground hover:text-background"
-                >
-                  Show all {totalReviews} reviews
-                </Link>
-              </div>
-            )}
+            {totalReviews > 0 ? (
+              <a
+                href={`/stylists/${stylist.id}/reviews`}
+                className="mt-6 inline-block rounded-full border border-foreground px-6 py-2 text-sm font-body font-medium text-foreground hover:bg-foreground hover:text-background transition-colors"
+              >
+                Show all {totalReviews} reviews
+              </a>
+            ) : null}
           </div>
         </section>
 
-        {/* Trust */}
-        <section className="bg-foreground py-14 text-background md:py-20">
-          <div className="container mx-auto max-w-4xl px-6">
-            <h2 className="mb-12 text-center font-display text-2xl md:text-3xl">
+        {/* Plan Picker — Loveable StylistProfile.tsx:603-609. Hidden for
+         *  unavailable stylists (waitlist CTA stands alone for those). */}
+        {stylist.isAvailable && (
+          <PlanPicker
+            stylistProfileId={stylist.id}
+            stylistFirstName={firstName}
+            signedIn={signedIn}
+            plans={planPickerRows}
+          />
+        )}
+
+        {/* Trust section — Loveable StylistProfile.tsx:612-635 */}
+        <section className="bg-foreground text-background py-14 md:py-20">
+          <div className="container max-w-4xl">
+            <h2 className="font-display text-2xl md:text-3xl text-center mb-12">
               A styling experience built on trust
             </h2>
-            <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
               {trustItems.map((item) => {
                 const Icon = item.icon;
                 return (
                   <div key={item.title} className="text-center">
-                    <Icon className="mx-auto mb-3 h-6 w-6 text-background/80" />
-                    <h3 className="mb-2 font-display text-sm">{item.title}</h3>
-                    <p className="text-xs leading-relaxed text-background/60">
+                    <Icon className="h-6 w-6 mx-auto mb-3 text-background/80" />
+                    <h3 className="font-display text-sm mb-2">{item.title}</h3>
+                    <p className="font-body text-xs text-background/60 leading-relaxed">
                       {item.desc}
                     </p>
                   </div>
@@ -536,57 +646,79 @@ export default async function StylistProfilePage({ params }: Props) {
           </div>
         </section>
 
-        <div className="border-t border-border bg-background py-10 text-center">
-          <Link
-            href="/stylists"
-            className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-          >
-            ← Back to all stylists
-          </Link>
-        </div>
-      </main>
+        {/* What you'll get — Loveable StylistProfile.tsx:638-663 */}
+        <section className="bg-muted/50 py-14 md:py-20">
+          <div className="container max-w-4xl text-center">
+            <h2 className="font-display text-2xl md:text-3xl mb-3">
+              What you&apos;ll get
+            </h2>
+            <p className="font-body text-sm text-muted-foreground mb-12 max-w-lg mx-auto">
+              A personal styling experience designed to give you clarity and
+              confidence.
+            </p>
 
-      {/* Sticky bottom CTA */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-background">
-        <div className="container mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-muted">
-              {stylist.user.avatarUrl ? (
-                <Image
-                  src={stylist.user.avatarUrl}
-                  alt={name}
-                  fill
-                  sizes="40px"
-                  className="object-cover"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-xs font-medium text-muted-foreground">
-                  {initials}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
+              {whatYouGetSteps.map((step) => (
+                <div key={step.num}>
+                  <span className="font-display text-3xl md:text-4xl text-secondary-foreground/30">
+                    {step.num}
+                  </span>
+                  <h3 className="font-display text-base md:text-lg mt-2 mb-2">
+                    {step.title}
+                  </h3>
+                  <p className="font-body text-xs text-muted-foreground leading-relaxed">
+                    {step.desc}
+                  </p>
                 </div>
-              )}
-            </div>
-            <div className="hidden min-w-0 sm:block">
-              <p className="truncate text-sm font-medium">{name}</p>
-              <p className="text-xs text-muted-foreground">
-                {stylist.isAvailable
-                  ? "Responds within 10 hours"
-                  : "Currently unavailable"}
-              </p>
+              ))}
             </div>
           </div>
-          {stylist.isAvailable ? (
-            <ContinueWithStylistButton
-              stylistProfileId={stylist.id}
-              firstName={firstName}
-              signedIn={signedIn}
-              size="md"
-            />
-          ) : (
-            <WaitlistButton stylistProfileId={stylist.id} />
-          )}
-        </div>
-      </div>
+        </section>
 
+        {/* Sticky bottom bar — Loveable StylistProfile.tsx:665-698 */}
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-background border-t border-border">
+          <div className="container max-w-5xl flex items-center justify-between gap-3 py-3 px-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="relative h-8 w-8 sm:h-10 sm:w-10 shrink-0 overflow-hidden rounded-full bg-muted">
+                {stylist.user.avatarUrl ? (
+                  <Image
+                    src={stylist.user.avatarUrl}
+                    alt={name}
+                    fill
+                    sizes="40px"
+                    className="object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-xs font-medium text-muted-foreground">
+                    {initials}
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0 hidden sm:block">
+                <p className="font-body text-sm font-medium truncate">{name}</p>
+                <p className="font-body text-xs text-muted-foreground">
+                  {stylist.isAvailable
+                    ? "Responds within 10 hours"
+                    : "Currently unavailable"}
+                </p>
+              </div>
+            </div>
+            {stylist.isAvailable ? (
+              <ContinueWithStylistButton
+                stylistProfileId={stylist.id}
+                firstName={firstName}
+                signedIn={signedIn}
+                size="md"
+              />
+            ) : (
+              <WaitlistButton stylistProfileId={stylist.id} />
+            )}
+          </div>
+        </div>
+
+        {/* Spacer for sticky bar */}
+        <div className="h-16" />
+      </div>
       <SiteFooter />
     </>
   );

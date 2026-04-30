@@ -8,8 +8,8 @@ import { planTierOrder, type PlanTier } from "@/lib/ui/plan-copy";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
 import { Reveal } from "@/components/primitives/reveal";
-import { PillButton } from "@/components/primitives/pill-button";
 import { FaqList } from "@/components/primitives/faq";
+import { StyledLooksCarousel } from "@/components/marketing/styled-looks-carousel";
 
 export const metadata: Metadata = {
   title: "Wishi — Personalized Luxury Styling",
@@ -19,19 +19,20 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-const featuredStylist = {
+const featured = {
+  id: "karla",
   name: "Karla Welch",
   subtitle: "Wishi Co-founder\nCelebrity Stylist",
   image: "/img/stylist-karla.png",
 };
 
 const gridStylists = [
-  { name: "Zuajeiliy", tags: ["Elegant", "Minimal"], image: "/img/stylist-zuajeiliy.png" },
-  { name: "Connor", tags: ["Edgy", "Streetwear"], image: "/img/stylist-connor.png" },
-  { name: "Alia", tags: ["Classic", "Boho"], image: "/img/stylist-alia.png" },
-  { name: "Meredith", tags: ["Edgy", "Sexy"], image: "/img/stylist-meredith.png" },
-  { name: "Adriana", tags: ["Classic", "Minimal"], image: "/img/stylist-adriana-new.png" },
-  { name: "Daphne", tags: ["Chic", "Minimal"], image: "/img/stylist-daphne.png" },
+  { id: "zuajeiliy", name: "Zuajeiliy", tags: ["Elegant", "Minimal"], image: "/img/stylist-zuajeiliy.png" },
+  { id: "connor", name: "Connor", tags: ["Edgy", "Streetwear"], image: "/img/stylist-connor.png" },
+  { id: "alia", name: "Alia", tags: ["Classic", "Boho"], image: "/img/stylist-alia.png" },
+  { id: "meredith", name: "Meredith", tags: ["Edgy", "Sexy"], image: "/img/stylist-meredith.png" },
+  { id: "adriana", name: "Adriana", tags: ["Classic", "Minimal"], image: "/img/stylist-adriana-new.png" },
+  { id: "daphne", name: "Daphne", tags: ["Chic", "Minimal"], image: "/img/stylist-daphne.png" },
 ] as const;
 
 const steps = [
@@ -43,14 +44,14 @@ const steps = [
 
 const tierLandingLabel: Record<PlanTier, string> = {
   MINI: "New pieces to my closet",
-  MAJOR: "New looks for the season",
+  MAJOR: "New Looks for the season",
   LUX: "Take my wardrobe to the next level",
 };
 
 const tierAccent: Record<PlanTier, string> = {
   MINI: "bg-foreground",
-  MAJOR: "bg-burgundy",
-  LUX: "bg-[hsl(45,60%,45%)]",
+  MAJOR: "bg-[hsl(0,40%,30%)]",
+  LUX: "bg-[hsl(45,50%,60%)]",
 };
 
 const tierName: Record<PlanTier, string> = {
@@ -60,10 +61,13 @@ const tierName: Record<PlanTier, string> = {
 };
 
 const tierShortFeatures: Record<PlanTier, readonly string[]> = {
-  MINI: ["1:1 chat with your stylist", "2 Style Boards", "Revisions to get it just right"],
-  MAJOR: ["1:1 chat with your stylist", "5 Style Boards", "Closet styling & beauty advice"],
-  LUX: ["30-min intro video call", "Up to 8 Style Boards", "Unlimited messaging + priority shipping"],
+  MINI: ["1:1 chat with your stylist", "2 Style boards", "2 Revisions"],
+  MAJOR: ["1:1 chat with your stylist", "5 Style boards", "5 Revisions"],
+  LUX: [],
 };
+
+const tierLuxDescription =
+  "A highly personalized session with a dedicated stylist to take your wardrobe to the next level.";
 
 const styledLooks = [
   "/img/styled-look-1.png",
@@ -139,7 +143,7 @@ const faqs = [
   },
   {
     q: "Which styling plan should I choose?",
-    a: "Start with the Major or Lux plan. Major includes 5 personalized style boards. Lux offers 8 curated style boards and a 30-minute video call for a fully personalized experience.",
+    a: "Start with the Major or Lux plan. The Major includes 5 personalized style boards. The Lux offers 8 boards, 2 capsules, and a Zoom call for a truly personalized experience.",
   },
 ] as const;
 
@@ -157,8 +161,8 @@ const faqLd = {
 
 export default async function HomePage() {
   const [{ userId }, prices] = await Promise.all([auth(), getPlanPricesForUi()]);
-  const signedIn = userId !== null && userId !== undefined;
-  const matchHref = signedIn ? "/stylists" : "/match-quiz";
+  const isLoggedIn = userId !== null && userId !== undefined;
+  const matchHref = isLoggedIn ? "/stylists" : "/match-quiz";
   const priceFor: Record<PlanTier, number> = {
     MINI: prices.mini.displayDollars,
     MAJOR: prices.major.displayDollars,
@@ -172,27 +176,33 @@ export default async function HomePage() {
         suppressHydrationWarning
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd) }}
       />
-      <SiteHeader />
-      <main className="min-h-screen bg-background">
-        {/* Hero */}
+      <div className="min-h-screen bg-background">
+        <SiteHeader />
+
+        {/* ─── Hero ─── */}
         <section className="relative overflow-hidden">
-          <div className="mx-auto max-w-6xl px-6 md:px-10 py-20 md:py-28">
+          <div className="container max-w-6xl py-20 md:py-28">
             <div className="flex flex-col lg:flex-row items-center gap-12 lg:gap-16">
               <div className="flex-1 text-center lg:text-left">
                 <h1 className="font-display text-5xl md:text-6xl lg:text-7xl leading-[1.05] tracking-tight mb-6">
                   #1 App for Personalized Luxury Styling
                 </h1>
-                <p className="text-lg text-muted-foreground max-w-md mx-auto lg:mx-0 mb-8 leading-relaxed">
-                  Wishi connects you with style experts to help you shop online while
-                  incorporating what you already own to build your perfect wardrobe.
+                <p className="font-body text-lg text-muted-foreground max-w-md mx-auto lg:mx-0 mb-8 leading-relaxed">
+                  Wishi connects you with style experts to help you shop online while incorporating what you already own to build your perfect wardrobe.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start">
-                  <PillButton href="/match-quiz" variant="solid" size="lg">
+                  <Link
+                    href="/match-quiz"
+                    className="inline-flex items-center justify-center rounded-full bg-foreground text-background px-8 py-3.5 text-sm font-body font-medium hover:bg-foreground/90 transition-colors"
+                  >
                     Let&apos;s Get Styling
-                  </PillButton>
-                  <PillButton href="/how-it-works" variant="outline" size="lg">
+                  </Link>
+                  <Link
+                    href="/how-it-works"
+                    className="inline-flex items-center justify-center rounded-full border border-foreground text-foreground px-8 py-3.5 text-sm font-body font-medium hover:bg-foreground hover:text-background transition-colors"
+                  >
                     How It Works
-                  </PillButton>
+                  </Link>
                 </div>
               </div>
 
@@ -211,18 +221,18 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* Press Logos */}
-        <section className="bg-foreground py-10">
-          <div className="mx-auto max-w-6xl px-6 md:px-10">
-            <p className="text-center font-display text-xl md:text-2xl italic text-background/70 mb-6">
-              &ldquo;Best Personalized Styling App&rdquo;
-            </p>
-            <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-6">
-              {pressLogos.map((src, i) => (
+        {/* ─── Press Logos ─── */}
+        <section className="bg-foreground py-8 overflow-hidden">
+          <p className="text-center font-display text-xl md:text-2xl italic text-background/70 mb-6">
+            &ldquo;Best Personalized Styling App&rdquo;
+          </p>
+          <div className="relative">
+            <div className="flex animate-marquee w-max items-center gap-12">
+              {[...pressLogos, ...pressLogos].map((src, i) => (
                 <Image
-                  key={src}
+                  key={`${src}-${i}`}
                   src={src}
-                  alt={`Press logo ${i + 1}`}
+                  alt="Press logo"
                   width={120}
                   height={32}
                   className="h-6 md:h-8 w-auto object-contain opacity-70 brightness-0 invert"
@@ -233,95 +243,98 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* Meet the Stylists */}
-        <section className="py-16 md:py-24">
-          <div className="mx-auto max-w-6xl px-6 md:px-10">
+        {/* ─── Meet the Stylists ─── */}
+        <section className="container max-w-6xl py-16 md:py-24">
+          <Reveal>
+            <div className="text-center mb-12">
+              <h2 className="font-display text-3xl md:text-4xl mb-3">
+                Meet Our Wishi Stylists
+              </h2>
+              <p className="font-body text-base text-muted-foreground max-w-lg mx-auto">
+                Take our quiz to get matched with one of our expert stylists. From petite to plus size, our diverse team is here to style you for every occasion.
+              </p>
+            </div>
+          </Reveal>
+
+          {/* Bento grid: featured left + 2×3 right */}
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_1.5fr] gap-4">
+            {/* Featured stylist — tall left card. Loveable does NOT wrap this
+                in a link; it's a static visual lockup. */}
             <Reveal>
-              <div className="text-center mb-12">
-                <h2 className="font-display text-3xl md:text-4xl mb-3">
-                  Meet Our Wishi Stylists
-                </h2>
-                <p className="text-base text-muted-foreground max-w-lg mx-auto">
-                  Take our quiz to get matched with one of our expert stylists. From petite to
-                  plus size, our diverse team is here to style you for every occasion.
-                </p>
+              <div className="relative aspect-[3/4] md:aspect-auto md:h-full overflow-hidden rounded-2xl block">
+                <Image
+                  src={featured.image}
+                  alt={featured.name}
+                  fill
+                  sizes="(min-width: 768px) 40vw, 100vw"
+                  className="object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                <div className="absolute bottom-6 left-6 right-6">
+                  <h3 className="font-display text-3xl md:text-4xl text-white leading-tight">
+                    {featured.name}
+                  </h3>
+                  <p className="font-body text-sm text-white/80 mt-1 whitespace-pre-line">
+                    {featured.subtitle}
+                  </p>
+                </div>
               </div>
             </Reveal>
 
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_1.5fr] gap-4">
-              {/* Featured tall card — Karla */}
-              <Reveal>
-                <Link
-                  href="/stylists"
-                  className="relative aspect-[3/4] md:aspect-auto md:h-full overflow-hidden rounded-2xl block group"
-                >
-                  <Image
-                    src={featuredStylist.image}
-                    alt={featuredStylist.name}
-                    fill
-                    sizes="(min-width: 768px) 40vw, 100vw"
-                    className="object-cover transition-transform duration-500 group-hover:scale-[1.02]"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-                  <div className="absolute bottom-6 left-6 right-6">
-                    <h3 className="font-display text-3xl md:text-4xl text-white leading-tight">
-                      {featuredStylist.name}
-                    </h3>
-                    <p className="text-sm text-white/80 mt-1 whitespace-pre-line">
-                      {featuredStylist.subtitle}
-                    </p>
-                  </div>
-                </Link>
-              </Reveal>
-
-              {/* 2x3 right grid */}
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {gridStylists.map((s, i) => (
-                  <Reveal key={s.name} delay={i * 60}>
-                    <Link
-                      href="/stylists"
-                      className="relative aspect-[3/4] overflow-hidden rounded-2xl group block"
-                    >
-                      <Image
-                        src={s.image}
-                        alt={s.name}
-                        fill
-                        sizes="(min-width: 768px) 20vw, 50vw"
-                        className="object-cover transition-transform duration-500 group-hover:scale-105"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent" />
-                      <div className="absolute bottom-4 left-4 right-4">
-                        <h3 className="font-display text-xl md:text-2xl text-white italic">
-                          {s.name}
-                        </h3>
-                        <div className="flex flex-wrap gap-1.5 mt-1.5">
-                          {s.tags.map((tag) => (
-                            <span
-                              key={tag}
-                              className="rounded-full bg-white/20 backdrop-blur-sm px-3 py-0.5 text-xs text-white"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
+            {/* Right grid — 2 rows × 3 cols */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {gridStylists.map((s, i) => (
+                <Reveal key={s.name} delay={i * 80}>
+                  {/* Loveable links each card to /stylists/{slug}. Our DB
+                      doesn't carry these mock IDs, so the directory at
+                      /stylists is the closest functional equivalent — the
+                      JSX shape is identical. */}
+                  <Link
+                    href="/stylists"
+                    className="relative aspect-[3/4] overflow-hidden rounded-2xl group cursor-pointer block"
+                  >
+                    <Image
+                      src={s.image}
+                      alt={s.name}
+                      fill
+                      sizes="(min-width: 768px) 20vw, 50vw"
+                      className="object-cover transition-transform duration-500 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
+                    <div className="absolute bottom-4 left-4 right-4">
+                      <h3 className="font-display text-xl md:text-2xl text-white italic">
+                        {s.name}
+                      </h3>
+                      <div className="flex gap-1.5 mt-1.5">
+                        {s.tags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="rounded-full bg-white/20 backdrop-blur-sm px-3 py-0.5 text-xs font-body text-white"
+                          >
+                            {tag}
+                          </span>
+                        ))}
                       </div>
-                    </Link>
-                  </Reveal>
-                ))}
-              </div>
+                    </div>
+                  </Link>
+                </Reveal>
+              ))}
             </div>
+          </div>
 
-            <div className="text-center mt-10">
-              <PillButton href={matchHref} variant="solid" size="lg">
-                Find Your Best Match
-              </PillButton>
-            </div>
+          <div className="text-center mt-10">
+            <Link
+              href={matchHref}
+              className="inline-flex items-center justify-center rounded-full bg-foreground text-background px-8 py-3 text-sm font-body font-medium hover:bg-foreground/90 transition-colors"
+            >
+              Find Your Best Match
+            </Link>
           </div>
         </section>
 
-        {/* How it Works */}
-        <section className="bg-muted/30 border-y border-border">
-          <div className="mx-auto max-w-5xl px-6 md:px-10 py-14 md:py-20">
+        {/* ─── How It Works ─── */}
+        <section>
+          <div className="container max-w-5xl py-14 md:py-20">
             <Reveal>
               <h2 className="font-display text-3xl md:text-4xl text-center mb-12">
                 How it Works
@@ -329,11 +342,11 @@ export default async function HomePage() {
             </Reveal>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8">
-              {steps.map((step, i) => (
-                <Reveal key={step.num} delay={i * 80}>
+              {steps.map((step) => (
+                <Reveal key={step.num}>
                   <div className="text-center">
                     <p className="font-display text-3xl mb-2">{step.num}</p>
-                    <p className="text-sm text-foreground/80 mb-5 leading-snug min-h-[40px]">
+                    <p className="font-body text-sm text-foreground/80 mb-5 leading-snug min-h-[40px]">
                       {step.title}
                     </p>
                     <div className="rounded-xl overflow-hidden border border-border bg-background shadow-sm">
@@ -352,92 +365,100 @@ export default async function HomePage() {
             </div>
 
             <div className="text-center mt-10">
-              <PillButton href="/how-it-works" variant="outline" size="md">
+              <Link
+                href="/how-it-works"
+                className="inline-flex items-center justify-center rounded-full border border-foreground text-foreground px-8 py-3 text-sm font-body font-medium hover:bg-foreground hover:text-background transition-colors"
+              >
                 Learn More
-              </PillButton>
+              </Link>
             </div>
           </div>
         </section>
 
-        {/* Pricing teaser */}
-        <section className="py-16 md:py-24">
-          <div className="mx-auto max-w-5xl px-6 md:px-10">
-            <Reveal>
-              <h2 className="font-display text-3xl md:text-4xl text-center mb-4">
-                A Perfect Fit For Everyone
-              </h2>
-            </Reveal>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
-              {planTierOrder.map((tier, i) => (
-                <Reveal key={tier} delay={i * 80}>
-                  <div className="rounded-xl border border-border bg-card flex flex-col h-full hover:shadow-md transition-shadow overflow-hidden">
-                    <div className={`h-1.5 w-full ${tierAccent[tier]}`} />
-                    <div className="p-8 flex flex-col flex-1">
-                      <p className="text-xs text-foreground uppercase tracking-wider text-center mb-3 font-medium">
-                        {tierLandingLabel[tier]}
-                      </p>
-                      <h3 className="font-display text-2xl text-center mb-2">{tierName[tier]}</h3>
-                      <p className="font-display text-4xl text-center mb-6">{`$${priceFor[tier]}`}</p>
-                      <ul className="space-y-3 flex-1">
+        {/* ─── Pricing ─── */}
+        <section className="container max-w-5xl py-16 md:py-24">
+          <Reveal>
+            <h2 className="font-display text-3xl md:text-4xl text-center mb-4">
+              A Perfect Fit For Everyone
+            </h2>
+          </Reveal>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
+            {planTierOrder.map((tier) => (
+              <Reveal key={tier}>
+                <div className="rounded-xl border border-border bg-card flex flex-col h-full hover:shadow-md transition-shadow overflow-hidden">
+                  <div className={`h-1.5 w-full ${tierAccent[tier]}`} />
+                  <div className="p-8 flex flex-col flex-1">
+                    <p className="font-body text-sm text-foreground text-center mb-3">
+                      {tierLandingLabel[tier]}
+                    </p>
+                    <h3 className="font-display text-2xl text-center mb-2">{tierName[tier]}</h3>
+                    <p className="font-display text-4xl text-center mb-6">{`$${priceFor[tier]}`}</p>
+
+                    {tierShortFeatures[tier].length > 0 ? (
+                      <div className="space-y-3 flex-1">
                         {tierShortFeatures[tier].map((f) => (
-                          <li
-                            key={f}
-                            className="text-sm text-foreground flex items-start gap-2"
-                          >
-                            <span className="mt-1 h-1.5 w-1.5 rounded-full bg-foreground shrink-0" />
+                          <p key={f} className="font-body text-sm text-foreground">
                             {f}
-                          </li>
+                          </p>
                         ))}
-                      </ul>
-                      <PillButton
-                        href="/pricing"
-                        variant="outline"
-                        size="md"
-                        className="mt-8 w-full"
-                      >
-                        Learn More
-                      </PillButton>
-                    </div>
+                      </div>
+                    ) : (
+                      <p className="font-body text-sm text-foreground flex-1">
+                        {tierLuxDescription}
+                      </p>
+                    )}
+
+                    <Link
+                      href="/pricing"
+                      className="mt-8 inline-flex items-center justify-center rounded-lg border border-foreground text-foreground px-6 py-2.5 text-sm font-body font-medium hover:bg-foreground hover:text-background transition-colors text-center"
+                    >
+                      Learn More
+                    </Link>
                   </div>
-                </Reveal>
-              ))}
-            </div>
+                </div>
+              </Reveal>
+            ))}
           </div>
         </section>
 
-        {/* #StyledByWishi */}
-        <section className="bg-muted/30 border-y border-border">
-          <div className="mx-auto max-w-6xl px-6 md:px-10 py-16 md:py-24">
+        {/* ─── #StyledByWishi ─── */}
+        <section className="bg-muted/30 border-t border-border">
+          <div className="container max-w-6xl py-16 md:py-24">
             <Reveal>
               <div className="text-center mb-12">
                 <h2 className="font-display text-3xl md:text-4xl mb-3">
                   #StyledByWishi
                 </h2>
-                <p className="text-base text-muted-foreground max-w-lg mx-auto">
-                  Our stylists have access to every brand in the world, from designer to high
-                  street. Best of all, they can style you from your own closet!
+                <p className="font-body text-base text-muted-foreground max-w-lg mx-auto">
+                  Our stylists have access to every brand in the world, from designer to high street. Best of all, they can style you from your own closet!
                 </p>
               </div>
             </Reveal>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6">
+
+            {/* Desktop: 4-up grid, fixed 24px gap */}
+            <div className="hidden md:grid grid-cols-4 gap-[24px] max-w-full mx-auto">
               {styledLooks.map((src, i) => (
-                <Reveal key={src} delay={i * 60}>
-                  <div className="relative aspect-[601/712] overflow-hidden rounded-xl">
-                    <Image
-                      src={src}
-                      alt={`Styled look ${i + 1}`}
-                      fill
-                      sizes="(min-width: 768px) 25vw, 50vw"
-                      className="object-cover hover:scale-105 transition-transform duration-500"
-                    />
-                  </div>
-                </Reveal>
+                <div key={src} className="relative aspect-[601/712] overflow-hidden rounded-xl">
+                  <Image
+                    src={src}
+                    alt={`Styled look ${i + 1}`}
+                    fill
+                    sizes="(min-width: 768px) 25vw, 50vw"
+                    className="object-cover"
+                    loading="lazy"
+                  />
+                </div>
               ))}
             </div>
+
+            {/* Mobile: horizontal carousel with snap + dots */}
+            <StyledLooksCarousel looks={styledLooks} />
+
             <div className="text-center mt-12">
               <Link
                 href="/feed"
-                className="inline-flex items-center justify-center rounded-[4px] border border-foreground text-foreground px-8 py-3 text-sm hover:bg-foreground hover:text-background transition-colors"
+                className="inline-flex items-center justify-center rounded-[4px] border border-foreground text-foreground px-8 py-3 text-sm font-body font-medium hover:bg-foreground hover:text-background transition-colors"
               >
                 View more looks
               </Link>
@@ -445,7 +466,7 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* Concierge Banner */}
+        {/* ─── Concierge Banner ─── */}
         <section className="bg-[hsl(30,30%,93%)]">
           <div className="grid grid-cols-1 md:grid-cols-2 items-center gap-0">
             <div className="relative h-[400px] md:h-[520px] overflow-hidden">
@@ -459,15 +480,14 @@ export default async function HomePage() {
             </div>
             <div className="text-center px-8 py-16 md:py-0">
               <h2 className="font-display text-3xl md:text-4xl mb-4">Chat with us.</h2>
-              <p className="text-sm text-foreground max-w-sm mx-auto mb-8 leading-relaxed">
-                Schedule a complimentary consultation with Wishi Concierge to discuss your style
-                goals and find a plan tailored to you.
+              <p className="font-body text-sm text-muted-foreground max-w-sm mx-auto mb-8 leading-relaxed">
+                Schedule a complimentary consultation with Wishi Concierge to discuss your style goals and find a plan tailored to you.
               </p>
               <a
                 href="https://calendly.com/ninane-wishi/wishi-consultation?month=2026-04"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center border border-foreground rounded-[4px] px-8 py-3 text-sm hover:bg-foreground hover:text-background transition-colors"
+                className="inline-flex items-center justify-center border border-foreground rounded-none px-8 py-3 font-body text-sm hover:bg-foreground hover:text-background transition-colors"
               >
                 Schedule consultation
               </a>
@@ -475,56 +495,72 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* Reviews */}
-        <section className="py-16 md:py-24">
-          <div className="mx-auto max-w-6xl px-6 md:px-10">
+        {/* ─── Reviews ─── */}
+        <section className="py-16 md:py-24 overflow-hidden">
+          <div className="container max-w-5xl">
             <Reveal>
               <h2 className="font-display text-3xl md:text-4xl text-center mb-12">
                 Our Clients Tell It How It Is
               </h2>
             </Reveal>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {reviews.map((r, i) => (
-                <Reveal key={r.author} delay={i * 80}>
-                  <div className="flex flex-col h-full border border-border rounded-xl overflow-hidden bg-card">
-                    {r.photo && (
-                      <div className="relative aspect-[4/3] overflow-hidden">
-                        <Image
-                          src={r.photo}
-                          alt={`${r.author}'s look`}
-                          fill
-                          sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
-                          className="object-cover"
+          </div>
+
+          <div className="relative">
+            <div className="flex animate-marquee gap-8" style={{ width: "max-content" }}>
+              {[...reviews, ...reviews].map((r, idx) => (
+                <div
+                  key={`${r.author}-${idx}`}
+                  className="flex flex-col w-[320px] shrink-0 border border-border rounded-xl overflow-hidden"
+                >
+                  {r.photo && (
+                    <div className="relative aspect-[4/3] overflow-hidden">
+                      <Image
+                        src={r.photo}
+                        alt={`${r.author}'s look`}
+                        fill
+                        sizes="320px"
+                        className="object-cover"
+                        loading="lazy"
+                      />
+                    </div>
+                  )}
+                  <div className="p-5 flex flex-col flex-1">
+                    <div className="flex gap-1 mb-3">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <StarIcon
+                          key={i}
+                          className="h-4 w-4 fill-foreground text-foreground"
                         />
-                      </div>
-                    )}
-                    <div className="p-5 flex flex-col flex-1">
-                      <div className="flex gap-1 mb-3">
-                        {Array.from({ length: 5 }).map((_, idx) => (
-                          <StarIcon
-                            key={idx}
-                            className="h-4 w-4 fill-foreground text-foreground"
-                          />
-                        ))}
-                      </div>
-                      <p className="text-sm text-foreground leading-relaxed flex-1 italic">
-                        &ldquo;{r.text}&rdquo;
+                      ))}
+                    </div>
+                    <p className="font-body text-sm text-foreground leading-relaxed flex-1 italic line-clamp-4">
+                      &ldquo;{r.text}&rdquo;
+                    </p>
+                    <div className="mt-3 pt-3 border-t border-border">
+                      <p className="font-display text-sm">{r.author}</p>
+                      <p className="font-body text-xs text-muted-foreground">
+                        Styled by {r.stylist}
                       </p>
-                      <div className="mt-4 pt-4 border-t border-border">
-                        <p className="font-display text-base">{r.author}</p>
-                        <p className="text-xs text-muted-foreground">Styled by {r.stylist}</p>
-                      </div>
                     </div>
                   </div>
-                </Reveal>
+                </div>
               ))}
             </div>
           </div>
+
+          <div className="container max-w-5xl mt-10 text-center">
+            <Link
+              href="/reviews"
+              className="inline-flex items-center justify-center rounded-[4px] border border-foreground text-foreground px-8 py-3 text-sm font-body font-medium hover:bg-foreground hover:text-background transition-colors"
+            >
+              Read More Reviews
+            </Link>
+          </div>
         </section>
 
-        {/* FAQ */}
+        {/* ─── FAQ ─── */}
         <section className="bg-muted/30 border-y border-border">
-          <div className="mx-auto max-w-3xl px-6 md:px-10 py-16 md:py-24">
+          <div className="container max-w-3xl py-16 md:py-24">
             <Reveal>
               <h2 className="font-display text-3xl md:text-4xl text-center mb-12">
                 Your Questions, Answered
@@ -534,24 +570,26 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* Final CTA */}
-        <section className="py-20 md:py-28">
-          <div className="mx-auto max-w-3xl px-6 md:px-10 text-center">
-            <Reveal>
-              <h2 className="font-display text-3xl md:text-5xl mb-4">
-                Ready to Transform Your Wardrobe?
-              </h2>
-              <p className="text-base text-muted-foreground max-w-md mx-auto mb-8">
-                Take a quick style quiz and get matched with a stylist who truly gets your vibe.
-              </p>
-              <PillButton href="/match-quiz" variant="solid" size="lg">
-                Let&apos;s Get Styling
-              </PillButton>
-            </Reveal>
-          </div>
+        {/* ─── Final CTA ─── */}
+        <section className="container max-w-3xl py-20 md:py-28 text-center">
+          <Reveal>
+            <h2 className="font-display text-3xl md:text-5xl mb-4">
+              Ready to Transform Your Wardrobe?
+            </h2>
+            <p className="font-body text-base text-muted-foreground max-w-md mx-auto mb-8">
+              Take a quick style quiz and get matched with a stylist who truly gets your vibe.
+            </p>
+            <Link
+              href="/match-quiz"
+              className="inline-flex items-center justify-center rounded-full bg-foreground text-background px-10 py-4 text-sm font-body font-medium hover:bg-foreground/90 transition-colors"
+            >
+              Let&apos;s Get Styling
+            </Link>
+          </Reveal>
         </section>
-      </main>
-      <SiteFooter />
+
+        <SiteFooter />
+      </div>
     </>
   );
 }

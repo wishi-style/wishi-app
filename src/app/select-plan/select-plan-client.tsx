@@ -157,6 +157,7 @@ interface Props {
   stylistId: string | null;
   stylistName: string | null;
   stylistAvatarUrl: string | null;
+  initialPlan?: "MINI" | "MAJOR" | "LUX";
 }
 
 export function SelectPlanClient({
@@ -164,8 +165,11 @@ export function SelectPlanClient({
   stylistId,
   stylistName,
   stylistAvatarUrl,
+  initialPlan,
 }: Props) {
-  const [selected, setSelected] = useState<"MINI" | "MAJOR" | "LUX">("MAJOR");
+  const [selected, setSelected] = useState<"MINI" | "MAJOR" | "LUX">(
+    initialPlan ?? "MAJOR",
+  );
 
   const planByType = new Map(plans.map((p) => [p.type, p]));
   const selectedCopy = COPY.find((c) => c.type === selected)!;

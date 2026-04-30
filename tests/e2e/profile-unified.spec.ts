@@ -79,3 +79,154 @@ test("§3.6 — /profile renders Loveable header with firstName + loyalty tier +
     await cleanupE2EUserByEmail(email);
   }
 });
+
+test("§3.6 — Items toolbar: grid-size toggle + Select mode + count", async ({
+  page,
+}) => {
+  const ts = Date.now();
+  const email = `p2-profile-tb-${ts}@e2e.wishi.test`;
+  await ensureClientUser({
+    clerkId: `e2e_p2_profile_tb_${ts}`,
+    email,
+    firstName: "Toolbar",
+    lastName: "Tester",
+  });
+  try {
+    await signInAsClient(page, email);
+    await page.goto("/profile");
+    await page.waitForLoadState("networkidle");
+
+    // Loveable Profile.tsx:574-580 — left grid-size button.
+    const gridButton = page.getByRole("button", {
+      name: /Switch to (compact|normal) grid/,
+    });
+    await expect(gridButton).toBeVisible();
+
+    // Right side count + Select. With zero closet items the label reads "0 Items".
+    await expect(page.getByText(/^\s*0\s+Items\s*$/i)).toBeVisible();
+    const selectBtn = page.getByRole("button", { name: "Select", exact: true });
+    await expect(selectBtn).toBeVisible();
+
+    // Entering select mode swaps Select → Cancel.
+    await selectBtn.click();
+    await expect(
+      page.getByRole("button", { name: "Cancel", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Select", exact: true }),
+    ).toHaveCount(0);
+  } finally {
+    await cleanupE2EUserByEmail(email);
+  }
+});
+
+test("§3.6 — Looks tab uses pill sub-tabs (Style boards / Favorites)", async ({
+  page,
+}) => {
+  const ts = Date.now();
+  const email = `p2-profile-looks-${ts}@e2e.wishi.test`;
+  await ensureClientUser({
+    clerkId: `e2e_p2_profile_looks_${ts}`,
+    email,
+    firstName: "Looks",
+    lastName: "Tester",
+  });
+  try {
+    await signInAsClient(page, email);
+    await page.goto("/profile");
+    await page.waitForLoadState("networkidle");
+
+    await page.getByRole("tab", { name: "Looks" }).click();
+
+    // Loveable Profile.tsx:1042-1064 — pill buttons, not underline tabs.
+    const styleboardsBtn = page.getByRole("button", {
+      name: "Style boards",
+      exact: true,
+    });
+    const favoritesBtn = page.getByRole("button", {
+      name: "Favorites",
+      exact: true,
+    });
+    await expect(styleboardsBtn).toBeVisible();
+    await expect(favoritesBtn).toBeVisible();
+
+    // Active pill: bg-foreground / text-background classes (Tailwind v4).
+    await expect(styleboardsBtn).toHaveClass(/bg-foreground/);
+    await expect(favoritesBtn).not.toHaveClass(/bg-foreground/);
+
+    await favoritesBtn.click();
+    await expect(favoritesBtn).toHaveClass(/bg-foreground/);
+    await expect(styleboardsBtn).not.toHaveClass(/bg-foreground/);
+  } finally {
+    await cleanupE2EUserByEmail(email);
+  }
+});
+
+test("guests on /onboarding redirect to /match-quiz (Loveable parity)", async ({
+  request,
+}) => {
+  const res = await request.get("/onboarding", { maxRedirects: 0 });
+  expect([302, 307]).toContain(res.status());
+  expect(res.headers()["location"]).toMatch(/\/match-quiz/);
+});
+
+test("§3.6 — clicking a closet tile opens the ClosetItemDialog detail view", async ({
+  page,
+}) => {
+  const ts = Date.now();
+  const email = `p2-profile-dlg-${ts}@e2e.wishi.test`;
+  const user = await ensureClientUser({
+    clerkId: `e2e_p2_profile_dlg_${ts}`,
+    email,
+    firstName: "Dialog",
+    lastName: "Tester",
+  });
+
+  // Seed a single closet item we can click on. Raw SQL keeps the spec
+  // independent of any closet upload helper.
+  const itemId = `ci_${ts}`;
+  const { Pool } = await import("pg");
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    await pool.query(
+      `INSERT INTO closet_items
+         (id, user_id, s3_key, url, name, designer, category, colors, size, material, season, created_at, updated_at)
+       VALUES ($1, $2, 'test/key.jpg', 'https://example.com/img.jpg',
+               'Mesh Polo Shirt', 'Ralph Lauren', 'Tops', $3, 'M',
+               'Cotton', 'All Season', NOW(), NOW())`,
+      [itemId, user.id, ["Grey"]],
+    );
+
+    await signInAsClient(page, email);
+    await page.goto("/profile");
+    await page.waitForLoadState("networkidle");
+
+    // Click the seeded tile (outside select-mode → opens dialog).
+    await page
+      .getByRole("button")
+      .filter({ hasText: "Ralph Lauren" })
+      .first()
+      .click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    // Dialog title renders the item name.
+    await expect(
+      dialog.getByRole("heading", { name: "Mesh Polo Shirt" }),
+    ).toBeVisible();
+    // Detail chips render Color/Size/Material/Season values inside the dialog.
+    await expect(dialog.getByText("Grey", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("Cotton", { exact: true })).toBeVisible();
+    // Action buttons render: Share / Download / Edit / Delete.
+    await expect(
+      dialog.getByRole("button", { name: "Share", exact: true }),
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole("button", { name: "Delete", exact: true }),
+    ).toBeVisible();
+  } finally {
+    await pool.query(`DELETE FROM closet_items WHERE id = $1`, [itemId]);
+    await pool.end();
+    await cleanupE2EUserByEmail(email);
+  }
+});
