@@ -6,8 +6,15 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import type { ClosetItem } from "@/generated/prisma/client";
 
+export interface OutfitPreview {
+  id: string;
+  title: string;
+  image: string | null;
+}
+
 interface Props {
   item: ClosetItem | null;
+  outfits: OutfitPreview[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDelete: (id: string) => Promise<void> | void;
@@ -27,14 +34,21 @@ function formatDateAdded(d: Date | string): string {
  * mode. Two-column dialog: contained image on the left, brand / name /
  * detail chips / actions on the right.
  *
- * Differences vs Loveable source:
- *   - "Outfits this is in" carousel is omitted (would require an extra
- *     boardItems→board lookup per open). Tracked under WISHI-REBUILD-PLAN
- *     Phase 11 polish.
+ * Difference vs Loveable source:
  *   - Edit button keeps Loveable's "coming soon" toast since the inline
  *     edit form isn't ported yet.
+ *
+ * Outfits ("In N Outfits" carousel) are pre-fetched server-side in
+ * profile/page.tsx via a single batched BoardItem lookup, so opening a
+ * tile is instant.
  */
-export function ClosetItemDialog({ item, open, onOpenChange, onDelete }: Props) {
+export function ClosetItemDialog({
+  item,
+  outfits,
+  open,
+  onOpenChange,
+  onDelete,
+}: Props) {
   if (!item) return null;
 
   function handleShare() {
@@ -137,6 +151,38 @@ export function ClosetItemDialog({ item, open, onOpenChange, onDelete }: Props) 
             <p className="mb-8 font-body text-xs text-muted-foreground">
               Added {formatDateAdded(item.createdAt)}
             </p>
+
+            {outfits.length > 0 && (
+              <div className="mb-8">
+                <h3 className="mb-4 font-body text-xs uppercase tracking-widest text-muted-foreground">
+                  In {outfits.length}{" "}
+                  {outfits.length === 1 ? "Outfit" : "Outfits"}
+                </h3>
+                <div className="flex flex-wrap gap-3">
+                  {outfits.map((outfit) => (
+                    <div key={outfit.id} className="group w-20">
+                      <div className="aspect-square overflow-hidden rounded-xl border border-border bg-muted transition-colors group-hover:border-foreground">
+                        {outfit.image ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={outfit.image}
+                            alt={outfit.title}
+                            className="h-full w-full object-cover object-top"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground">
+                            No preview
+                          </div>
+                        )}
+                      </div>
+                      <p className="mt-1.5 truncate text-center font-body text-[11px] text-muted-foreground">
+                        {outfit.title}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="mt-auto flex flex-wrap gap-2 border-t border-border pt-4">
               {actions.map((action) => {

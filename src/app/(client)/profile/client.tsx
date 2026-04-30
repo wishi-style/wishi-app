@@ -47,10 +47,17 @@ interface Look {
   thumbnailUrl: string | null;
 }
 
+interface OutfitPreview {
+  id: string;
+  title: string;
+  image: string | null;
+}
+
 interface Props {
   initialItems: ClosetItem[];
   looks: Look[];
   collections: CollectionWithPreview[];
+  outfitsByItemId: Record<string, OutfitPreview[]>;
 }
 
 // Loveable Profile.tsx renders the Category filter as a top horizontal
@@ -95,6 +102,7 @@ export function ProfilePageClient({
   initialItems,
   looks,
   collections: initialCollections,
+  outfitsByItemId,
 }: Props) {
   const [items, setItems] = useState(initialItems);
   const [collections, setCollections] = useState(initialCollections);
@@ -709,6 +717,7 @@ export function ProfilePageClient({
 
       <ClosetItemDialog
         item={detailItem}
+        outfits={detailItem ? outfitsByItemId[detailItem.id] ?? [] : []}
         open={detailItem !== null}
         onOpenChange={(open) => {
           if (!open) setDetailItem(null);

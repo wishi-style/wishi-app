@@ -79,6 +79,59 @@ export default async function ProfilePage() {
       photoByBoard.get(fb.board.id) ?? itemImageByBoard.get(fb.board.id) ?? null,
   }));
 
+  // "In N Outfits" carousel inside ClosetItemDialog. For each closet item,
+  // collect the styleboards it appears on (boardItems → board) and pick the
+  // first available thumbnail. Single batched query covers every item, so
+  // opening a tile is instant — no per-open round-trip.
+  const closetIds = closetItems.map((c) => c.id);
+  const outfitsByItemId: Record<
+    string,
+    { id: string; title: string; image: string | null }[]
+  > = {};
+  if (closetIds.length > 0) {
+    const itemBoardLinks = await prisma.boardItem.findMany({
+      where: {
+        closetItemId: { in: closetIds },
+        board: { type: "STYLEBOARD", sentAt: { not: null } },
+      },
+      select: {
+        closetItemId: true,
+        board: {
+          select: {
+            id: true,
+            title: true,
+            photos: {
+              orderBy: { orderIndex: "asc" },
+              take: 1,
+              select: { url: true },
+            },
+            items: {
+              where: { webItemImageUrl: { not: null } },
+              orderBy: { orderIndex: "asc" },
+              take: 1,
+              select: { webItemImageUrl: true },
+            },
+          },
+        },
+      },
+    });
+    for (const link of itemBoardLinks) {
+      if (!link.closetItemId || !link.board) continue;
+      const list = outfitsByItemId[link.closetItemId] ?? [];
+      // De-dup by board id — a closet item can be added multiple times to
+      // the same board via repeat BoardItems.
+      if (list.some((o) => o.id === link.board.id)) continue;
+      const image =
+        link.board.photos[0]?.url ?? link.board.items[0]?.webItemImageUrl ?? null;
+      list.push({
+        id: link.board.id,
+        title: link.board.title ?? "Look",
+        image,
+      });
+      outfitsByItemId[link.closetItemId] = list;
+    }
+  }
+
   const displayName = `${user.firstName}'s Closet`;
   const initials = initialsFor(user.firstName, user.lastName);
 
@@ -116,6 +169,7 @@ export default async function ProfilePage() {
           initialItems={closetItems}
           looks={looks}
           collections={collections}
+          outfitsByItemId={outfitsByItemId}
         />
       </div>
     </div>
