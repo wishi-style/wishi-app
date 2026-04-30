@@ -17,6 +17,14 @@ const CHAT_STATUSES = [
   "PENDING_END",
   "PENDING_END_APPROVAL",
   "END_DECLINED",
+  // Loveable's StylingRoom renders for closed sessions too — the chat goes
+  // read-only and the composer is replaced with a Session Recap + Book a new
+  // session row. Without these in the allowlist, our /sessions/[id]/chat
+  // redirects to /sessions/[id] (a non-Loveable detail page) and the user
+  // never sees the recap CTA.
+  "COMPLETED",
+  "CANCELLED",
+  "REASSIGNED",
 ];
 
 /**

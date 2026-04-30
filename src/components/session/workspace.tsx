@@ -397,6 +397,13 @@ export function SessionWorkspace({
                 sessionStatus={sessionStatus}
                 viewerRole={viewerRole}
                 hideHeader
+                bookCtaHref={bookCtaHref}
+                stylistFirstName={stylistFirstName}
+                recapHref={
+                  viewerRole === "CLIENT"
+                    ? `/sessions/${sessionId}/end-session`
+                    : null
+                }
               />
             </div>
             {suggestedRepliesEnabled && viewerRole === "STYLIST" ? (
