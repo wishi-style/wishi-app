@@ -4,8 +4,38 @@ import { notFound } from "next/navigation";
 import { listInspirationPhotos } from "@/lib/boards/inspiration.service";
 import { listClosetItems } from "@/lib/boards/closet.service";
 import { mapLoyalty } from "@/lib/stylists/client-profile";
-import { getProduct } from "@/lib/inventory/inventory-client";
+import { getProduct, searchProducts } from "@/lib/inventory/inventory-client";
+import type { ProductSearchDoc } from "@/lib/inventory/types";
 import { StyleboardBuilder } from "./builder";
+
+type LoveableCategory = "all" | "tops" | "bottoms" | "outerwear" | "accessories" | "shoes";
+
+// Map tastegraph free-text category_slug to Loveable's 5 chrome buckets.
+function bucketCategory(slug: string | null | undefined): Exclude<LoveableCategory, "all"> {
+  const s = (slug ?? "").toLowerCase();
+  if (/coat|jacket|outerwear|sweater|knitwear|cardigan|blazer/.test(s)) return "outerwear";
+  if (/pant|jean|trouser|skirt|short|legging/.test(s)) return "bottoms";
+  if (/shoe|boot|sandal|sneaker|loafer|heel|flat/.test(s)) return "shoes";
+  if (/bag|belt|scarf|hat|jewelry|earring|necklace|bracelet|sunglass|wallet/.test(s)) return "accessories";
+  return "tops";
+}
+
+function adaptProductDoc(doc: ProductSearchDoc) {
+  return {
+    id: doc.id,
+    image: doc.primary_image_url ?? doc.image_urls?.[0] ?? "",
+    brand: doc.brand_name,
+    name: doc.canonical_name,
+    price: `$${Math.round(doc.min_price)}`,
+    category: bucketCategory(doc.category_slug),
+    colors: doc.color_families ?? [],
+    sizes: doc.available_sizes ?? [],
+    retailer: doc.listings?.[0]?.merchant_name,
+    retailerUrl: doc.listings?.[0]?.product_url,
+    availability: doc.in_stock ? ("in-stock" as const) : undefined,
+    designer: doc.brand_name,
+  };
+}
 
 export const dynamic = "force-dynamic";
 
@@ -119,8 +149,22 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
     ];
   }
 
-  const cartProductDocs = await Promise.all(
-    cartRows.map((c) => getProduct(c.inventoryProductId)),
+  // Loveable's Shop / Store / Cart tabs all want hydrated tastegraph product
+  // shapes. Fetch the catalog page (Shop) + direct-sale fan-out (Store) +
+  // cart row hydration (Cart) in parallel. Filters that tastegraph doesn't
+  // support — preorder/sale/final-sale availability, inspo styles, body
+  // types, season — stay in the chrome but no-op against this data set;
+  // those are deferred to the inventory project.
+  const [shopSearch, storeProductDocs, cartProductDocs] = await Promise.all([
+    searchProducts({ pageSize: 60 }),
+    Promise.all(
+      directSaleProductIds.slice(0, 60).map((id) => getProduct(id)),
+    ),
+    Promise.all(cartRows.map((c) => getProduct(c.inventoryProductId))),
+  ]);
+  const shopInventoryItems = shopSearch.results.map(adaptProductDoc);
+  const storeInventoryItems = storeProductDocs.flatMap((doc) =>
+    doc ? [adaptProductDoc(doc)] : [],
   );
 
   const clientName =
@@ -142,24 +186,15 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
     image: c.url,
     brand: c.designer ?? "Closet",
     name: c.name ?? "",
-    category: "tops" as const,
+    category: bucketCategory(c.category),
     colors: c.colors ?? [],
     designer: c.designer ?? undefined,
+    season: (c.season?.toLowerCase() as "spring" | "summer" | "fall" | "winter" | undefined) ?? undefined,
   }));
   const cartInventoryItems = cartRows.flatMap((c, i) => {
     const doc = cartProductDocs[i];
     if (!doc) return [];
-    return [
-      {
-        id: c.id,
-        image: doc.primary_image_url ?? doc.image_urls?.[0] ?? "",
-        brand: doc.brand_name,
-        name: doc.canonical_name,
-        price: `$${Math.round(doc.min_price)}`,
-        category: "tops" as const,
-        colors: [] as string[],
-      },
-    ];
+    return [{ ...adaptProductDoc(doc), id: c.id }];
   });
   const inspirationInventoryItems = inspiration.map((p) => ({
     id: p.id,
@@ -202,14 +237,14 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
       clientSizesByCategory={clientSizesByCategory}
       clientBudgetsByCategory={clientBudgetsByCategory}
       directSaleProductIds={directSaleProductIds}
-      shopItems={[]}
+      shopItems={shopInventoryItems}
       closetItems={closetInventoryItems}
       cartItems={cartInventoryItems}
       purchasedItems={[]}
       inspirationItems={inspirationInventoryItems}
       previousMoodBoardItems={[]}
       previousStyleBoardItems={[]}
-      storeItems={[]}
+      storeItems={storeInventoryItems}
       clientProfile={clientProfile}
     />
   );
