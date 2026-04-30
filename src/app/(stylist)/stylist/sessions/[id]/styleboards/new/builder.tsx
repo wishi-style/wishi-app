@@ -55,6 +55,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -81,6 +87,25 @@ import type {
 } from "@/lib/inventory/types";
 
 type Tab = "inventory" | "closet" | "inspiration" | "previous";
+type ClosetSubTab = "all" | "cart" | "purchased";
+type PreviousSubTab = "style" | "mood";
+
+/** Hydrated cart row used by the closet "Cart" sub-tab. */
+export interface CartItemView {
+  id: string;
+  inventoryProductId: string;
+  imageUrl: string | null;
+  name: string;
+  brand: string;
+  priceCents: number;
+}
+
+interface PreviousMoodboardItem {
+  id: string;
+  boardId: string;
+  boardTitle: string | null;
+  imageUrl: string | null;
+}
 
 interface PreviousLookItem {
   id: string;
@@ -108,6 +133,7 @@ interface Props {
   clientLoyaltyTier: ViewLoyaltyTier;
   initialItems: BoardItem[];
   closetItems: ClosetItem[];
+  cartItems: CartItemView[];
   inspiration: InspirationPhoto[];
 }
 
@@ -182,6 +208,10 @@ const PRICE_PRESETS: { key: "any" | "u250" | "250-1000" | "1000+"; label: string
   { key: "1000+", label: "$1K+" },
 ];
 
+function toggle<T>(arr: T[], val: T, setter: (next: T[]) => void) {
+  setter(arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val]);
+}
+
 function toCanvasItem(item: BoardItem, fallbackIndex: number): CanvasItem {
   const crop =
     item.cropTop != null ||
@@ -221,6 +251,7 @@ export function StyleboardBuilder({
   clientLoyaltyTier,
   initialItems,
   closetItems,
+  cartItems,
   inspiration,
 }: Props) {
   const router = useRouter();
@@ -261,8 +292,22 @@ export function StyleboardBuilder({
   const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set());
   const [cropTargetId, setCropTargetId] = useState<string | null>(null);
   const [previousScope, setPreviousScope] = useState<"all" | "client">("client");
+  const [previousSubTab, setPreviousSubTab] = useState<PreviousSubTab>("style");
   const [previousItems, setPreviousItems] = useState<PreviousLookItem[]>([]);
+  const [previousMoodboards, setPreviousMoodboards] = useState<
+    PreviousMoodboardItem[]
+  >([]);
   const [previousLoading, setPreviousLoading] = useState(false);
+
+  const [closetSubTab, setClosetSubTab] = useState<ClosetSubTab>("all");
+  const [closetSelectedColors, setClosetSelectedColors] = useState<string[]>([]);
+  const [closetSelectedDesigners, setClosetSelectedDesigners] = useState<
+    string[]
+  >([]);
+  const [closetSelectedSeasons, setClosetSelectedSeasons] = useState<string[]>(
+    [],
+  );
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
 
   // Advanced filter state — populated from /api/products/filters, used by
   // runInventorySearch to narrow the tastegraph query.
@@ -420,21 +465,33 @@ export function StyleboardBuilder({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Fetch previous looks when the tab opens or scope toggles.
+  // Fetch previous boards when the tab opens or scope/sub-tab toggles.
   useEffect(() => {
     if (tab !== "previous") return;
     let alive = true;
     setPreviousLoading(true);
     const qs = previousScope === "client" ? `?clientId=${clientId}` : "";
+    const url =
+      previousSubTab === "mood"
+        ? `/api/stylist/previous-moodboards${qs}`
+        : `/api/stylist/previous-looks${qs}`;
     void (async () => {
       try {
-        const res = await fetch(`/api/stylist/previous-looks${qs}`);
+        const res = await fetch(url);
         if (!res.ok) {
-          if (alive) setPreviousItems([]);
+          if (alive) {
+            if (previousSubTab === "mood") setPreviousMoodboards([]);
+            else setPreviousItems([]);
+          }
           return;
         }
-        const data = (await res.json()) as { items: PreviousLookItem[] };
-        if (alive) setPreviousItems(data.items ?? []);
+        if (previousSubTab === "mood") {
+          const data = (await res.json()) as { items: PreviousMoodboardItem[] };
+          if (alive) setPreviousMoodboards(data.items ?? []);
+        } else {
+          const data = (await res.json()) as { items: PreviousLookItem[] };
+          if (alive) setPreviousItems(data.items ?? []);
+        }
       } finally {
         if (alive) setPreviousLoading(false);
       }
@@ -442,7 +499,7 @@ export function StyleboardBuilder({
     return () => {
       alive = false;
     };
-  }, [tab, previousScope, clientId]);
+  }, [tab, previousScope, previousSubTab, clientId]);
 
   async function addPreviousLookItem(it: PreviousLookItem) {
     if (it.inventoryProductId) {
@@ -605,6 +662,55 @@ export function StyleboardBuilder({
   // service does not yet surface (BACKEND-GAP-E/F/G/H) — chips render but
   // do not narrow product results today; they wire up automatically once
   // tastegraph exposes those fields.
+  // Closet facets — derive Color / Designer / Season chip sets from the
+  // current client's closet so the sidebar only offers values that match
+  // an actual item.
+  const closetFacets = useMemo(() => {
+    const colors = new Set<string>();
+    const designers = new Set<string>();
+    const seasons = new Set<string>();
+    for (const c of closetItems) {
+      for (const col of c.colors ?? []) if (col) colors.add(col);
+      if (c.designer) designers.add(c.designer);
+      if (c.season) seasons.add(c.season);
+    }
+    return {
+      colors: Array.from(colors).sort(),
+      designers: Array.from(designers).sort(),
+      seasons: Array.from(seasons).sort(),
+    };
+  }, [closetItems]);
+
+  // Filter the closet by sub-tab + chip selections.
+  const filteredClosetItems = useMemo(() => {
+    let pool = closetItems;
+    if (closetSubTab === "purchased") {
+      pool = pool.filter((c) => c.sourceOrderItemId != null);
+    }
+    // Cart sub-tab is rendered from `cartItems` directly — see the JSX.
+    if (closetSelectedColors.length > 0) {
+      const want = new Set(closetSelectedColors.map((s) => s.toLowerCase()));
+      pool = pool.filter((c) =>
+        (c.colors ?? []).some((col) => want.has(col.toLowerCase())),
+      );
+    }
+    if (closetSelectedDesigners.length > 0) {
+      const want = new Set(closetSelectedDesigners);
+      pool = pool.filter((c) => c.designer != null && want.has(c.designer));
+    }
+    if (closetSelectedSeasons.length > 0) {
+      const want = new Set(closetSelectedSeasons);
+      pool = pool.filter((c) => c.season != null && want.has(c.season));
+    }
+    return pool;
+  }, [
+    closetItems,
+    closetSubTab,
+    closetSelectedColors,
+    closetSelectedDesigners,
+    closetSelectedSeasons,
+  ]);
+
   // Inspo style + body-type chips narrow the inspiration grid client-side.
   // Match against InspirationPhoto.tags[] (lowercased) — staging's
   // taxonomy isn't curated, so a photo passes if ANY selected chip
@@ -622,6 +728,7 @@ export function StyleboardBuilder({
 
   const filteredInventoryResults = useMemo(() => {
     return inventoryResults.filter((p) => {
+      if (favoritesOnly && !favoritedIds.has(p.id)) return false;
       if (selectedAvailability.length > 0) {
         // Only "in-stock" is derivable from tastegraph today; the others
         // (preorder/sale/final-sale) pass through unchanged so the chip
@@ -635,7 +742,13 @@ export function StyleboardBuilder({
       if (pricePreset === "1000+" && p.min_price < 1000) return false;
       return true;
     });
-  }, [inventoryResults, selectedAvailability, pricePreset]);
+  }, [
+    inventoryResults,
+    selectedAvailability,
+    pricePreset,
+    favoritesOnly,
+    favoritedIds,
+  ]);
 
   function resetFilters() {
     setSelectedMerchants([]);
@@ -1080,6 +1193,34 @@ export function StyleboardBuilder({
                   Search
                 </Button>
               </div>
+              {/* Favorites-only toggle pill — sits above the active-filters
+                  bar so the stylist can quickly narrow Shop to their saved
+                  products without opening the FilterPanel. */}
+              <div className="flex items-center gap-2 px-3 pt-2">
+                <button
+                  onClick={() => setFavoritesOnly((v) => !v)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-body text-[11px] transition-colors",
+                    favoritesOnly
+                      ? "bg-foreground text-background border-foreground"
+                      : "bg-background text-muted-foreground border-border hover:text-foreground",
+                  )}
+                  aria-pressed={favoritesOnly}
+                >
+                  <HeartIcon
+                    className={cn(
+                      "h-3 w-3",
+                      favoritesOnly ? "fill-current" : "",
+                    )}
+                  />
+                  Favorites only
+                  {favoritedIds.size > 0 && (
+                    <span className="font-body text-[10px] opacity-70">
+                      ({favoritedIds.size})
+                    </span>
+                  )}
+                </button>
+              </div>
               {/* Active filters chip bar — Loveable HEAD parity */}
               {activeChips.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2 border-b border-border">
@@ -1173,39 +1314,148 @@ export function StyleboardBuilder({
           )}
 
           {tab === "closet" && (
-            <ScrollArea className="flex-1">
-              <div className="grid grid-cols-2 gap-2 p-3">
-                {closetItems.map((c) => (
-                  <SourceTile
-                    key={c.id}
-                    imageUrl={c.url}
-                    label={c.name ?? "Closet item"}
-                    sublabel={c.designer ?? "Client closet"}
-                    onAdd={() =>
-                      void addItem(
-                        "CLOSET",
-                        { closetItemId: c.id },
-                        c.url,
-                        c.name ?? null,
-                      )
-                    }
-                    onDragStart={() => {
-                      dragData.current = {
-                        source: "CLOSET",
-                        imageUrl: c.url,
-                        label: c.name ?? null,
-                        payload: { closetItemId: c.id },
-                      };
-                    }}
-                  />
-                ))}
-                {closetItems.length === 0 && (
-                  <p className="col-span-2 px-2 py-6 font-body text-xs text-muted-foreground text-center">
-                    Client&apos;s closet is empty.
-                  </p>
+            <>
+              <ClosetSubTabBar
+                value={closetSubTab}
+                onChange={setClosetSubTab}
+                allCount={closetItems.length}
+                cartCount={cartItems.length}
+                purchasedCount={
+                  closetItems.filter((c) => c.sourceOrderItemId != null).length
+                }
+              />
+              {closetSubTab !== "cart" &&
+                (closetFacets.colors.length > 0 ||
+                  closetFacets.designers.length > 0 ||
+                  closetFacets.seasons.length > 0) && (
+                  <div className="border-b border-border px-3 py-2 space-y-2">
+                    {closetFacets.colors.length > 0 && (
+                      <ChipGroup
+                        label="Color"
+                        options={closetFacets.colors.map((c) => ({
+                          key: c,
+                          label: c,
+                        }))}
+                        selected={closetSelectedColors}
+                        onToggle={(k) =>
+                          toggle(
+                            closetSelectedColors,
+                            k,
+                            setClosetSelectedColors,
+                          )
+                        }
+                      />
+                    )}
+                    {closetFacets.designers.length > 0 && (
+                      <ChipGroup
+                        label="Designer"
+                        options={closetFacets.designers.map((d) => ({
+                          key: d,
+                          label: d,
+                        }))}
+                        selected={closetSelectedDesigners}
+                        onToggle={(k) =>
+                          toggle(
+                            closetSelectedDesigners,
+                            k,
+                            setClosetSelectedDesigners,
+                          )
+                        }
+                      />
+                    )}
+                    {closetFacets.seasons.length > 0 && (
+                      <ChipGroup
+                        label="Season"
+                        options={closetFacets.seasons.map((s) => ({
+                          key: s,
+                          label: s,
+                        }))}
+                        selected={closetSelectedSeasons}
+                        onToggle={(k) =>
+                          toggle(
+                            closetSelectedSeasons,
+                            k,
+                            setClosetSelectedSeasons,
+                          )
+                        }
+                      />
+                    )}
+                  </div>
                 )}
-              </div>
-            </ScrollArea>
+              <ScrollArea className="flex-1">
+                <div className="grid grid-cols-2 gap-2 p-3">
+                  {closetSubTab === "cart" ? (
+                    <>
+                      {cartItems.map((c) => (
+                        <SourceTile
+                          key={c.id}
+                          imageUrl={c.imageUrl}
+                          label={c.name}
+                          sublabel={c.brand}
+                          onAdd={() =>
+                            void addItem(
+                              "INVENTORY",
+                              { inventoryProductId: c.inventoryProductId },
+                              c.imageUrl,
+                              c.name,
+                            )
+                          }
+                          onDragStart={() => {
+                            dragData.current = {
+                              source: "INVENTORY",
+                              imageUrl: c.imageUrl,
+                              label: c.name,
+                              payload: {
+                                inventoryProductId: c.inventoryProductId,
+                              },
+                            };
+                          }}
+                        />
+                      ))}
+                      {cartItems.length === 0 && (
+                        <p className="col-span-2 px-2 py-6 font-body text-xs text-muted-foreground text-center">
+                          Cart is empty.
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {filteredClosetItems.map((c) => (
+                        <SourceTile
+                          key={c.id}
+                          imageUrl={c.url}
+                          label={c.name ?? "Closet item"}
+                          sublabel={c.designer ?? "Client closet"}
+                          onAdd={() =>
+                            void addItem(
+                              "CLOSET",
+                              { closetItemId: c.id },
+                              c.url,
+                              c.name ?? null,
+                            )
+                          }
+                          onDragStart={() => {
+                            dragData.current = {
+                              source: "CLOSET",
+                              imageUrl: c.url,
+                              label: c.name ?? null,
+                              payload: { closetItemId: c.id },
+                            };
+                          }}
+                        />
+                      ))}
+                      {filteredClosetItems.length === 0 && (
+                        <p className="col-span-2 px-2 py-6 font-body text-xs text-muted-foreground text-center">
+                          {closetSubTab === "purchased"
+                            ? "No purchased items yet."
+                            : "Client's closet is empty."}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              </ScrollArea>
+            </>
           )}
 
           {tab === "inspiration" && (
@@ -1246,7 +1496,11 @@ export function StyleboardBuilder({
 
           {tab === "previous" && (
             <>
-              <div className="flex items-center gap-1 border-b border-border px-3 py-2">
+              <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+                <PreviousSubTabBar
+                  value={previousSubTab}
+                  onChange={setPreviousSubTab}
+                />
                 <PreviousScopeToggle
                   value={previousScope}
                   onChange={setPreviousScope}
@@ -1259,46 +1513,95 @@ export function StyleboardBuilder({
                       Loading…
                     </p>
                   )}
-                  {!previousLoading &&
-                    previousItems.map((it) => (
-                      <SourceTile
-                        key={it.id}
-                        imageUrl={it.imageUrl}
-                        label={it.label ?? "Item"}
-                        sublabel={it.boardTitle ?? it.brand ?? "Past look"}
-                        onAdd={() => void addPreviousLookItem(it)}
-                        onDragStart={() => {
-                          dragData.current = {
-                            source: it.inventoryProductId
-                              ? "INVENTORY"
-                              : it.closetItemId
-                                ? "CLOSET"
-                                : it.inspirationPhotoId
-                                  ? "INSPIRATION_PHOTO"
-                                  : "WEB_ADDED",
-                            imageUrl: it.imageUrl,
-                            label: it.label,
-                            payload: it.inventoryProductId
-                              ? { inventoryProductId: it.inventoryProductId }
-                              : it.closetItemId
-                                ? { closetItemId: it.closetItemId }
-                                : it.inspirationPhotoId
-                                  ? { inspirationPhotoId: it.inspirationPhotoId }
-                                  : {
-                                      webItemUrl: it.webItemUrl,
-                                      webItemImageUrl: it.imageUrl,
-                                      webItemTitle: it.label,
-                                      webItemBrand: it.brand,
-                                    },
-                          };
-                        }}
-                      />
-                    ))}
-                  {!previousLoading && previousItems.length === 0 && (
-                    <p className="col-span-2 px-2 py-6 font-body text-xs text-muted-foreground text-center">
-                      No past looks yet
-                      {previousScope === "client" ? " for this client" : ""}.
-                    </p>
+                  {!previousLoading && previousSubTab === "style" && (
+                    <>
+                      {previousItems.map((it) => (
+                        <SourceTile
+                          key={it.id}
+                          imageUrl={it.imageUrl}
+                          label={it.label ?? "Item"}
+                          sublabel={it.boardTitle ?? it.brand ?? "Past look"}
+                          onAdd={() => void addPreviousLookItem(it)}
+                          onDragStart={() => {
+                            dragData.current = {
+                              source: it.inventoryProductId
+                                ? "INVENTORY"
+                                : it.closetItemId
+                                  ? "CLOSET"
+                                  : it.inspirationPhotoId
+                                    ? "INSPIRATION_PHOTO"
+                                    : "WEB_ADDED",
+                              imageUrl: it.imageUrl,
+                              label: it.label,
+                              payload: it.inventoryProductId
+                                ? { inventoryProductId: it.inventoryProductId }
+                                : it.closetItemId
+                                  ? { closetItemId: it.closetItemId }
+                                  : it.inspirationPhotoId
+                                    ? {
+                                        inspirationPhotoId:
+                                          it.inspirationPhotoId,
+                                      }
+                                    : {
+                                        webItemUrl: it.webItemUrl,
+                                        webItemImageUrl: it.imageUrl,
+                                        webItemTitle: it.label,
+                                        webItemBrand: it.brand,
+                                      },
+                            };
+                          }}
+                        />
+                      ))}
+                      {previousItems.length === 0 && (
+                        <p className="col-span-2 px-2 py-6 font-body text-xs text-muted-foreground text-center">
+                          No past looks yet
+                          {previousScope === "client" ? " for this client" : ""}
+                          .
+                        </p>
+                      )}
+                    </>
+                  )}
+                  {!previousLoading && previousSubTab === "mood" && (
+                    <>
+                      {previousMoodboards.map((m) => (
+                        <SourceTile
+                          key={m.id}
+                          imageUrl={m.imageUrl}
+                          label={m.boardTitle ?? "Moodboard"}
+                          sublabel="Past moodboard"
+                          onAdd={() => {
+                            if (!m.imageUrl) return;
+                            void addItem(
+                              "INSPIRATION_PHOTO",
+                              { inspirationPhotoId: null },
+                              m.imageUrl,
+                              m.boardTitle,
+                            );
+                          }}
+                          onDragStart={() => {
+                            if (!m.imageUrl) return;
+                            dragData.current = {
+                              source: "WEB_ADDED",
+                              imageUrl: m.imageUrl,
+                              label: m.boardTitle,
+                              payload: {
+                                webItemUrl: null,
+                                webItemImageUrl: m.imageUrl,
+                                webItemTitle: m.boardTitle,
+                                webItemBrand: null,
+                              },
+                            };
+                          }}
+                        />
+                      ))}
+                      {previousMoodboards.length === 0 && (
+                        <p className="col-span-2 px-2 py-6 font-body text-xs text-muted-foreground text-center">
+                          No past moodboards yet
+                          {previousScope === "client" ? " for this client" : ""}
+                          .
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
               </ScrollArea>
@@ -1458,6 +1761,81 @@ function PreviousScopeToggle({
   const opts: { key: "all" | "client"; label: string }[] = [
     { key: "client", label: "This client" },
     { key: "all", label: "All clients" },
+  ];
+  return (
+    <div className="inline-flex items-center rounded-sm bg-muted p-0.5">
+      {opts.map((o) => {
+        const active = value === o.key;
+        return (
+          <button
+            key={o.key}
+            onClick={() => onChange(o.key)}
+            className={cn(
+              "px-3 py-1 rounded-sm font-body text-[11px] transition-colors",
+              active
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ClosetSubTabBar({
+  value,
+  onChange,
+  allCount,
+  cartCount,
+  purchasedCount,
+}: {
+  value: ClosetSubTab;
+  onChange: (v: ClosetSubTab) => void;
+  allCount: number;
+  cartCount: number;
+  purchasedCount: number;
+}) {
+  const opts: { key: ClosetSubTab; label: string; count: number }[] = [
+    { key: "all", label: "All", count: allCount },
+    { key: "cart", label: "Cart", count: cartCount },
+    { key: "purchased", label: "Purchased", count: purchasedCount },
+  ];
+  return (
+    <div className="flex items-center gap-1 border-b border-border px-3 py-2">
+      {opts.map((o) => {
+        const active = value === o.key;
+        return (
+          <button
+            key={o.key}
+            onClick={() => onChange(o.key)}
+            className={cn(
+              "px-2.5 py-1 rounded-sm font-body text-[11px] transition-colors",
+              active
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {o.label} ({o.count})
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function PreviousSubTabBar({
+  value,
+  onChange,
+}: {
+  value: PreviousSubTab;
+  onChange: (v: PreviousSubTab) => void;
+}) {
+  const opts: { key: PreviousSubTab; label: string }[] = [
+    { key: "style", label: "Style boards" },
+    { key: "mood", label: "Mood boards" },
   ];
   return (
     <div className="inline-flex items-center rounded-sm bg-muted p-0.5">
@@ -1745,13 +2123,24 @@ function ToolButton({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      onClick={onClick}
-      title={title}
-      className="h-7 w-7 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
-    >
-      {children}
-    </button>
+    <TooltipProvider delay={200}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              onClick={onClick}
+              aria-label={title}
+              className="h-7 w-7 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
+            >
+              {children}
+            </button>
+          }
+        />
+        <TooltipContent side="top" className="font-body text-[11px]">
+          {title}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -1811,9 +2200,6 @@ function FilterPanel({
   onReset: () => void;
   onApply: () => void;
 }) {
-  function toggle<T>(arr: T[], val: T, setter: (next: T[]) => void) {
-    setter(arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val]);
-  }
   return (
     <div className="border-b border-border px-4 py-3 space-y-3 max-h-[50vh] overflow-y-auto">
       <div className="flex items-center justify-between">

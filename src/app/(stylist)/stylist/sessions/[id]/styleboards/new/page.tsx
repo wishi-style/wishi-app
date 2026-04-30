@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { listInspirationPhotos } from "@/lib/boards/inspiration.service";
 import { listClosetItems } from "@/lib/boards/closet.service";
 import { mapLoyalty } from "@/lib/stylists/client-profile";
-import { StyleboardBuilder } from "./builder";
+import { getProduct } from "@/lib/inventory/inventory-client";
+import { StyleboardBuilder, type CartItemView } from "./builder";
 
 export const dynamic = "force-dynamic";
 
@@ -72,10 +73,36 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
     board = { ...created, items: [] };
   }
 
-  const [closetItems, inspiration] = await Promise.all([
+  const [closetItems, inspiration, cartRows] = await Promise.all([
     listClosetItems({ userId: session.clientId }),
     listInspirationPhotos({ take: 60 }),
+    prisma.cartItem.findMany({
+      where: { userId: session.clientId, sessionId },
+      orderBy: { addedAt: "desc" },
+      select: { id: true, inventoryProductId: true, quantity: true },
+    }),
   ]);
+
+  // Loveable surfaces the client's in-progress cart as a sub-tab in the
+  // closet panel. Hydrate via tastegraph in the same request so the builder
+  // doesn't need a second round-trip.
+  const cartProductDocs = await Promise.all(
+    cartRows.map((c) => getProduct(c.inventoryProductId)),
+  );
+  const cartItems: CartItemView[] = cartRows.flatMap((c, i) => {
+    const doc = cartProductDocs[i];
+    if (!doc) return [];
+    return [
+      {
+        id: c.id,
+        inventoryProductId: c.inventoryProductId,
+        imageUrl: doc.primary_image_url ?? doc.image_urls?.[0] ?? null,
+        name: doc.canonical_name,
+        brand: doc.brand_name,
+        priceCents: Math.round(doc.min_price * 100),
+      },
+    ];
+  });
 
   const clientName =
     [session.client.firstName, session.client.lastName]
@@ -96,6 +123,7 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
       )}
       initialItems={board.items}
       closetItems={closetItems}
+      cartItems={cartItems}
       inspiration={inspiration}
     />
   );

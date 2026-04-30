@@ -164,6 +164,66 @@ test("LookCreator top bar renders avatar + 'Save & send' and no italic disclaime
   }
 });
 
+test("LookCreator panels render Loveable sub-tabs + favorites pill", async ({
+  page,
+}) => {
+  const ts = Date.now();
+  const clientEmail = `pp3-panel-${ts}@e2e.wishi.test`;
+  const stylistEmail = `pp3-panelst-${ts}@e2e.wishi.test`;
+
+  const client = await ensureClientUser({
+    clerkId: `e2e_pp3_panel_${ts}`,
+    email: clientEmail,
+    firstName: "Panel",
+    lastName: "Tester",
+  });
+  const stylist = await ensureStylistUser({
+    clerkId: `e2e_pp3_panelst_${ts}`,
+    email: stylistEmail,
+    firstName: "Quinn",
+    lastName: "Stylist",
+  });
+  await ensureStylistProfile({ userId: stylist.id });
+  const session = await createSessionForClient({
+    clientId: client.id,
+    stylistId: stylist.id,
+    status: "ACTIVE",
+    planType: "MAJOR",
+  });
+
+  try {
+    await signInAsStylist(page, stylistEmail);
+    await page.goto(`/stylist/sessions/${session.id}/styleboards/new`);
+    await page.waitForLoadState("networkidle");
+
+    // M-7 Favorites-only pill — visible on the Shop tab by default.
+    await expect(
+      page.getByRole("button", { name: /Favorites only/ }),
+    ).toBeVisible();
+
+    // M-2 Closet sub-tabs.
+    await page.getByRole("button", { name: "Closet" }).click();
+    await expect(page.getByRole("button", { name: /^All \(/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Cart \(/ })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /^Purchased \(/ }),
+    ).toBeVisible();
+
+    // M-3 Previous-boards sub-tabs.
+    await page.getByRole("button", { name: "Previous looks" }).click();
+    await expect(
+      page.getByRole("button", { name: /^Style boards$/ }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /^Mood boards$/ }),
+    ).toBeVisible();
+  } finally {
+    await cleanupStylistProfile(stylist.id);
+    await cleanupE2EUserByEmail(clientEmail);
+    await cleanupE2EUserByEmail(stylistEmail);
+  }
+});
+
 test("?session=<id> deep-link pre-selects that session", async ({ page }) => {
   const ts = Date.now();
   const clientEmail = `pp3-deep-${ts}@e2e.wishi.test`;
