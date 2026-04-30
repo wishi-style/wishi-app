@@ -21,6 +21,7 @@ import {
   UserIcon,
   SendIcon,
   ShirtIcon,
+  ShoppingBagIcon,
   StoreIcon,
   SparklesIcon,
   LayersIcon,
@@ -70,6 +71,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { SaveLookDialog } from "@/components/stylist/save-look-dialog";
+import { ProductDetailDialog } from "@/components/products/product-detail-dialog";
 import ClientDetailPanel from "@/components/stylist/client-detail-panel";
 import { loyaltyConfig } from "@/data/client-profiles";
 import type { ViewLoyaltyTier } from "@/lib/stylists/client-profile";
@@ -135,7 +137,15 @@ interface Props {
   closetItems: ClosetItem[];
   cartItems: CartItemView[];
   inspiration: InspirationPhoto[];
+  /** Lowercase category → client clothing size (e.g. "tops" → "M"). */
+  clientSizesByCategory: Record<string, string>;
+  /** Lowercase category → [min, max] in dollars. */
+  clientBudgetsByCategory: Record<string, [number, number]>;
+  /** inventoryProductIds flagged MerchandisedProduct.isDirectSale=true. */
+  directSaleProductIds: string[];
 }
+
+type InventorySubTab = "shop" | "store";
 
 interface CanvasItem {
   id: string;
@@ -272,6 +282,9 @@ export function StyleboardBuilder({
   closetItems,
   cartItems,
   inspiration,
+  clientSizesByCategory,
+  clientBudgetsByCategory,
+  directSaleProductIds,
 }: Props) {
   const router = useRouter();
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -306,6 +319,17 @@ export function StyleboardBuilder({
   const [saveOpen, setSaveOpen] = useState(false);
   const [clientInfoOpen, setClientInfoOpen] = useState(false);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  // Currently-open product in the stylist-mode PDP, with the canonical
+  // canvas-add metadata captured at click time so the dialog's CTA can
+  // bypass the cart/affiliate flow and add directly.
+  const [pdpProduct, setPdpProduct] = useState<{
+    id: string;
+    imageUrl: string | null;
+    label: string | null;
+    category: string | null;
+    minPriceDollars: number;
+    availableSizes: string[];
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [canvasSize, setCanvasSize] = useState<CanvasSize>("small");
   const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set());
@@ -319,6 +343,12 @@ export function StyleboardBuilder({
   const [previousLoading, setPreviousLoading] = useState(false);
 
   const [gridCols, setGridCols] = useState<GridCols>(3);
+  const [inventorySubTab, setInventorySubTab] =
+    useState<InventorySubTab>("shop");
+  const directSaleSet = useMemo(
+    () => new Set(directSaleProductIds),
+    [directSaleProductIds],
+  );
   const [closetSubTab, setClosetSubTab] = useState<ClosetSubTab>("all");
   const [closetSelectedColors, setClosetSelectedColors] = useState<string[]>([]);
   const [closetSelectedDesigners, setClosetSelectedDesigners] = useState<
@@ -748,6 +778,7 @@ export function StyleboardBuilder({
 
   const filteredInventoryResults = useMemo(() => {
     return inventoryResults.filter((p) => {
+      if (inventorySubTab === "store" && !directSaleSet.has(p.id)) return false;
       if (favoritesOnly && !favoritedIds.has(p.id)) return false;
       if (selectedAvailability.length > 0) {
         // Only "in-stock" is derivable from tastegraph today; the others
@@ -768,6 +799,8 @@ export function StyleboardBuilder({
     pricePreset,
     favoritesOnly,
     favoritedIds,
+    inventorySubTab,
+    directSaleSet,
   ]);
 
   function resetFilters() {
@@ -1234,6 +1267,36 @@ export function StyleboardBuilder({
                   Search
                 </Button>
               </div>
+              {/* Shop / Store sub-tab — Loveable HEAD parity
+                  (LookCreator.tsx@19f4732:222-223). Store narrows the
+                  grid to direct-sale products only. */}
+              <div className="flex items-center gap-1 px-3 pt-2">
+                {(
+                  [
+                    { key: "shop", label: "Shop", icon: StoreIcon },
+                    { key: "store", label: "Store", icon: ShoppingBagIcon },
+                  ] as const
+                ).map((s) => {
+                  const active = inventorySubTab === s.key;
+                  const Icon = s.icon;
+                  return (
+                    <button
+                      key={s.key}
+                      onClick={() => setInventorySubTab(s.key)}
+                      aria-pressed={active}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 font-body text-[11px] transition-colors",
+                        active
+                          ? "bg-foreground text-background"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <Icon className="h-3 w-3" />
+                      {s.label}
+                    </button>
+                  );
+                })}
+              </div>
               {/* Favorites-only toggle pill — sits above the active-filters
                   bar so the stylist can quickly narrow Shop to their saved
                   products without opening the FilterPanel. */}
@@ -1348,12 +1411,14 @@ export function StyleboardBuilder({
                       favorited={favoritedIds.has(p.id)}
                       onFavoriteToggle={() => void toggleFavorite(p.id)}
                       onAdd={() =>
-                        void addItem(
-                          "INVENTORY",
-                          { inventoryProductId: p.id },
-                          p.primary_image_url ?? null,
-                          p.canonical_name,
-                        )
+                        setPdpProduct({
+                          id: p.id,
+                          imageUrl: p.primary_image_url ?? null,
+                          label: p.canonical_name,
+                          category: p.category_slug ?? null,
+                          minPriceDollars: Math.round(p.min_price),
+                          availableSizes: p.available_sizes ?? [],
+                        })
                       }
                       onDragStart={() => {
                         dragData.current = {
@@ -1822,6 +1887,47 @@ export function StyleboardBuilder({
         onOpenChange={setClientInfoOpen}
         sessionId={sessionId}
         clientId={clientId}
+      />
+
+      {/* Stylist-mode PDP — Loveable HEAD parity (LookCreator.tsx@
+          19f4732:1610). Click on a Shop tile opens this dialog with
+          the client's size + budget for the product's category so the
+          stylist gets a fit/budget check before adding to canvas. */}
+      <ProductDetailDialog
+        open={pdpProduct !== null}
+        onOpenChange={(v) => {
+          if (!v) setPdpProduct(null);
+        }}
+        productId={pdpProduct?.id ?? null}
+        sessionId={sessionId}
+        stylistContext={
+          pdpProduct
+            ? {
+                clientSize:
+                  pdpProduct.category != null
+                    ? clientSizesByCategory[pdpProduct.category.toLowerCase()] ??
+                      null
+                    : null,
+                availableSizes: pdpProduct.availableSizes,
+                budgetRange:
+                  pdpProduct.category != null
+                    ? clientBudgetsByCategory[
+                        pdpProduct.category.toLowerCase()
+                      ] ?? null
+                    : null,
+                productPriceDollars: pdpProduct.minPriceDollars,
+                onAddToCanvas: () => {
+                  void addItem(
+                    "INVENTORY",
+                    { inventoryProductId: pdpProduct.id },
+                    pdpProduct.imageUrl,
+                    pdpProduct.label,
+                  );
+                  setPdpProduct(null);
+                },
+              }
+            : undefined
+        }
       />
 
       <AlertDialog open={clearConfirmOpen} onOpenChange={setClearConfirmOpen}>

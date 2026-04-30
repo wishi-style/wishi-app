@@ -48,6 +48,19 @@ export type ProductDoc = {
   listings: ProductListing[];
 };
 
+/**
+ * When set, the dialog renders in stylist-mode: shows fit + budget
+ * check rows for the LookCreator and replaces the Add-to-Bag /
+ * Shop-at-Retailer CTAs with a single "Add to canvas" button.
+ */
+export interface PdpStylistContext {
+  clientSize: string | null;
+  availableSizes: string[];
+  budgetRange: [number, number] | null;
+  productPriceDollars: number;
+  onAddToCanvas: () => void;
+}
+
 export interface ProductDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -69,6 +82,8 @@ export interface ProductDetailDialogProps {
   seed?: Partial<ProductDoc>;
   /** Called after a successful affiliate click-through. */
   onAffiliateClick?: (listingId: string, retailer: string) => void;
+  /** When provided, renders the stylist-mode chrome instead of the cart flow. */
+  stylistContext?: PdpStylistContext;
 }
 
 type SimilarItem = {
@@ -98,6 +113,7 @@ export function ProductDetailDialog({
   isDirectSale,
   seed,
   onAffiliateClick,
+  stylistContext,
 }: ProductDetailDialogProps) {
   const [product, setProduct] = React.useState<ProductDoc | null>(
     seed && seed.id ? (seed as ProductDoc) : null,
@@ -324,8 +340,23 @@ export function ProductDetailDialog({
                     </div>
                   ) : null}
 
+                  {stylistContext ? (
+                    <StylistContextRows
+                      ctx={stylistContext}
+                      productInStock={product.in_stock}
+                    />
+                  ) : null}
+
                   <div className="flex items-center gap-2 pt-2">
-                    {canAddToBag ? (
+                    {stylistContext ? (
+                      <button
+                        type="button"
+                        onClick={stylistContext.onAddToCanvas}
+                        className="flex-1 inline-flex h-11 items-center justify-center gap-2 rounded-full bg-foreground px-5 text-sm font-medium text-background hover:bg-foreground/90 transition-colors"
+                      >
+                        Add to canvas
+                      </button>
+                    ) : canAddToBag ? (
                       <button
                         type="button"
                         onClick={addToBag}
@@ -360,7 +391,7 @@ export function ProductDetailDialog({
                     </button>
                   </div>
 
-                  {listings.length > 0 ? (
+                  {!stylistContext && listings.length > 0 ? (
                     <div className="pt-2 space-y-2">
                       <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
                         Shop at retailer
@@ -427,5 +458,70 @@ export function ProductDetailDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function StylistContextRows({
+  ctx,
+  productInStock,
+}: {
+  ctx: PdpStylistContext;
+  productInStock: boolean;
+}) {
+  const sizeAvailable =
+    ctx.clientSize != null && ctx.availableSizes.includes(ctx.clientSize);
+  const inBudget =
+    ctx.budgetRange != null &&
+    ctx.productPriceDollars >= ctx.budgetRange[0] &&
+    ctx.productPriceDollars <= ctx.budgetRange[1];
+
+  // Loveable LookCreator.tsx@19f4732:1610 renders these as inline rows
+  // above the CTAs — green when satisfied, red when violating, neutral
+  // when the client hasn't filled in that part of their style profile.
+  return (
+    <div className="space-y-2 pt-2 border-t border-border mt-2">
+      {ctx.clientSize ? (
+        <div
+          className={cn(
+            "flex items-center justify-between rounded-md border px-3 py-2 text-xs",
+            !productInStock || !sizeAvailable
+              ? "border-red-300 bg-red-50 text-red-800"
+              : "border-emerald-300 bg-emerald-50 text-emerald-800",
+          )}
+        >
+          <span className="font-medium">Client size: {ctx.clientSize}</span>
+          <span>
+            {!productInStock
+              ? "Out of stock"
+              : sizeAvailable
+                ? "In stock"
+                : "Not available"}
+          </span>
+        </div>
+      ) : (
+        <div className="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">
+          Client hasn&apos;t set a size for this category yet.
+        </div>
+      )}
+      {ctx.budgetRange ? (
+        <div
+          className={cn(
+            "flex items-center justify-between rounded-md border px-3 py-2 text-xs",
+            inBudget
+              ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+              : "border-red-300 bg-red-50 text-red-800",
+          )}
+        >
+          <span className="font-medium">
+            Client budget: ${ctx.budgetRange[0]}–${ctx.budgetRange[1]}
+          </span>
+          <span>{inBudget ? "In range" : "Over budget"}</span>
+        </div>
+      ) : (
+        <div className="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">
+          Client hasn&apos;t set a budget for this category yet.
+        </div>
+      )}
+    </div>
   );
 }

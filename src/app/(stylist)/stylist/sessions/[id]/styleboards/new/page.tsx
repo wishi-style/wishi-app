@@ -73,15 +73,51 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
     board = { ...created, items: [] };
   }
 
-  const [closetItems, inspiration, cartRows] = await Promise.all([
-    listClosetItems({ userId: session.clientId }),
-    listInspirationPhotos({ take: 60 }),
-    prisma.cartItem.findMany({
-      where: { userId: session.clientId, sessionId },
-      orderBy: { addedAt: "desc" },
-      select: { id: true, inventoryProductId: true, quantity: true },
-    }),
-  ]);
+  const [closetItems, inspiration, cartRows, bodyProfile, budgetRows] =
+    await Promise.all([
+      listClosetItems({ userId: session.clientId }),
+      listInspirationPhotos({ take: 60 }),
+      prisma.cartItem.findMany({
+        where: { userId: session.clientId, sessionId },
+        orderBy: { addedAt: "desc" },
+        select: { id: true, inventoryProductId: true, quantity: true },
+      }),
+      prisma.bodyProfile.findUnique({
+        where: { userId: session.clientId },
+        select: { sizes: { select: { category: true, size: true } } },
+      }),
+      prisma.budgetByCategory.findMany({
+        where: { userId: session.clientId },
+        select: { category: true, minInCents: true, maxInCents: true },
+      }),
+    ]);
+
+  // Direct-sale id set powers the LookCreator's Shop / Store sub-tabs.
+  // Store narrows the inventory grid to MerchandisedProduct rows flagged
+  // `isDirectSale = true`; Shop shows the full tastegraph catalog.
+  const directSaleRows = await prisma.merchandisedProduct.findMany({
+    where: { isDirectSale: true },
+    select: { inventoryProductId: true },
+  });
+  const directSaleProductIds = directSaleRows.map((r) => r.inventoryProductId);
+
+  // Build category-keyed lookups for the LookCreator's stylistContext
+  // PDP: client size per category (lowercased free-text key) + client
+  // budget range per category (cents → dollars). Both default to empty
+  // so the PDP degrades gracefully when the client hasn't filled in
+  // either part of their style profile.
+  const clientSizesByCategory: Record<string, string> = {};
+  for (const s of bodyProfile?.sizes ?? []) {
+    if (s.category && s.size)
+      clientSizesByCategory[s.category.toLowerCase()] = s.size;
+  }
+  const clientBudgetsByCategory: Record<string, [number, number]> = {};
+  for (const b of budgetRows) {
+    clientBudgetsByCategory[b.category.toLowerCase()] = [
+      Math.round(b.minInCents / 100),
+      Math.round(b.maxInCents / 100),
+    ];
+  }
 
   // Loveable surfaces the client's in-progress cart as a sub-tab in the
   // closet panel. Hydrate via tastegraph in the same request so the builder
@@ -125,6 +161,9 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
       closetItems={closetItems}
       cartItems={cartItems}
       inspiration={inspiration}
+      clientSizesByCategory={clientSizesByCategory}
+      clientBudgetsByCategory={clientBudgetsByCategory}
+      directSaleProductIds={directSaleProductIds}
     />
   );
 }
