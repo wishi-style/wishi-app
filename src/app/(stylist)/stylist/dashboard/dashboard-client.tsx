@@ -339,12 +339,16 @@ function shouldShowDate(msgs: ChatMessage[], i: number): boolean {
 type StatFilter = "overdue" | "due_today" | "important" | "new" | "active" | "all";
 
 /* ─── Component ─── */
-export default function StylistDashboard() {
+export default function StylistDashboard({
+  initialSessions = mockSessions,
+}: {
+  initialSessions?: MockSession[];
+} = {}) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<StatFilter | null>(null);
   const [folder, setFolder] = useState<"inbox" | "archive">("inbox");
-  const [sessions, setSessions] = useState<MockSession[]>(mockSessions);
+  const [sessions, setSessions] = useState<MockSession[]>(initialSessions);
   const [sessionTypeFilter, setSessionTypeFilter] = useState<SessionType | "all">("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [pendingActionFilter, setPendingActionFilter] = useState<string>("all");
