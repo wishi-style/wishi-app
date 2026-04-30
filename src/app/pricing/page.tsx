@@ -6,7 +6,7 @@ import { planTierOrder, type PlanTier } from "@/lib/ui/plan-copy";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
 import { Reveal } from "@/components/primitives/reveal";
-import { PillButton } from "@/components/primitives/pill-button";
+import { ReviewsCarousel } from "@/components/marketing/reviews-carousel";
 import { FeatureAccordion, type PricingFeature } from "./feature-accordion";
 import { ComparePlansDialog } from "./compare-plans-dialog";
 
@@ -24,9 +24,11 @@ const tierLabels: Record<PlanTier, string> = {
   LUX: "TAKE MY WARDROBE TO THE NEXT LEVEL",
 };
 
+// Loveable Pricing.tsx accents — Major is `bg-[hsl(0,65%,45%)]` (deeper red,
+// not the burgundy token), Lux is `bg-[hsl(45,60%,45%)]`.
 const tierAccent: Record<PlanTier, string> = {
   MINI: "bg-foreground",
-  MAJOR: "bg-burgundy",
+  MAJOR: "bg-[hsl(0,65%,45%)]",
   LUX: "bg-[hsl(45,60%,45%)]",
 };
 
@@ -42,9 +44,8 @@ const tierName: Record<PlanTier, string> = {
 // version.
 //
 // Lux deliberately omits three features that Loveable's source still has —
-// see the deferred-list section of the funnel-redesign plan in
-// `~/.claude/plans/smart-spark-craft-is-the-loevable-immutable-noodle.md` for
-// the locked-out copy strings (founder decision 2026-04-07).
+// "2 seasonal capsules", "free and priority shipping", "virtual fitting
+// room" — per founder decision 2026-04-07.
 const tierFeatures: Record<PlanTier, PricingFeature[]> = {
   MINI: [
     {
@@ -171,14 +172,15 @@ export default async function PricingPage() {
   return (
     <>
       <SiteHeader />
-      <main className="min-h-screen bg-background">
-        <section className="mx-auto max-w-6xl px-6 md:px-10 py-16 md:py-24">
+      <div className="min-h-screen bg-background">
+        {/* Hero — Loveable Pricing.tsx:178-240 */}
+        <section className="container max-w-5xl py-16 md:py-24">
           <Reveal>
             <div className="text-center mb-14">
               <h1 className="font-display text-4xl md:text-5xl mb-3">
                 Find Your Perfect Plan
               </h1>
-              <p className="text-base text-muted-foreground mb-4">
+              <p className="font-body text-base text-muted-foreground mb-4">
                 100% satisfaction guaranteed.
               </p>
               <ComparePlansDialog />
@@ -186,53 +188,51 @@ export default async function PricingPage() {
           </Reveal>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {planTierOrder.map((tier, idx) => {
+            {planTierOrder.map((tier) => {
               const price = priceFor[tier];
               const features = tierFeatures[tier];
               const isPopular = tier === "MAJOR";
               return (
-                <Reveal key={tier} delay={idx * 80}>
-                  <article className="rounded-xl border-2 border-border bg-card flex flex-col h-full hover:border-foreground/30 hover:shadow-md transition-all duration-200 overflow-hidden relative">
+                <Reveal key={tier}>
+                  <div className="rounded-xl border-2 border-border bg-card flex flex-col h-full hover:border-foreground/30 hover:shadow-md transition-all duration-200 overflow-hidden relative">
                     <div className={`h-1.5 ${tierAccent[tier]}`} />
                     {isPopular && (
                       <div className="absolute top-4 right-4">
-                        <span className="text-[10px] uppercase tracking-widest bg-foreground text-background px-2.5 py-1 rounded-full font-medium">
+                        <span className="font-body text-[10px] uppercase tracking-widest bg-foreground text-background px-2.5 py-1 rounded-full">
                           Popular
                         </span>
                       </div>
                     )}
                     <div className="p-7 flex flex-col h-full">
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-4">
+                      <p className="font-body text-[10px] text-muted-foreground uppercase tracking-widest mb-4">
                         {tierLabels[tier]}
                       </p>
-                      <h2 className="font-display text-2xl mb-1">{tierName[tier]}</h2>
+                      <h2 className="font-display text-2xl mb-1">
+                        {tierName[tier]}
+                      </h2>
                       <p className="font-display text-3xl mb-6">{`$${price}`}</p>
-                      <PillButton
+
+                      <Link
                         href="/match-quiz"
-                        variant="solid"
-                        size="md"
-                        className="w-full mb-8"
+                        className="inline-flex items-center justify-center rounded-[4px] bg-foreground text-background px-6 py-3 text-sm font-body font-medium hover:bg-foreground/90 transition-colors w-full mb-8"
                       >
                         Let&apos;s Get Styling
-                      </PillButton>
+                      </Link>
+
                       <ul className="flex-1">
                         {features.map((feature) => (
                           <FeatureAccordion key={feature.title} feature={feature} />
                         ))}
                       </ul>
                     </div>
-                  </article>
+                  </div>
                 </Reveal>
               );
             })}
           </div>
-
-          <p className="text-center text-sm text-muted-foreground mt-10">
-            {`Need an extra look? Add one to any plan for $${prices.additionalLookDollars}.`}
-          </p>
         </section>
 
-        {/* Concierge banner */}
+        {/* Concierge banner — Loveable Pricing.tsx:244-269 */}
         <section className="bg-[hsl(30,30%,93%)]">
           <div className="grid grid-cols-1 md:grid-cols-2 items-center gap-0">
             <div className="relative h-[400px] md:h-[520px] overflow-hidden">
@@ -246,7 +246,7 @@ export default async function PricingPage() {
             </div>
             <div className="text-center px-8 py-16 md:py-0">
               <h2 className="font-display text-3xl md:text-4xl mb-4">Chat with us.</h2>
-              <p className="text-sm text-foreground max-w-sm mx-auto mb-8 leading-relaxed">
+              <p className="font-body text-sm text-foreground max-w-sm mx-auto mb-8 leading-relaxed">
                 Schedule a complimentary consultation with Wishi Concierge to discuss your style
                 goals and find a plan tailored to you.
               </p>
@@ -254,7 +254,7 @@ export default async function PricingPage() {
                 href="https://calendly.com/ninane-wishi/wishi-consultation?month=2026-04"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center border border-foreground rounded-[4px] px-8 py-3 text-sm hover:bg-foreground hover:text-background transition-colors"
+                className="inline-flex items-center justify-center border border-foreground rounded-[4px] px-8 py-3 font-body text-sm hover:bg-foreground hover:text-background transition-colors"
               >
                 Schedule consultation
               </a>
@@ -262,45 +262,50 @@ export default async function PricingPage() {
           </div>
         </section>
 
-        {/* How It Works */}
-        <section className="mx-auto max-w-5xl px-6 md:px-10 py-14 md:py-20">
-          <Reveal>
-            <h2 className="font-display text-3xl md:text-4xl text-center mb-12">
-              How it Works
-            </h2>
-          </Reveal>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8">
-            {howItWorksSteps.map((step, i) => (
-              <Reveal key={step.num} delay={i * 80}>
-                <div className="text-center">
-                  <p className="font-display text-3xl mb-2">{step.num}</p>
-                  <p className="text-sm text-foreground/80 mb-5 leading-snug min-h-[40px]">
-                    {step.title}
-                  </p>
-                  <div className="rounded-xl overflow-hidden border border-border bg-background shadow-sm">
-                    <Image
-                      src={step.image}
-                      alt={step.title}
-                      width={300}
-                      height={300}
-                      className="w-full h-auto object-contain"
-                      loading="lazy"
-                    />
+        {/* How It Works — Loveable Pricing.tsx:272-310 */}
+        <section>
+          <div className="container max-w-5xl py-14 md:py-20">
+            <Reveal>
+              <h2 className="font-display text-3xl md:text-4xl text-center mb-12">
+                How it Works
+              </h2>
+            </Reveal>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8">
+              {howItWorksSteps.map((step) => (
+                <Reveal key={step.num}>
+                  <div className="text-center">
+                    <p className="font-display text-3xl mb-2">{step.num}</p>
+                    <p className="font-body text-sm text-foreground/80 mb-5 leading-snug min-h-[40px]">
+                      {step.title}
+                    </p>
+                    <div className="rounded-xl overflow-hidden border border-border bg-background shadow-sm">
+                      <Image
+                        src={step.image}
+                        alt={step.title}
+                        width={300}
+                        height={300}
+                        className="w-full h-auto object-contain"
+                        loading="lazy"
+                      />
+                    </div>
                   </div>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-          <div className="text-center mt-10">
-            <Link
-              href="/how-it-works"
-              className="inline-flex items-center justify-center rounded-[4px] border border-foreground text-foreground px-8 py-3 text-sm hover:bg-foreground hover:text-background transition-colors"
-            >
-              Learn More
-            </Link>
+                </Reveal>
+              ))}
+            </div>
+            <div className="text-center mt-10">
+              <Link
+                href="/how-it-works"
+                className="inline-flex items-center justify-center rounded-[4px] border border-foreground text-foreground px-8 py-3 text-sm font-body font-medium hover:bg-foreground hover:text-background transition-colors"
+              >
+                Learn More
+              </Link>
+            </div>
           </div>
         </section>
-      </main>
+
+        {/* Reviews Carousel — Loveable Pricing.tsx:313 */}
+        <ReviewsCarousel />
+      </div>
       <SiteFooter />
     </>
   );
