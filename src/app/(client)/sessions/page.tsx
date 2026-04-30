@@ -67,11 +67,9 @@ export default async function SessionsPage() {
             </div>
           </div>
           <PillButton
-            href="https://wishi.me/gift-cards/choose"
+            href="/gift-cards"
             variant="outline"
             size="sm"
-            target="_blank"
-            rel="noopener noreferrer"
             className="w-full shrink-0 rounded-sm px-6 text-xs sm:w-auto"
           >
             Buy gift card
