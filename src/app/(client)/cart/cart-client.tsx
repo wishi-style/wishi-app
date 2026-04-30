@@ -224,7 +224,7 @@ export function CartClient({ wishi, retailer }: Props) {
                         )}
                       </div>
 
-                      <div className="flex flex-1 flex-col min-w-0">
+                      <div className="flex flex-1 flex-col justify-between min-w-0">
                         <div className="flex justify-between items-start">
                           <div>
                             <p className="font-body text-base font-semibold text-foreground">
@@ -245,6 +245,17 @@ export function CartClient({ wishi, retailer }: Props) {
                             className="text-muted-foreground hover:text-foreground transition-colors p-1 disabled:opacity-40"
                           >
                             <XIcon className="h-4 w-4" />
+                          </button>
+                        </div>
+                        <div className="mt-3 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              toast.success(`${row.brand} added to your closet`)
+                            }
+                            className="font-body text-sm text-foreground underline underline-offset-4 hover:text-muted-foreground transition-colors"
+                          >
+                            Add to Closet
                           </button>
                         </div>
                       </div>
@@ -312,13 +323,24 @@ export function CartClient({ wishi, retailer }: Props) {
                           <XIcon className="h-4 w-4" />
                         </button>
                       </div>
-                      <div className="mt-3">
+                      <div className="mt-3 flex items-end justify-between">
                         <RetailerClickButton
                           inventoryProductId={row.inventoryProductId}
                           retailer={row.retailer}
                           url={row.url}
                           className="inline-flex items-center gap-1.5 font-body text-sm font-medium text-foreground border border-foreground rounded-md px-4 py-1.5 hover:bg-foreground hover:text-background transition-colors"
                         />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            toast.success(
+                              `${row.brand || row.name} added to your closet`,
+                            )
+                          }
+                          className="font-body text-sm text-foreground underline underline-offset-4 hover:text-muted-foreground transition-colors"
+                        >
+                          Add to Closet
+                        </button>
                       </div>
                     </div>
                   </div>
