@@ -177,9 +177,12 @@ async function validateAndReadImage(
   return dataUrl;
 }
 
-export default function StylistProfile() {
+export default function StylistProfile(props: { initialProfile?: StylistProfileData | null } = {}) {
   const router = useRouter();
-  const existing = useMemo(() => loadProfile(), []);
+  const existing = useMemo(
+    () => loadProfile() ?? props.initialProfile ?? null,
+    [props.initialProfile],
+  );
   const draft = useMemo(() => loadDraft(), []);
   const isCreating = !existing;
   // Restore the most recent unsaved draft if there is one; otherwise the
