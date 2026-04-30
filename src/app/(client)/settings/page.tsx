@@ -10,6 +10,7 @@ import { PaymentFailureBanner } from "@/components/billing/payment-failure-banne
 import { StyleInfoPanel } from "@/components/settings/style-info-panel";
 import { EditPasswordPanel } from "@/components/settings/edit-password-panel";
 import { SettingsCardGrid, type SettingsCard } from "./settings-card-grid";
+import { DeactivateAccountButton } from "./deactivate-account-button";
 
 export const dynamic = "force-dynamic";
 
@@ -183,6 +184,7 @@ export default async function SettingsPage() {
 
         <div className="mx-auto max-w-6xl px-6 md:px-10 py-8 md:py-12">
           <SettingsCardGrid cards={cards} panels={panels} />
+          <DeactivateAccountButton />
         </div>
       </div>
     </>
