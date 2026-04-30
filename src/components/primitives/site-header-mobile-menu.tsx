@@ -30,16 +30,14 @@ export function SiteHeaderMobileMenu({ signedIn }: { signedIn: boolean }) {
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger
-        render={
-          <button
-            type="button"
-            className="md:hidden -ml-1 rounded-md p-1.5 transition-colors hover:bg-secondary/50"
-          />
-        }
-      >
-        <MenuIcon className="h-5 w-5 text-foreground" />
-        <span className="sr-only">Open menu</span>
+      <SheetTrigger asChild>
+        <button
+          type="button"
+          className="md:hidden -ml-1 rounded-md p-1.5 transition-colors hover:bg-secondary/50"
+        >
+          <MenuIcon className="h-5 w-5 text-foreground" />
+          <span className="sr-only">Open menu</span>
+        </button>
       </SheetTrigger>
       <SheetContent side="left" className="w-64 pt-12">
         <SheetTitle className="sr-only">Navigation</SheetTitle>
