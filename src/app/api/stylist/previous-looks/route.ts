@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getProduct } from "@/lib/inventory/inventory-client";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +68,22 @@ export async function GET(req: Request) {
     },
   });
 
+  // Hydrate INVENTORY items in one pass — tastegraph caches in-process,
+  // so dedupe ids first, fetch each once, then map back during emit.
+  const inventoryIds = Array.from(
+    new Set(
+      boards
+        .flatMap((b) => b.items)
+        .filter((it) => it.source === "INVENTORY" && it.inventoryProductId)
+        .map((it) => it.inventoryProductId as string),
+    ),
+  );
+  const inventoryDocs = new Map(
+    (await Promise.all(inventoryIds.map((id) => getProduct(id))))
+      .map((doc, idx) => [inventoryIds[idx], doc] as const)
+      .filter(([, doc]) => doc != null),
+  );
+
   const items: PreviousLookItem[] = [];
   for (const b of boards) {
     for (const it of b.items) {
@@ -84,8 +101,11 @@ export async function GET(req: Request) {
         imageUrl = it.webItemImageUrl ?? null;
         label = it.webItemTitle ?? it.webItemUrl;
         brand = it.webItemBrand;
-      } else if (it.source === "INVENTORY") {
-        label = it.inventoryProductId;
+      } else if (it.source === "INVENTORY" && it.inventoryProductId) {
+        const doc = inventoryDocs.get(it.inventoryProductId);
+        imageUrl = doc?.primary_image_url ?? doc?.image_urls?.[0] ?? null;
+        label = doc?.canonical_name ?? it.inventoryProductId;
+        brand = doc?.brand_name ?? null;
       }
       items.push({
         id: it.id,

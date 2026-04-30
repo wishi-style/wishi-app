@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import { listInspirationPhotos } from "@/lib/boards/inspiration.service";
 import { listClosetItems } from "@/lib/boards/closet.service";
+import { mapLoyalty } from "@/lib/stylists/client-profile";
 import { StyleboardBuilder } from "./builder";
 
 export const dynamic = "force-dynamic";
@@ -23,10 +24,21 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
       id: true,
       clientId: true,
       stylistId: true,
-      client: { select: { firstName: true, lastName: true } },
+      client: {
+        select: {
+          firstName: true,
+          lastName: true,
+          avatarUrl: true,
+          loyaltyTier: true,
+        },
+      },
     },
   });
   if (!session) notFound();
+
+  const completedSessions = await prisma.session.count({
+    where: { clientId: session.clientId, status: "COMPLETED" },
+  });
 
   let board = existingBoardId
     ? await prisma.board.findUnique({
@@ -77,6 +89,11 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
       isRevision={board.isRevision}
       clientId={session.clientId}
       clientName={clientName}
+      clientAvatarUrl={session.client.avatarUrl ?? null}
+      clientLoyaltyTier={mapLoyalty(
+        session.client.loyaltyTier ?? null,
+        completedSessions,
+      )}
       initialItems={board.items}
       closetItems={closetItems}
       inspiration={inspiration}

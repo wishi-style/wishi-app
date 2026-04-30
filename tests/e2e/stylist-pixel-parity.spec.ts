@@ -105,6 +105,65 @@ test("phantom routes return 404", async ({ page }) => {
   }
 });
 
+test("LookCreator top bar renders avatar + 'Save & send' and no italic disclaimer", async ({
+  page,
+}) => {
+  const ts = Date.now();
+  const clientEmail = `pp3-look-${ts}@e2e.wishi.test`;
+  const stylistEmail = `pp3-lookst-${ts}@e2e.wishi.test`;
+
+  const client = await ensureClientUser({
+    clerkId: `e2e_pp3_look_${ts}`,
+    email: clientEmail,
+    firstName: "Look",
+    lastName: "Tester",
+  });
+  const stylist = await ensureStylistUser({
+    clerkId: `e2e_pp3_lookst_${ts}`,
+    email: stylistEmail,
+    firstName: "Robin",
+    lastName: "Stylist",
+  });
+  await ensureStylistProfile({ userId: stylist.id });
+  const session = await createSessionForClient({
+    clientId: client.id,
+    stylistId: stylist.id,
+    status: "ACTIVE",
+    planType: "MAJOR",
+  });
+
+  try {
+    await signInAsStylist(page, stylistEmail);
+    await page.goto(`/stylist/sessions/${session.id}/styleboards/new`);
+    await page.waitForLoadState("networkidle");
+
+    const body = await page.locator("body").innerText();
+
+    // Loveable mirror: top bar shows the client's name as the headline,
+    // not "for {name}" framing. The "Create a look" subtitle still sits
+    // under the name.
+    expect(body).toContain("Look Tester");
+    expect(body).toContain("Create a look");
+
+    // E-7: HTML entity literal must not survive into rendered text.
+    expect(body).not.toContain("Save &amp; send");
+    expect(body).toContain("Save & send");
+
+    // E-4: italic taxonomy disclaimer was removed in this pass.
+    expect(body).not.toContain("preview taxonomy not yet served by inventory");
+
+    // D-2: Client info opens an inline sheet — the button is in the top
+    // bar (not a link to /stylist/clients/<id>, which doesn't exist).
+    await expect(
+      page.getByRole("button", { name: /^Client info$/ }),
+    ).toBeVisible();
+  } finally {
+    await cleanupStylistProfile(stylist.id);
+    await cleanupE2EUserByEmail(clientEmail);
+    await cleanupE2EUserByEmail(stylistEmail);
+  }
+});
+
 test("?session=<id> deep-link pre-selects that session", async ({ page }) => {
   const ts = Date.now();
   const clientEmail = `pp3-deep-${ts}@e2e.wishi.test`;

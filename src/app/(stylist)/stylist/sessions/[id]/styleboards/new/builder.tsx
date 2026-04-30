@@ -45,13 +45,28 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { SaveLookDialog } from "@/components/stylist/save-look-dialog";
+import ClientDetailPanel from "@/components/stylist/client-detail-panel";
+import { loyaltyConfig } from "@/data/client-profiles";
+import type { ViewLoyaltyTier } from "@/lib/stylists/client-profile";
 import type {
   BoardItem,
   BoardItemSource,
@@ -88,6 +103,9 @@ interface Props {
   isRevision: boolean;
   clientId: string;
   clientName: string;
+  /** Optional Loveable-mirror chrome inputs. Falls back to mock-driven data. */
+  clientAvatarUrl: string | null;
+  clientLoyaltyTier: ViewLoyaltyTier;
   initialItems: BoardItem[];
   closetItems: ClosetItem[];
   inspiration: InspirationPhoto[];
@@ -199,6 +217,8 @@ export function StyleboardBuilder({
   isRevision,
   clientId,
   clientName,
+  clientAvatarUrl,
+  clientLoyaltyTier,
   initialItems,
   closetItems,
   inspiration,
@@ -234,6 +254,8 @@ export function StyleboardBuilder({
   const [search, setSearch] = useState("");
   const [inventoryResults, setInventoryResults] = useState<ProductSearchDoc[]>([]);
   const [saveOpen, setSaveOpen] = useState(false);
+  const [clientInfoOpen, setClientInfoOpen] = useState(false);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [canvasSize, setCanvasSize] = useState<CanvasSize>("small");
   const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set());
@@ -273,6 +295,61 @@ export function StyleboardBuilder({
       }
     })();
   }, []);
+
+  // Hydrate INVENTORY canvas items that came from a saved draft. The DB
+  // stores `inventoryProductId` only; the image lives in tastegraph and
+  // needs `/api/products/[id]`. CLOSET / INSPIRATION_PHOTO / WEB_ADDED are
+  // already hydrated synchronously via the join above.
+  // Re-keys on the joined id list so a draft re-open or hot-reload
+  // re-hydrates without thrashing on every state update.
+  const unhydratedInventoryKey = canvas
+    .filter((c) => c.source === "INVENTORY" && !c.imageUrl)
+    .map((c) => c.inventoryProductId)
+    .join(",");
+  useEffect(() => {
+    const ids = Array.from(
+      new Set(
+        canvas
+          .filter(
+            (c) => c.source === "INVENTORY" && c.inventoryProductId && !c.imageUrl,
+          )
+          .map((c) => c.inventoryProductId as string),
+      ),
+    );
+    if (ids.length === 0) return;
+    let alive = true;
+    void (async () => {
+      const docs = await Promise.all(
+        ids.map((id) =>
+          fetch(`/api/products/${encodeURIComponent(id)}`)
+            .then((r) => (r.ok ? (r.json() as Promise<ProductSearchDoc>) : null))
+            .catch(() => null),
+        ),
+      );
+      if (!alive) return;
+      const byId = new Map(
+        docs.map((d, i) => [ids[i], d] as const).filter(([, d]) => d != null),
+      );
+      setCanvas((prev) =>
+        prev.map((c) => {
+          if (c.source !== "INVENTORY" || c.imageUrl || !c.inventoryProductId) {
+            return c;
+          }
+          const doc = byId.get(c.inventoryProductId);
+          if (!doc) return c;
+          return {
+            ...c,
+            imageUrl: doc.primary_image_url ?? doc.image_urls?.[0] ?? null,
+            label: c.label ?? doc.canonical_name,
+          };
+        }),
+      );
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unhydratedInventoryKey]);
 
   // Auto-populate the Shop tab with a default browse on mount so stylists
   // see inventory immediately, matching Loveable's behavior (Loveable
@@ -528,6 +605,21 @@ export function StyleboardBuilder({
   // service does not yet surface (BACKEND-GAP-E/F/G/H) — chips render but
   // do not narrow product results today; they wire up automatically once
   // tastegraph exposes those fields.
+  // Inspo style + body-type chips narrow the inspiration grid client-side.
+  // Match against InspirationPhoto.tags[] (lowercased) — staging's
+  // taxonomy isn't curated, so a photo passes if ANY selected chip
+  // appears in its tag set. No chips selected = pass through.
+  const filteredInspiration = useMemo(() => {
+    const wanted = [...selectedInspoStyles, ...selectedInspoBodyTypes].map(
+      (s) => s.toLowerCase(),
+    );
+    if (wanted.length === 0) return inspiration;
+    return inspiration.filter((i) => {
+      const tagSet = new Set((i.tags ?? []).map((t) => t.toLowerCase()));
+      return wanted.some((w) => tagSet.has(w));
+    });
+  }, [inspiration, selectedInspoStyles, selectedInspoBodyTypes]);
+
   const filteredInventoryResults = useMemo(() => {
     return inventoryResults.filter((p) => {
       if (selectedAvailability.length > 0) {
@@ -743,7 +835,6 @@ export function StyleboardBuilder({
   }
 
   async function clearCanvas() {
-    if (!confirm(`Remove all ${canvas.length} items from this look?`)) return;
     const prev = canvas;
     const ids = prev.map((c) => c.id);
     setCanvas([]);
@@ -824,7 +915,9 @@ export function StyleboardBuilder({
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">
-      {/* Top bar */}
+      {/* Top bar — mirrors LookCreator.tsx@19f4732:794-874. Avatar + loyalty
+          badge + workload subtitle on the left; Client info opens the inline
+          ClientDetailPanel sheet on the right. */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-3">
           <Link
@@ -833,32 +926,72 @@ export function StyleboardBuilder({
           >
             <ArrowLeftIcon className="h-5 w-5" />
           </Link>
-          <div>
-            <h1 className="font-display text-base font-semibold">
-              {isRevision ? "Create restyle" : "Create a look"}
-            </h1>
-            <p className="font-body text-xs text-muted-foreground">
-              for {clientName} · {canvas.length}/{MAX_ITEMS} items
-            </p>
-          </div>
+          {(() => {
+            const initials =
+              clientName
+                .split(" ")
+                .map((n) => n[0])
+                .filter(Boolean)
+                .slice(0, 2)
+                .join("")
+                .toUpperCase() || "?";
+            const loyalty =
+              clientLoyaltyTier && clientLoyaltyTier !== "new"
+                ? loyaltyConfig[clientLoyaltyTier]
+                : null;
+            const LoyaltyIcon = loyalty?.icon;
+            const subtitle = isRevision ? "Create restyle" : "Create a look";
+            return (
+              <div className="flex items-center gap-2.5">
+                <Avatar className="h-9 w-9">
+                  {clientAvatarUrl ? (
+                    <AvatarImage src={clientAvatarUrl} alt={clientName} />
+                  ) : null}
+                  <AvatarFallback className="font-body text-xs bg-muted text-foreground">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-1.5">
+                    <h1 className="font-display text-sm font-semibold leading-tight">
+                      {clientName}
+                    </h1>
+                    {loyalty && LoyaltyIcon ? (
+                      <Badge
+                        variant="secondary"
+                        className={cn(
+                          "h-5 px-1.5 gap-1 font-body text-[10px] font-medium rounded-sm border-0",
+                          loyalty.className,
+                        )}
+                      >
+                        <LoyaltyIcon className="h-2.5 w-2.5" />
+                        {loyalty.label}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <p className="font-body text-[11px] text-muted-foreground leading-tight">
+                    {subtitle}
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
         </div>
         <div className="flex items-center gap-2">
-          {/* TODO(commit-4): Loveable's LookCreator opens ClientDetailPanel
-              inline as a sheet — staging navigates back to dashboard for
-              now (where Details opens the same panel). Re-add inline sheet
-              in the LookCreator parity pass. */}
-          <Link
-            href={`/stylist/dashboard?session=${sessionId}`}
-            className="inline-flex items-center gap-1.5 h-8 rounded-sm border border-border px-3 font-body text-xs hover:bg-muted transition-colors"
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setClientInfoOpen(true)}
+            className="font-body text-xs h-8 rounded-sm gap-1.5"
           >
             <UserIcon className="h-3.5 w-3.5" />
             Client info
-          </Link>
+          </Button>
           {canvas.length > 0 && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => void clearCanvas()}
+              onClick={() => setClearConfirmOpen(true)}
               className="font-body text-xs text-muted-foreground h-8 gap-1"
             >
               <Trash2Icon className="h-3.5 w-3.5" />
@@ -873,8 +1006,7 @@ export function StyleboardBuilder({
             className="h-8 rounded-sm bg-foreground text-background hover:bg-foreground/90 font-body text-xs gap-1.5"
           >
             <SendIcon className="h-3.5 w-3.5" />
-            Save &amp; send
-            {!canSave && ` (${canvas.length}/${MIN_ITEMS})`}
+            Save & send{!canSave ? ` (${canvas.length}/${MIN_ITEMS})` : ""}
           </Button>
         </div>
       </div>
@@ -1079,7 +1211,12 @@ export function StyleboardBuilder({
           {tab === "inspiration" && (
             <ScrollArea className="flex-1">
               <div className="grid grid-cols-2 gap-2 p-3">
-                {inspiration.map((i) => (
+                {filteredInspiration.length === 0 && (
+                  <p className="col-span-2 py-6 text-center font-body text-xs text-muted-foreground">
+                    No inspiration photos match these filters.
+                  </p>
+                )}
+                {filteredInspiration.map((i) => (
                   <SourceTile
                     key={i.id}
                     imageUrl={i.url}
@@ -1278,6 +1415,35 @@ export function StyleboardBuilder({
           }}
         />
       )}
+
+      <ClientDetailPanel
+        open={clientInfoOpen}
+        onOpenChange={setClientInfoOpen}
+        sessionId={sessionId}
+        clientId={clientId}
+      />
+
+      <AlertDialog open={clearConfirmOpen} onOpenChange={setClearConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear this look?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {`Remove all ${canvas.length} ${canvas.length === 1 ? "item" : "items"} from this look. This can't be undone.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setClearConfirmOpen(false);
+                void clearCanvas();
+              }}
+            >
+              Clear
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -1702,9 +1868,6 @@ function FilterPanel({
           inventory service does not yet expose (BACKEND-GAP-E/F/G/H). The
           chips render so stylists can preview the taxonomy, but they
           don't narrow product results until the backend lands them. */}
-      <p className="font-body text-[10px] italic text-muted-foreground/70">
-        Some filters below preview taxonomy not yet served by inventory.
-      </p>
 
       <ChipGroup
         label="Tops subcategories"
