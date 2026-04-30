@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ShoppingBagIcon } from "lucide-react";
+import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
@@ -23,6 +25,19 @@ interface Props {
  * are also out of scope for the public view (only the finalized
  * STYLEBOARD that the client received).
  */
+async function getCartCountForClerkUser(clerkId: string): Promise<number> {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true },
+    });
+    if (!user) return 0;
+    return await prisma.cartItem.count({ where: { userId: user.id } });
+  } catch {
+    return 0;
+  }
+}
+
 async function loadSharedBoard(boardId: string) {
   const board = await prisma.board.findUnique({
     where: { id: boardId },
@@ -117,20 +132,27 @@ export default async function SharedBoardPage({ params }: Props) {
   const photos = board.photos;
   const items = board.items;
 
+  // Floating cart bar: only when this viewer is signed in and has items
+  // queued in their cart — Loveable parity (SharedBoard.tsx:82-99).
+  const { userId: viewerClerkId } = await auth();
+  const viewerCartCount = viewerClerkId
+    ? await getCartCountForClerkUser(viewerClerkId)
+    : 0;
+
   return (
     <>
       <SiteHeader />
       <main className="min-h-screen bg-background">
-        <div className="mx-auto max-w-4xl px-6 py-10 md:py-14">
+        <div className="mx-auto max-w-4xl px-4 py-8 md:py-12">
           {/* Stylist attribution */}
-          <div className="mb-8 flex items-center gap-3">
-            <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-full bg-muted">
+          <div className="mb-6 flex items-center gap-3">
+            <div className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-muted">
               {stylist.avatarUrl ? (
                 <Image
                   src={stylist.avatarUrl}
                   alt={stylistName}
                   fill
-                  sizes="48px"
+                  sizes="40px"
                   className="object-cover"
                 />
               ) : (
@@ -140,9 +162,7 @@ export default async function SharedBoardPage({ params }: Props) {
               )}
             </div>
             <div>
-              <p className="text-xs uppercase tracking-widest text-muted-foreground">
-                styled by
-              </p>
+              <p className="font-body text-sm text-muted-foreground">styled by</p>
               <Link
                 href={`/stylists/${stylistProfileId}`}
                 className="font-display text-lg underline-offset-4 hover:underline"
@@ -154,7 +174,7 @@ export default async function SharedBoardPage({ params }: Props) {
 
           {/* Board title + note */}
           <header className="mb-8">
-            <h1 className="mb-3 font-display text-3xl md:text-4xl">{title}</h1>
+            <h1 className="mb-3 font-display text-2xl md:text-3xl">{title}</h1>
             {board.stylistNote && (
               <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
                 {board.stylistNote}
@@ -188,9 +208,6 @@ export default async function SharedBoardPage({ params }: Props) {
           {/* Items */}
           {items.length > 0 && (
             <section className="mb-10">
-              <h2 className="mb-4 text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                Shop the look
-              </h2>
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 {items.map((item) => {
                   const label =
@@ -272,6 +289,26 @@ export default async function SharedBoardPage({ params }: Props) {
           </section>
         </div>
       </main>
+
+      {viewerCartCount > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-foreground p-4 text-background shadow-2xl">
+          <div className="mx-auto flex max-w-4xl items-center justify-between">
+            <div className="flex items-center gap-3">
+              <ShoppingBagIcon className="h-5 w-5" />
+              <span className="text-sm">
+                {viewerCartCount} {viewerCartCount === 1 ? "item" : "items"} in bag
+              </span>
+            </div>
+            <Link
+              href="/cart"
+              className="text-sm font-medium underline underline-offset-4 transition-opacity hover:opacity-80"
+            >
+              view bag
+            </Link>
+          </div>
+        </div>
+      )}
+
       <SiteFooter />
     </>
   );

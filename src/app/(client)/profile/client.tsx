@@ -39,6 +39,7 @@ interface Look {
   boardId: string;
   sessionId: string | null;
   title: string | null;
+  thumbnailUrl: string | null;
 }
 
 interface Props {
@@ -48,10 +49,10 @@ interface Props {
 }
 
 const FILTER_LABELS: Record<FilterKey, string> = {
+  category: "Category",
   designer: "Designer",
   season: "Season",
   color: "Color",
-  category: "Category",
 };
 
 export function ProfilePageClient({
@@ -62,8 +63,9 @@ export function ProfilePageClient({
   const [items, setItems] = useState(initialItems);
   const [collections, setCollections] = useState(initialCollections);
   const [filters, setFilters] = useState<ClosetFilters>({});
-  const [openFilter, setOpenFilter] = useState<FilterKey | null>(null);
+  const [openFilter, setOpenFilter] = useState<FilterKey | null>("category");
   const [addOpen, setAddOpen] = useState(false);
+  const [looksTab, setLooksTab] = useState<"styleboards" | "favorites">("styleboards");
 
   const facets = useMemo(() => computeClosetFacets(items), [items]);
   const filteredItems = useMemo(
@@ -71,13 +73,27 @@ export function ProfilePageClient({
     [items, filters],
   );
 
-  function setFilter(key: FilterKey, value: string | null) {
+  const activeFilterCount = useMemo(
+    () =>
+      (Object.values(filters) as (string[] | undefined)[]).reduce(
+        (sum, arr) => sum + (arr?.length ?? 0),
+        0,
+      ),
+    [filters],
+  );
+
+  function toggleFilter(key: FilterKey, value: string) {
     setFilters((prev) => {
-      const next = { ...prev };
-      if (value == null) delete next[key];
-      else next[key] = value;
-      return next;
+      const current = prev[key] ?? [];
+      const next = current.includes(value)
+        ? current.filter((v) => v !== value)
+        : [...current, value];
+      return { ...prev, [key]: next };
     });
+  }
+
+  function clearAllFilters() {
+    setFilters({});
   }
 
   async function deleteItem(id: string) {
@@ -119,7 +135,7 @@ export function ProfilePageClient({
   return (
     <>
       <Tabs defaultValue="items" className="w-full">
-        <TabsList className="h-auto w-full justify-start gap-6 rounded-none border-b border-stone-200 bg-transparent p-0">
+        <TabsList className="h-auto w-full justify-start gap-6 rounded-none border-b border-border bg-transparent p-0">
           <TabsTrigger
             value="items"
             className="rounded-none border-b-2 border-transparent px-0 pb-3 text-base data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none"
@@ -145,29 +161,40 @@ export function ProfilePageClient({
           <div className="flex gap-8">
             {/* Filter sidebar */}
             <aside className="hidden w-52 shrink-0 lg:block">
-              <h3 className="mb-4 font-serif text-lg">Filter</h3>
+              <div className="mb-4 flex items-baseline justify-between">
+                <h3 className="font-display text-lg">Filter</h3>
+                {activeFilterCount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={clearAllFilters}
+                    className="font-body text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                  >
+                    Clear all
+                  </button>
+                ) : null}
+              </div>
               {(Object.keys(FILTER_LABELS) as FilterKey[]).map((key) => {
                 const values = facets[key];
-                const selected = filters[key];
+                const selected = filters[key] ?? [];
                 const isOpen = openFilter === key;
                 return (
-                  <div key={key} className="border-b border-stone-200">
+                  <div key={key} className="border-b border-border">
                     <button
                       type="button"
                       onClick={() => setOpenFilter(isOpen ? null : key)}
-                      className="flex w-full items-center justify-between py-3 text-left text-sm text-stone-800 hover:text-stone-500"
+                      className="flex w-full items-center justify-between py-3 text-left text-sm text-foreground hover:text-muted-foreground"
                     >
                       <span>
                         {FILTER_LABELS[key]}
-                        {selected && (
-                          <span className="ml-2 text-xs text-stone-500">
-                            · {selected}
+                        {selected.length > 0 && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            · {selected.length}
                           </span>
                         )}
                       </span>
                       <ChevronRight
                         className={cn(
-                          "h-4 w-4 text-stone-400 transition-transform",
+                          "h-4 w-4 text-muted-foreground transition-transform",
                           isOpen && "rotate-90",
                         )}
                       />
@@ -175,37 +202,26 @@ export function ProfilePageClient({
                     {isOpen && (
                       <div className="pb-3">
                         {values.length === 0 ? (
-                          <p className="text-xs text-stone-400">None yet</p>
+                          <p className="text-xs text-muted-foreground">None yet</p>
                         ) : (
                           <ul className="space-y-1">
-                            <li>
-                              <button
-                                type="button"
-                                onClick={() => setFilter(key, null)}
-                                className={cn(
-                                  "block w-full rounded px-2 py-1 text-left text-xs hover:bg-stone-50",
-                                  !selected && "font-medium text-stone-900",
-                                )}
-                              >
-                                All
-                              </button>
-                            </li>
-                            {values.map((v) => (
-                              <li key={v}>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setFilter(key, selected === v ? null : v)
-                                  }
-                                  className={cn(
-                                    "block w-full rounded px-2 py-1 text-left text-xs capitalize hover:bg-stone-50",
-                                    selected === v && "bg-stone-100 font-medium",
-                                  )}
-                                >
-                                  {v}
-                                </button>
-                              </li>
-                            ))}
+                            {values.map((v) => {
+                              const active = selected.includes(v);
+                              return (
+                                <li key={v}>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleFilter(key, v)}
+                                    className={cn(
+                                      "block w-full rounded px-2 py-1 text-left text-xs capitalize hover:bg-muted",
+                                      active && "bg-muted font-medium text-foreground",
+                                    )}
+                                  >
+                                    {v}
+                                  </button>
+                                </li>
+                              );
+                            })}
                           </ul>
                         )}
                       </div>
@@ -217,7 +233,7 @@ export function ProfilePageClient({
 
             <div className="min-w-0 flex-1">
               <div className="mb-5 flex items-center justify-between">
-                <p className="text-xs uppercase tracking-wider text-stone-500">
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">
                   {filteredItems.length}{" "}
                   {filteredItems.length === 1 ? "item" : "items"}
                 </p>
@@ -230,8 +246,36 @@ export function ProfilePageClient({
                 </Button>
               </div>
 
+              {/* Active filter chips */}
+              {activeFilterCount > 0 && (
+                <div className="mb-5 flex flex-wrap items-center gap-2">
+                  {(Object.keys(FILTER_LABELS) as FilterKey[]).flatMap((key) =>
+                    (filters[key] ?? []).map((value) => (
+                      <button
+                        key={`${key}:${value}`}
+                        type="button"
+                        onClick={() => toggleFilter(key, value)}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs capitalize text-foreground hover:bg-muted"
+                      >
+                        {value}
+                        <span aria-hidden className="text-muted-foreground">
+                          ×
+                        </span>
+                      </button>
+                    )),
+                  )}
+                  <button
+                    type="button"
+                    onClick={clearAllFilters}
+                    className="font-body text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                  >
+                    Clear all
+                  </button>
+                </div>
+              )}
+
               {filteredItems.length === 0 ? (
-                <p className="py-16 text-center text-sm text-stone-500">
+                <p className="py-16 text-center text-sm text-muted-foreground">
                   {items.length === 0
                     ? "Your closet is empty. Add an item to get started."
                     : "No items match the current filters."}
@@ -239,27 +283,25 @@ export function ProfilePageClient({
               ) : (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                   {filteredItems.map((item) => (
-                    <div
-                      key={item.id}
-                      className="group relative overflow-hidden rounded-xl border border-stone-200 bg-white"
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={item.url}
-                        alt={item.name ?? ""}
-                        className="aspect-square w-full object-cover"
-                      />
-                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-2 opacity-0 transition-opacity group-hover:opacity-100">
-                        <p className="truncate text-xs text-white">
-                          {item.designer ?? item.name ?? "Item"}
-                        </p>
+                    <div key={item.id} className="group">
+                      <div className="relative overflow-hidden rounded-xl border border-border bg-card">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={item.url}
+                          alt={item.name ?? ""}
+                          className="aspect-square w-full object-cover"
+                        />
                         <button
                           onClick={() => void deleteItem(item.id)}
-                          className="mt-1 inline-flex items-center gap-1 text-xs text-red-200 hover:text-red-100"
+                          aria-label="Remove from closet"
+                          className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-background/80 text-foreground opacity-0 backdrop-blur transition-opacity hover:text-destructive group-hover:opacity-100"
                         >
-                          <Trash2 className="h-3 w-3" /> Remove
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
+                      <p className="mt-2 truncate font-body text-xs uppercase tracking-wider text-foreground">
+                        {item.designer ?? item.name ?? "—"}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -270,8 +312,34 @@ export function ProfilePageClient({
 
         {/* Looks tab — favorited styleboards */}
         <TabsContent value="looks" className="mt-6">
+          <div className="mb-5 flex items-center gap-6 border-b border-border">
+            <button
+              type="button"
+              onClick={() => setLooksTab("styleboards")}
+              className={cn(
+                "border-b-2 px-0 pb-3 font-body text-sm transition-colors",
+                looksTab === "styleboards"
+                  ? "border-foreground text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Style boards
+            </button>
+            <button
+              type="button"
+              onClick={() => setLooksTab("favorites")}
+              className={cn(
+                "border-b-2 px-0 pb-3 font-body text-sm transition-colors",
+                looksTab === "favorites"
+                  ? "border-foreground text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Favorites
+            </button>
+          </div>
           {looks.length === 0 ? (
-            <p className="py-20 text-center text-sm text-stone-500">
+            <p className="py-20 text-center text-sm text-muted-foreground">
               No saved looks yet. Tap the heart on a styleboard to save it here.
             </p>
           ) : (
@@ -284,10 +352,19 @@ export function ProfilePageClient({
                       ? `/sessions/${look.sessionId}`
                       : `/profile`
                   }
-                  className="group block overflow-hidden rounded-2xl border border-stone-200 bg-white transition-shadow hover:shadow-md"
+                  className="group block overflow-hidden rounded-2xl border border-border bg-card transition-shadow hover:shadow-md"
                 >
-                  <div className="aspect-square bg-stone-100" />
-                  <div className="p-3 text-sm text-stone-700">
+                  <div className="relative aspect-square overflow-hidden bg-muted">
+                    {look.thumbnailUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={look.thumbnailUrl}
+                        alt={look.title ?? "Styleboard"}
+                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      />
+                    ) : null}
+                  </div>
+                  <div className="p-3 font-body text-sm text-foreground">
                     {look.title ?? "Styleboard"}
                   </div>
                 </Link>
@@ -299,14 +376,14 @@ export function ProfilePageClient({
         {/* Collections tab — preview grid + create */}
         <TabsContent value="collections" className="mt-6">
           <div className="mb-5 flex items-center justify-between">
-            <p className="text-xs uppercase tracking-wider text-stone-500">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">
               {collections.length}{" "}
               {collections.length === 1 ? "collection" : "collections"}
             </p>
             <CreateCollectionButton onCreate={createCollection} />
           </div>
           {collections.length === 0 ? (
-            <p className="py-20 text-center text-sm text-stone-500">
+            <p className="py-20 text-center text-sm text-muted-foreground">
               No collections yet. Create one to group items by occasion or season.
             </p>
           ) : (
@@ -315,15 +392,15 @@ export function ProfilePageClient({
                 <Link
                   key={c.id}
                   href={`/collections/${c.id}`}
-                  className="group block overflow-hidden rounded-2xl border border-stone-200 bg-white transition-shadow hover:shadow-md"
+                  className="group block overflow-hidden rounded-2xl border border-border bg-card transition-shadow hover:shadow-md"
                 >
-                  <div className="grid grid-cols-2 gap-1.5 p-3 pb-0">
+                  <div className="grid grid-cols-4 gap-1.5 p-3 pb-0">
                     {Array.from({ length: 4 }).map((_, i) => {
                       const url = c.previewImages[i];
                       return (
                         <div
                           key={i}
-                          className="aspect-square overflow-hidden rounded-lg bg-stone-100"
+                          className="aspect-[3/4] overflow-hidden rounded-md bg-muted"
                         >
                           {url && (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -339,14 +416,16 @@ export function ProfilePageClient({
                   </div>
                   <div className="flex items-end justify-between p-4 pt-3">
                     <div>
-                      <p className="font-serif text-base text-stone-900">
+                      <p className="font-display text-base text-foreground">
                         {c.name}
                       </p>
-                      <p className="mt-0.5 text-xs text-stone-500">
+                      <p className="mt-0.5 text-xs text-muted-foreground">
                         {c.itemCount} {c.itemCount === 1 ? "item" : "items"}
                       </p>
                     </div>
-                    <ChevronRight className="h-4 w-4 text-stone-400 transition-transform group-hover:translate-x-0.5" />
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full transition-colors group-hover:bg-muted">
+                      <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                    </span>
                   </div>
                 </Link>
               ))}
@@ -354,6 +433,15 @@ export function ProfilePageClient({
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Floating Add Item button — Loveable Profile.tsx:1214-1220 */}
+      <button
+        type="button"
+        onClick={() => setAddOpen(true)}
+        className="fixed bottom-8 right-8 z-30 inline-flex items-center gap-2 rounded-full bg-foreground px-5 py-3 font-body text-sm font-medium text-background shadow-lg transition-all hover:bg-foreground/90 hover:shadow-xl"
+      >
+        <Plus className="h-4 w-4" /> Add Item
+      </button>
 
       <AddItemDialog
         open={addOpen}
@@ -422,8 +510,6 @@ function AddItemDialog({ open, onOpenChange, onItemCreated }: AddDialogProps) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ url: webUrl.trim() }),
       });
-      // The endpoint returns 202 with `partial: true` when the OG scrape only
-      // captured some metadata — we still got an item, just incomplete.
       if (res.status !== 201 && res.status !== 202) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(body.error ?? "Couldn't add from web");
@@ -445,18 +531,18 @@ function AddItemDialog({ open, onOpenChange, onItemCreated }: AddDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="font-serif text-xl">Add Item</DialogTitle>
+          <DialogTitle className="font-display text-xl">Add Item</DialogTitle>
         </DialogHeader>
         <div className="space-y-3 pt-2">
-          <label className="flex w-full cursor-pointer items-center gap-4 rounded-xl border border-stone-200 p-4 hover:bg-stone-50">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-stone-100">
-              <Camera className="h-5 w-5 text-stone-600" />
+          <label className="flex w-full cursor-pointer items-center gap-4 rounded-xl border border-border p-4 hover:bg-muted">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-muted">
+              <Camera className="h-5 w-5 text-foreground" />
             </span>
             <span className="flex-1">
-              <span className="block text-sm font-medium text-stone-800">
+              <span className="block text-sm font-medium text-foreground">
                 Take a Photo
               </span>
-              <span className="block text-xs text-stone-500">Use your camera</span>
+              <span className="block text-xs text-muted-foreground">Use your camera</span>
             </span>
             <input
               type="file"
@@ -470,15 +556,15 @@ function AddItemDialog({ open, onOpenChange, onItemCreated }: AddDialogProps) {
               }}
             />
           </label>
-          <label className="flex w-full cursor-pointer items-center gap-4 rounded-xl border border-stone-200 p-4 hover:bg-stone-50">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-stone-100">
-              <ImageIcon className="h-5 w-5 text-stone-600" />
+          <label className="flex w-full cursor-pointer items-center gap-4 rounded-xl border border-border p-4 hover:bg-muted">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-muted">
+              <ImageIcon className="h-5 w-5 text-foreground" />
             </span>
             <span className="flex-1">
-              <span className="block text-sm font-medium text-stone-800">
+              <span className="block text-sm font-medium text-foreground">
                 Photo Library
               </span>
-              <span className="block text-xs text-stone-500">
+              <span className="block text-xs text-muted-foreground">
                 Choose from your device
               </span>
             </span>
@@ -494,16 +580,16 @@ function AddItemDialog({ open, onOpenChange, onItemCreated }: AddDialogProps) {
             />
           </label>
 
-          <div className="rounded-xl border border-stone-200 p-4">
+          <div className="rounded-xl border border-border p-4">
             <div className="mb-3 flex items-center gap-4">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-stone-100">
-                <Globe className="h-5 w-5 text-stone-600" />
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-muted">
+                <Globe className="h-5 w-5 text-foreground" />
               </span>
               <div>
-                <p className="text-sm font-medium text-stone-800">
+                <p className="text-sm font-medium text-foreground">
                   Upload from Web
                 </p>
-                <p className="text-xs text-stone-500">
+                <p className="text-xs text-muted-foreground">
                   Paste a product link from any retailer
                 </p>
               </div>
@@ -526,8 +612,8 @@ function AddItemDialog({ open, onOpenChange, onItemCreated }: AddDialogProps) {
             </div>
           </div>
 
-          {busy && <p className="text-sm text-stone-500">Working…</p>}
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {busy && <p className="text-sm text-muted-foreground">Working…</p>}
+          {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
       </DialogContent>
     </Dialog>
@@ -553,8 +639,6 @@ function CreateCollectionButton({
       setOpen(false);
       setName("");
     } catch (e) {
-      // Keep the dialog open so the user can correct + retry instead of
-      // having state silently reset on a failed POST.
       setError(e instanceof Error ? e.message : "Couldn't create collection");
     } finally {
       setBusy(false);
@@ -573,7 +657,7 @@ function CreateCollectionButton({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="font-serif text-xl">
+            <DialogTitle className="font-display text-xl">
               New Collection
             </DialogTitle>
           </DialogHeader>
@@ -585,7 +669,7 @@ function CreateCollectionButton({
             maxLength={80}
             autoFocus
           />
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-destructive">{error}</p>}
           <Button
             className="w-full"
             onClick={submit}

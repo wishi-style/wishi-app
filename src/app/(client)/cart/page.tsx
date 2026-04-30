@@ -6,7 +6,6 @@ import { listCartItems } from "@/lib/cart/cart.service";
 import { listFavoriteItems } from "@/lib/boards/favorite.service";
 import { getProduct } from "@/lib/inventory/inventory-client";
 import { getMerchandised } from "@/lib/products/merchandised-product.service";
-import { PillButton } from "@/components/primitives/pill-button";
 import { CartRemoveButton } from "./cart-remove-button";
 import { RetailerClickButton } from "./retailer-click";
 import { CheckoutButton } from "./checkout-button";
@@ -34,7 +33,6 @@ type WishiRow = {
 type RetailerRow = {
   favoriteItemId: string;
   inventoryProductId: string | null;
-  /** The URL to shop at the retailer — either a listing affiliate_url or the favorited webUrl */
   url: string;
   retailer: string;
   name: string;
@@ -45,7 +43,7 @@ type RetailerRow = {
 
 /**
  * MyBag / Cart — two-track. Wishi items (direct-sale, Stripe Checkout via
- * POST /api/payments/checkout) on top; "Purchase at retailer" below for
+ * POST /api/payments/checkout) on top; "Purchase via retailer" below for
  * items the user has favorited that aren't fulfilled by Wishi. Each
  * retailer row fires POST /api/affiliate/click before opening the retailer
  * link so commission ingest can later match the purchase back.
@@ -80,9 +78,6 @@ export default async function CartPage() {
     }),
   );
 
-  // Retailer track = favorited items that are either (a) inventory products
-  // NOT marked direct-sale, or (b) free-text webUrl favorites. Wishi-fulfilled
-  // inventory items hide here since they already live in the Wishi track.
   const inventoryFavIds = favoriteItems
     .map((f: (typeof favoriteItems)[number]) => f.inventoryProductId)
     .filter((id: string | null): id is string => !!id);
@@ -93,13 +88,10 @@ export default async function CartPage() {
       favoriteItems.map(async (fav: (typeof favoriteItems)[number]) => {
         if (fav.inventoryProductId) {
           const merch = merchandisedMap.get(fav.inventoryProductId);
-          if (merch?.isDirectSale) return null; // already in Wishi track
+          if (merch?.isDirectSale) return null;
           const product = await getProduct(fav.inventoryProductId);
           if (!product) return null;
           const listing = product.listings?.[0];
-          // Only show rows that link to a real product/retailer page —
-          // image URLs aren't shoppable, so we drop them rather than
-          // sending the user to a raw asset.
           const url = listing?.affiliate_url ?? listing?.product_url;
           if (!url) return null;
           return {
@@ -138,59 +130,50 @@ export default async function CartPage() {
     0,
   );
   const subtotal = formatDollars(subtotalCents);
+  const wishiItemCount = wishi.length;
 
   const nothing = wishi.length === 0 && retailer.length === 0;
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-5xl px-6 md:px-10 py-12 md:py-16">
-        <header className="mb-10">
-          <h1 className="font-display text-3xl md:text-4xl">My Bag</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {nothing
-              ? "Nothing here yet — your stylist's picks will show up in the board, ready to add."
-              : `${wishi.length + retailer.length} item${wishi.length + retailer.length === 1 ? "" : "s"} saved.`}
+    <div className="min-h-screen bg-white">
+      <div className="mx-auto max-w-6xl px-6 md:px-10 py-10 md:py-16">
+        <header className="mb-10 text-center">
+          <h1 className="font-display text-4xl md:text-5xl mb-2">My Bag</h1>
+          <p className="font-body text-sm text-muted-foreground tracking-wide">
+            Always Free Shipping
           </p>
         </header>
 
         {nothing ? (
-          <div className="rounded-2xl border border-border bg-card p-12 text-center">
-            <p className="text-sm text-muted-foreground">
-              You don&apos;t have any items in your bag yet.
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <h3 className="font-display text-xl mb-2">Let&apos;s fill up your cart</h3>
+            <p className="text-muted-foreground font-body text-sm">
+              Browse your curated pieces and add your favorites.
             </p>
-            <PillButton
-              href="/sessions"
-              variant="solid"
-              size="md"
-              className="mt-5"
-            >
-              Go to my sessions
-            </PillButton>
           </div>
         ) : (
-          <div className="grid gap-10 lg:grid-cols-[1fr,320px]">
-            <div className="space-y-10">
+          <div className="flex flex-col gap-10 lg:flex-row">
+            <div className="min-w-0 flex-1">
               {wishi.length > 0 ? (
-                <section>
-                  <div className="mb-3 flex items-baseline justify-between">
-                    <h2 className="font-display text-lg">Shop with Wishi</h2>
-                    <p className="text-xs text-muted-foreground">
-                      Fulfilled by Wishi
-                    </p>
+                <section className="mb-10">
+                  <div className="mb-4 border-b border-border pb-3">
+                    <h2 className="font-display text-lg">
+                      Select items for single checkout via Wishi
+                    </h2>
                   </div>
-                  <ul className="space-y-4">
+                  <ul className="divide-y divide-border">
                     {wishi.map((row) => (
                       <li
                         key={row.cartItemId}
-                        className="flex items-start gap-4 rounded-2xl border border-border bg-card p-4"
+                        className="group flex items-start gap-5 py-6"
                       >
-                        <div className="relative h-24 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-muted">
+                        <div className="relative h-32 w-24 flex-shrink-0 overflow-hidden rounded-md bg-muted md:h-36 md:w-28">
                           {row.product?.imageUrl ? (
                             <Image
                               src={row.product.imageUrl}
                               alt={row.product.name}
                               fill
-                              sizes="80px"
+                              sizes="112px"
                               className="object-cover"
                             />
                           ) : (
@@ -199,27 +182,22 @@ export default async function CartPage() {
                             </div>
                           )}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs uppercase tracking-widest text-dark-taupe">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-body text-base font-semibold text-foreground">
                             {row.product?.brand ?? ""}
                           </p>
-                          <p className="font-display text-base truncate">
+                          <p className="mt-0.5 font-body text-sm text-muted-foreground">
                             {row.product?.name ?? "Unknown item"}
                           </p>
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            Qty {row.quantity}
-                          </p>
-                        </div>
-                        <div className="flex flex-col items-end gap-2">
-                          <p className="font-display text-base">
+                          <p className="mt-2 font-body text-sm font-medium">
                             {row.product
                               ? formatDollars(
                                   row.product.priceInCents * row.quantity,
                                 )
                               : "—"}
                           </p>
-                          <CartRemoveButton cartItemId={row.cartItemId} />
                         </div>
+                        <CartRemoveButton cartItemId={row.cartItemId} />
                       </li>
                     ))}
                   </ul>
@@ -228,27 +206,25 @@ export default async function CartPage() {
 
               {retailer.length > 0 ? (
                 <section>
-                  <div className="mb-3 flex items-baseline justify-between">
-                    <h2 className="font-display text-lg">
-                      Purchase at retailer
-                    </h2>
-                    <p className="text-xs text-muted-foreground">
-                      Each retailer ships + handles returns directly
+                  <div className="mb-4 border-b border-border pb-3">
+                    <h2 className="font-display text-lg">Purchase via retailer</h2>
+                    <p className="mt-1 font-body text-xs text-muted-foreground">
+                      These items are available through external retailers
                     </p>
                   </div>
-                  <ul className="space-y-4">
+                  <ul className="divide-y divide-border">
                     {retailer.map((row) => (
                       <li
                         key={row.favoriteItemId}
-                        className="flex items-start gap-4 rounded-2xl border border-border bg-card p-4"
+                        className="group flex items-start gap-5 py-6"
                       >
-                        <div className="relative h-24 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-muted">
+                        <div className="relative ml-10 h-32 w-24 flex-shrink-0 overflow-hidden rounded-md bg-muted md:h-36 md:w-28">
                           {row.imageUrl ? (
                             <Image
                               src={row.imageUrl}
                               alt={row.name}
                               fill
-                              sizes="80px"
+                              sizes="112px"
                               className="object-cover"
                             />
                           ) : (
@@ -257,27 +233,25 @@ export default async function CartPage() {
                             </div>
                           )}
                         </div>
-                        <div className="flex-1 min-w-0">
+                        <div className="min-w-0 flex-1">
                           {row.brand ? (
-                            <p className="text-xs uppercase tracking-widest text-dark-taupe">
+                            <p className="font-body text-base font-semibold text-foreground">
                               {row.brand}
                             </p>
                           ) : null}
-                          <p className="font-display text-base truncate">
+                          <p className="mt-0.5 font-body text-sm text-muted-foreground">
                             {row.name}
                           </p>
                           {row.priceInCents != null ? (
-                            <p className="mt-1 text-sm text-muted-foreground">
+                            <p className="mt-2 font-body text-sm font-medium">
                               {formatDollars(row.priceInCents)}
                             </p>
                           ) : null}
-                        </div>
-                        <div className="flex flex-col items-end gap-2">
                           <RetailerClickButton
                             inventoryProductId={row.inventoryProductId}
                             retailer={row.retailer}
                             url={row.url}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors"
+                            className="mt-3 inline-flex items-center gap-1.5 border border-foreground px-4 py-1.5 font-body text-xs transition-colors hover:bg-foreground hover:text-background"
                           />
                         </div>
                       </li>
@@ -287,27 +261,44 @@ export default async function CartPage() {
               ) : null}
             </div>
 
-            <aside className="h-fit rounded-2xl border border-border bg-card p-6 space-y-4">
-              <p className="text-xs uppercase tracking-widest text-muted-foreground">
-                Wishi order summary
-              </p>
-              <div className="flex items-baseline justify-between">
-                <span className="text-sm text-muted-foreground">Subtotal</span>
-                <span className="font-display text-xl">{subtotal}</span>
+            <aside className="lg:w-80 lg:shrink-0">
+              <div className="sticky top-24 space-y-4 rounded-xl border border-border bg-secondary/30 p-6">
+                <h2 className="text-center font-display text-xl">Order Summary</h2>
+                <div className="space-y-2">
+                  <div className="flex items-baseline justify-between font-body text-sm">
+                    <span className="text-muted-foreground">
+                      Subtotal ({wishiItemCount} {wishiItemCount === 1 ? "item" : "items"})
+                    </span>
+                    <span>{subtotal}</span>
+                  </div>
+                  <div className="flex items-baseline justify-between font-body text-sm">
+                    <span className="text-muted-foreground">Tax</span>
+                    <span>At Checkout</span>
+                  </div>
+                  <div className="flex items-baseline justify-between font-body text-sm">
+                    <span className="text-muted-foreground">Shipping</span>
+                    <span>Free</span>
+                  </div>
+                </div>
+                <div className="border-t border-border pt-4">
+                  <div className="flex items-baseline justify-between">
+                    <span className="font-body text-sm">Estimated Total</span>
+                    <span className="font-display text-xl font-semibold">
+                      {subtotal}
+                    </span>
+                  </div>
+                </div>
+                {wishi.length > 0 ? (
+                  <CheckoutButton
+                    cartItemIds={wishi.map((r) => r.cartItemId)}
+                  />
+                ) : (
+                  <p className="font-body text-xs text-muted-foreground">
+                    Add a Wishi-fulfilled item to your bag to check out here.
+                    Retailer items above check out on each retailer&apos;s site.
+                  </p>
+                )}
               </div>
-              <p className="text-xs text-muted-foreground">
-                Shipping and tax calculated at checkout.
-              </p>
-              {wishi.length > 0 ? (
-                <CheckoutButton
-                  cartItemIds={wishi.map((r) => r.cartItemId)}
-                />
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Add a Wishi-fulfilled item to your bag to check out here.
-                  Retailer items above check out on each retailer&apos;s site.
-                </p>
-              )}
             </aside>
           </div>
         )}

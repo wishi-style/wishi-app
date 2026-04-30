@@ -103,7 +103,7 @@ export default async function CheckoutPage(props: {
   const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-white">
       <CheckoutClient
         items={items}
         publishableKey={publishableKey}
@@ -121,7 +121,7 @@ function EmptyState({ reason }: { reason: "empty" | "invalid" | "not-direct-sale
   } as const;
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-white">
       <div className="mx-auto max-w-2xl px-4 py-20 text-center">
         <h1 className="font-display text-3xl mb-4">No items to checkout</h1>
         <p className="font-body text-sm text-muted-foreground mb-8">

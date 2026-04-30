@@ -64,11 +64,20 @@ interface Props {
   progress: WorkspaceProgress;
   /** Optional override; defaults to viewport-locked height */
   heightClass?: string;
+  /** Stylist's public profile id; if set, the sidebar avatar + name link to it. */
+  stylistProfileId?: string | null;
+  /**
+   * Loveable contract: INQUIRY sessions get a chat-only shell with a "Book"
+   * CTA in place of Buy Looks / Upgrade Plan. The booking URL goes here.
+   */
+  bookCtaHref?: string | null;
+  /** First name of the stylist used in the "Book {firstName}" CTA. */
+  stylistFirstName?: string | null;
 }
 
 type Tab = "chat" | "styleboards" | "curated" | "cart";
 
-const TABS: { id: Tab; label: string }[] = [
+const ALL_TABS: { id: Tab; label: string }[] = [
   { id: "chat", label: "Chat" },
   { id: "styleboards", label: "Style Boards" },
   { id: "curated", label: "Curated Pieces" },
@@ -99,8 +108,13 @@ export function SessionWorkspace({
   curated,
   cart,
   progress,
-  heightClass = "h-[calc(100vh-4rem)]",
+  heightClass = "h-screen",
+  stylistProfileId = null,
+  bookCtaHref = null,
+  stylistFirstName = null,
 }: Props) {
+  const isInquiry = sessionStatus.toUpperCase() === "INQUIRY";
+  const tabs = isInquiry ? ALL_TABS.filter((t) => t.id === "chat") : ALL_TABS;
   const [activeTab, setActiveTab] = React.useState<Tab>("chat");
   const [buyOpen, setBuyOpen] = React.useState(false);
 
@@ -138,6 +152,7 @@ export function SessionWorkspace({
     looksTotal > 0
       ? Math.min(100, Math.round((looksDone / looksTotal) * 100))
       : 0;
+  const looksOverdelivered = looksTotal > 0 && looksDone > looksTotal;
   const additionalLookDollars = Math.round(
     progress.additionalLookPriceCents / 100,
   );
@@ -150,32 +165,55 @@ export function SessionWorkspace({
         <div className="border-b border-border p-5">
           <Link
             href="/sessions"
-            className="mb-5 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            className="mb-5 inline-flex items-center gap-2 text-sm text-foreground transition-colors hover:text-foreground/70"
           >
             <ArrowLeftIcon className="h-4 w-4" />
-            Back to Sessions
+            Back
           </Link>
 
-          <div className="flex items-center gap-3">
-            <Avatar className="h-11 w-11">
-              {otherUserAvatar ? (
-                <AvatarImage src={otherUserAvatar} alt={otherUserName} />
-              ) : null}
-              <AvatarFallback className="bg-secondary text-secondary-foreground font-display">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
-            <div className="min-w-0">
-              <h2 className="font-display text-lg leading-tight truncate">
-                {otherUserName}
-              </h2>
-            </div>
-          </div>
+          {(() => {
+            const meta = (
+              <div className="flex items-center gap-3">
+                <Avatar className="h-11 w-11">
+                  {otherUserAvatar ? (
+                    <AvatarImage src={otherUserAvatar} alt={otherUserName} />
+                  ) : null}
+                  <AvatarFallback className="bg-secondary text-secondary-foreground font-display">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0">
+                  <h2 className="font-display text-lg leading-tight truncate">
+                    {otherUserName}
+                  </h2>
+                </div>
+              </div>
+            );
+            return stylistProfileId ? (
+              <Link
+                href={`/stylists/${stylistProfileId}`}
+                className="group block transition-opacity hover:opacity-80"
+              >
+                {meta}
+              </Link>
+            ) : (
+              meta
+            );
+          })()}
 
           <div className="mt-3 flex items-center gap-2">
-            <Badge variant="outline" className={badgeClass}>
-              {badgeLabel}
-            </Badge>
+            {isInquiry ? (
+              <Badge
+                variant="outline"
+                className="rounded-sm border-0 bg-secondary text-[10px] font-medium text-secondary-foreground"
+              >
+                Inquiry
+              </Badge>
+            ) : (
+              <Badge variant="outline" className={badgeClass}>
+                {badgeLabel}
+              </Badge>
+            )}
             {isClosed && (
               <Badge
                 variant="outline"
@@ -186,10 +224,12 @@ export function SessionWorkspace({
             )}
           </div>
 
-          {looksTotal > 0 && (
+          {!isInquiry && looksTotal > 0 && (
             <div className="mt-4">
               <div className="flex items-baseline justify-between text-[11px]">
-                <span className="text-muted-foreground">Looks delivered</span>
+                <span className="text-muted-foreground">
+                  {looksOverdelivered ? "Deliverable exceeded" : "Looks delivered"}
+                </span>
                 <span className="tabular-nums">
                   {looksDone} / {looksTotal}
                 </span>
@@ -205,7 +245,7 @@ export function SessionWorkspace({
         </div>
 
         <nav className="flex-1 px-3 py-3">
-          {TABS.map((tab) => (
+          {tabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
@@ -227,29 +267,45 @@ export function SessionWorkspace({
           ))}
         </nav>
 
-        <div className="mt-auto space-y-2 border-t border-border p-4">
-          <button
-            type="button"
-            onClick={() => setBuyOpen(true)}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground hover:text-foreground"
-          >
-            <PlusIcon className="h-3.5 w-3.5" />
-            Buy Looks
-            {additionalLookDollars > 0 && (
-              <span className="text-muted-foreground/70">
-                · ${additionalLookDollars}
-              </span>
+        {isInquiry ? (
+          <div className="mt-auto space-y-2 border-t border-border p-4">
+            {bookCtaHref && (
+              <Link
+                href={bookCtaHref}
+                className="flex w-full items-center justify-center rounded-lg bg-foreground px-4 py-2.5 text-sm font-medium text-background transition-colors hover:bg-foreground/90"
+              >
+                Book {stylistFirstName ?? otherUserName.split(" ")[0]}
+              </Link>
             )}
-          </button>
-          {!isLux && (
-            <Link
-              href="/settings"
-              className="flex w-full items-center justify-center rounded-lg px-4 py-2.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            <p className="text-center text-[10px] text-muted-foreground">
+              Ready to start a styling session?
+            </p>
+          </div>
+        ) : (
+          <div className="mt-auto space-y-2 border-t border-border p-4">
+            <button
+              type="button"
+              onClick={() => setBuyOpen(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-[4px] border border-border bg-background px-4 py-2 text-[11px] text-muted-foreground transition-colors hover:border-foreground/50 hover:text-foreground"
             >
-              Upgrade Plan
-            </Link>
-          )}
-        </div>
+              <PlusIcon className="h-3 w-3" />
+              buy more looks
+              {additionalLookDollars > 0 && (
+                <span className="text-muted-foreground/70">
+                  · ${additionalLookDollars}
+                </span>
+              )}
+            </button>
+            {!isLux && (
+              <Link
+                href="/settings"
+                className="flex w-full items-center justify-center rounded-lg border border-border px-4 py-2.5 text-xs text-muted-foreground transition-colors hover:border-foreground hover:text-foreground"
+              >
+                Upgrade Plan
+              </Link>
+            )}
+          </div>
+        )}
       </aside>
 
       {/* Mobile header — back / avatar / plan badge + horizontal tab bar. */}
@@ -274,15 +330,24 @@ export function SessionWorkspace({
               {otherUserName}
             </h2>
           </div>
-          <Badge
-            variant="outline"
-            className={cn(badgeClass, "shrink-0 text-[9px]")}
-          >
-            {badgeLabel}
-          </Badge>
+          {isInquiry ? (
+            <Badge
+              variant="outline"
+              className="shrink-0 rounded-sm border-0 bg-secondary text-[9px] font-medium text-secondary-foreground"
+            >
+              Inquiry
+            </Badge>
+          ) : (
+            <Badge
+              variant="outline"
+              className={cn(badgeClass, "shrink-0 text-[9px]")}
+            >
+              {badgeLabel}
+            </Badge>
+          )}
         </div>
         <div className="flex overflow-x-auto border-t border-border">
-          {TABS.map((tab) => (
+          {tabs.map((tab) => (
             <button
               key={tab.id}
               type="button"

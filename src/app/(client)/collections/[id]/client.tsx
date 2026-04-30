@@ -76,7 +76,7 @@ export function CollectionDetailClient({ collection: initial }: Props) {
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="max-w-md text-2xl font-serif"
+                className="max-w-md font-display text-2xl"
                 maxLength={80}
               />
               <Button size="sm" onClick={saveName} disabled={busy}>
@@ -96,20 +96,20 @@ export function CollectionDetailClient({ collection: initial }: Props) {
             </div>
           ) : (
             <div className="flex items-center gap-3">
-              <h1 className="font-serif text-3xl text-stone-900">
+              <h1 className="font-display text-3xl text-foreground">
                 {collection.name}
               </h1>
               <button
                 onClick={() => setEditing(true)}
-                className="text-stone-400 hover:text-stone-700"
+                className="text-muted-foreground transition-colors hover:text-foreground"
                 aria-label="Rename"
               >
                 <Pencil className="h-4 w-4" />
               </button>
             </div>
           )}
-          {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-          <p className="mt-1 text-sm text-stone-500">
+          {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+          <p className="mt-1 text-sm text-muted-foreground">
             {collection.items.length}{" "}
             {collection.items.length === 1 ? "item" : "items"}
           </p>
@@ -119,14 +119,14 @@ export function CollectionDetailClient({ collection: initial }: Props) {
           size="sm"
           onClick={deleteCollection}
           disabled={busy}
-          className="gap-1.5 text-red-600 hover:bg-red-50"
+          className="gap-1.5 text-destructive hover:bg-destructive/10"
         >
           <Trash2 className="h-4 w-4" /> Delete
         </Button>
       </div>
 
       {collection.items.length === 0 ? (
-        <p className="py-20 text-center text-sm text-stone-500">
+        <p className="py-20 text-center text-sm text-muted-foreground">
           This collection is empty. Add items from your closet.
         </p>
       ) : (
@@ -134,7 +134,7 @@ export function CollectionDetailClient({ collection: initial }: Props) {
           {collection.items.map((it) => (
             <div
               key={it.id}
-              className="group relative overflow-hidden rounded-xl border border-stone-200 bg-white"
+              className="group relative overflow-hidden rounded-xl border border-border bg-card"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -146,15 +146,15 @@ export function CollectionDetailClient({ collection: initial }: Props) {
                 type="button"
                 onClick={() => removeItem(it.closetItem.id)}
                 aria-label="Remove from collection"
-                className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-stone-600 opacity-0 backdrop-blur transition-opacity hover:text-red-600 group-hover:opacity-100"
+                className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-background/80 text-foreground opacity-0 backdrop-blur transition-opacity hover:text-destructive group-hover:opacity-100"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
               <div className="p-2">
-                <p className="truncate text-xs font-medium text-stone-800">
+                <p className="truncate text-xs font-medium text-foreground">
                   {it.closetItem.designer ?? ""}
                 </p>
-                <p className="truncate text-xs text-stone-500">
+                <p className="truncate text-xs text-muted-foreground">
                   {it.closetItem.name ?? it.closetItem.category ?? ""}
                 </p>
               </div>

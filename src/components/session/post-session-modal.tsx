@@ -5,7 +5,7 @@ import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-
 import { loadStripe, type Stripe, type StripeElementsOptions } from "@stripe/stripe-js";
 import { CheckIcon, StarIcon, XIcon } from "lucide-react";
 import { computeChipAmounts, type TipChipPercentage } from "@/lib/payments/tip-policy";
-import { submitEndSessionFeedback } from "@/app/(client)/sessions/[id]/end-session/actions";
+import { submitEndSessionFeedback } from "@/app/(client-fullbleed)/sessions/[id]/end-session/actions";
 
 const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 let stripePromise: Promise<Stripe | null> | null = null;
@@ -34,6 +34,7 @@ export function PostSessionModal(props: PostSessionModalProps) {
   const [step, setStep] = useState<Step>("tip");
   const [tipChoice, setTipChoice] = useState<TipChoice>({ kind: "none" });
   const [rating, setRating] = useState(0);
+  const [reviewTitle, setReviewTitle] = useState("");
   const [reviewText, setReviewText] = useState("");
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -58,12 +59,17 @@ export function PostSessionModal(props: PostSessionModalProps) {
       return;
     }
     setSubmitError(null);
+    const trimmedTitle = reviewTitle.trim();
+    const trimmedBody = reviewText.trim();
+    const combinedReview = trimmedTitle && trimmedBody
+      ? `${trimmedTitle}\n\n${trimmedBody}`
+      : trimmedTitle || trimmedBody || null;
     startTransition(async () => {
       const result = await submitEndSessionFeedback({
         sessionId: props.sessionId,
         tipCents: tipAmountCents,
         rating,
-        reviewText,
+        reviewText: combinedReview,
       });
       if (result.status === "error") {
         setSubmitError(result.message);
@@ -113,8 +119,10 @@ export function PostSessionModal(props: PostSessionModalProps) {
           {step === "review" && (
             <ReviewStep
               rating={rating}
+              reviewTitle={reviewTitle}
               reviewText={reviewText}
               onRatingChange={setRating}
+              onReviewTitleChange={setReviewTitle}
               onReviewChange={setReviewText}
               isSubmitting={isSubmitting}
               error={submitError}
@@ -278,6 +286,8 @@ function ReviewStep({
   reviewText,
   onRatingChange,
   onReviewChange,
+  reviewTitle,
+  onReviewTitleChange,
   isSubmitting,
   error,
   tipAmountCents,
@@ -285,8 +295,10 @@ function ReviewStep({
 }: {
   rating: number;
   reviewText: string;
+  reviewTitle: string;
   onRatingChange: (n: number) => void;
   onReviewChange: (s: string) => void;
+  onReviewTitleChange: (s: string) => void;
   isSubmitting: boolean;
   error: string | null;
   tipAmountCents: number;
@@ -331,16 +343,25 @@ function ReviewStep({
         })}
       </div>
 
-      <div className="mt-6">
-        <textarea
-          value={reviewText}
-          onChange={(e) => onReviewChange(e.target.value)}
-          placeholder="Share your experience…"
-          rows={4}
-          maxLength={500}
-          className="w-full resize-none rounded-lg border border-border bg-muted/40 px-4 py-4 text-sm outline-none placeholder:text-muted-foreground/40 transition-all focus:border-foreground/20"
+      <div className="mt-8 space-y-4">
+        <input
+          value={reviewTitle}
+          onChange={(e) => onReviewTitleChange(e.target.value)}
+          placeholder="Title your review"
+          maxLength={80}
+          className="w-full rounded-lg border border-border bg-muted/40 px-4 py-4 text-sm outline-none transition-all placeholder:text-muted-foreground/40 focus:border-foreground/20"
         />
-        <div className="mt-1 text-right text-xs text-muted-foreground">{reviewText.length}/500</div>
+        <div>
+          <textarea
+            value={reviewText}
+            onChange={(e) => onReviewChange(e.target.value)}
+            placeholder="Share your experience…"
+            rows={4}
+            maxLength={500}
+            className="w-full resize-none rounded-lg border border-border bg-muted/40 px-4 py-4 text-sm outline-none transition-all placeholder:text-muted-foreground/40 focus:border-foreground/20"
+          />
+          <div className="mt-1 text-right text-xs text-muted-foreground">{reviewText.length}/500</div>
+        </div>
       </div>
 
       {error && (

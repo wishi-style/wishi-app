@@ -26,14 +26,16 @@ export default async function CollectionDetailPage({ params }: Props) {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10">
-      <Link
-        href="/profile"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-stone-500 hover:text-stone-800"
-      >
-        <ChevronLeft className="h-4 w-4" /> Back to closet
-      </Link>
-      <CollectionDetailClient collection={collection} />
+    <div className="min-h-screen bg-background">
+      <main className="mx-auto w-full max-w-6xl px-6 py-10 md:py-14">
+        <Link
+          href="/profile"
+          className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ChevronLeft className="h-4 w-4" /> Back to closet
+        </Link>
+        <CollectionDetailClient collection={collection} />
+      </main>
     </div>
   );
 }

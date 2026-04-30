@@ -7,6 +7,8 @@ import { MembershipCard } from "@/components/billing/membership-card";
 import { LoyaltyTierCard } from "@/components/billing/loyalty-tier-card";
 import { TrialBanner } from "@/components/billing/trial-banner";
 import { PaymentFailureBanner } from "@/components/billing/payment-failure-banner";
+import { StyleInfoPanel } from "@/components/settings/style-info-panel";
+import { EditPasswordPanel } from "@/components/settings/edit-password-panel";
 import { SettingsCardGrid, type SettingsCard } from "./settings-card-grid";
 
 export const dynamic = "force-dynamic";
@@ -47,60 +49,66 @@ export default async function SettingsPage() {
       kind: "expand",
       key: "personal-info",
       title: "Personal info",
-      description: "Edit your name, email, phone, and profile picture.",
+      description: "Edit your personal and contact information.",
       iconKey: "user",
       accent: "bg-secondary",
     },
     {
       kind: "expand",
-      key: "membership",
-      title: "Membership",
-      description: "Manage, pause, or cancel your styling plan.",
-      iconKey: "crown",
-      accent: "bg-warm-beige",
-    },
-    {
-      kind: "expand",
-      key: "loyalty",
-      title: "Loyalty rewards",
-      description: "Track your status and unlock perks as you book more sessions.",
-      iconKey: "gift",
+      key: "style-info",
+      title: "Style info",
+      description: "Edit your size, budget, styling preferences, fashion preferences etc.",
+      iconKey: "palette",
       accent: "bg-cream",
     },
     {
       kind: "portal",
       key: "payment",
       title: "Payment method",
-      description: "Update your card and download invoices in the Stripe portal.",
+      description: "Edit your payment method.",
       iconKey: "card",
+      accent: "bg-warm-beige",
+    },
+    {
+      kind: "expand",
+      key: "membership",
+      title: "Membership",
+      description: "Manage, cancel, activate your membership.",
+      iconKey: "crown",
       accent: "bg-secondary",
     },
     {
       kind: "link",
       key: "orders",
       title: "Orders",
-      description: "Review every order placed through Wishi.",
+      description: "Review all your orders here.",
       iconKey: "bag",
-      accent: "bg-warm-beige",
+      accent: "bg-cream",
       href: "/orders",
     },
     {
-      kind: "link",
-      key: "closet",
-      title: "Closet",
-      description: "Browse, add, and organise the pieces you already own.",
-      iconKey: "shirt",
-      accent: "bg-cream",
-      href: "/profile",
+      kind: "portal",
+      key: "payment-history",
+      title: "Payment history",
+      description: "Review all your sessions payments here.",
+      iconKey: "receipt",
+      accent: "bg-warm-beige",
     },
     {
-      kind: "link",
-      key: "favorites",
-      title: "Favorites",
-      description: "Looks, products, and stylists you've saved.",
-      iconKey: "heart",
+      kind: "expand",
+      key: "edit-password",
+      title: "Edit password",
+      description: "Edit your password here.",
+      iconKey: "lock",
       accent: "bg-secondary",
-      href: "/favorites",
+    },
+    {
+      kind: "expand",
+      key: "loyalty",
+      title: "Loyalty rewards",
+      description: "Review your loyalty rewards.",
+      iconKey: "gift",
+      accent: "bg-cream",
     },
   ];
 
@@ -145,6 +153,8 @@ export default async function SettingsPage() {
         lifetimeBookingCount={loyaltyAccount?.lifetimeBookingCount ?? 0}
       />
     ),
+    "style-info": <StyleInfoPanel userId={user.id} />,
+    "edit-password": <EditPasswordPanel />,
   };
 
   return (
@@ -166,8 +176,7 @@ export default async function SettingsPage() {
               Settings
             </h1>
             <p className="mt-2 text-sm text-muted-foreground max-w-lg">
-              Manage your profile, membership, and the closet you&apos;ve been
-              building with Wishi.
+              Manage your profile, style preferences, membership and more.
             </p>
           </div>
         </div>
