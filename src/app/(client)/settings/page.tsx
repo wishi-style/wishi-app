@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getPlanPricesForUi } from "@/lib/plans";
-import { ProfileForm } from "@/components/profile/profile-form";
+import { PersonalInfoPanel } from "@/components/settings/personal-info-panel";
 import { MembershipCard } from "@/components/billing/membership-card";
 import { LoyaltyTierCard } from "@/components/billing/loyalty-tier-card";
 import { TrialBanner } from "@/components/billing/trial-banner";
@@ -14,18 +14,68 @@ import { DeactivateAccountButton } from "./deactivate-account-button";
 
 export const dynamic = "force-dynamic";
 
+function formatLocation(loc: { city: string | null; state: string | null } | null) {
+  if (!loc) return "";
+  if (loc.city && loc.state) return `${loc.city}, ${loc.state}`;
+  return loc.city ?? loc.state ?? "";
+}
+
 export default async function SettingsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/sign-in");
 
-  const [subscription, loyaltyAccount, prices] = await Promise.all([
+  const [
+    subscription,
+    loyaltyAccount,
+    prices,
+    bodyProfile,
+    styleProfile,
+    primaryLocation,
+    socialLinks,
+  ] = await Promise.all([
     prisma.subscription.findFirst({
       where: { userId: user.id },
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
     }),
     prisma.loyaltyAccount.findUnique({ where: { userId: user.id } }),
     getPlanPricesForUi(),
+    prisma.bodyProfile.findUnique({
+      where: { userId: user.id },
+      select: { height: true, bodyType: true },
+    }),
+    prisma.styleProfile.findUnique({
+      where: { userId: user.id },
+      select: { occupation: true },
+    }),
+    prisma.userLocation.findFirst({
+      where: { userId: user.id, isPrimary: true },
+      select: { city: true, state: true },
+    }),
+    prisma.userSocialLink.findMany({
+      where: { userId: user.id, platform: { in: ["instagram", "pinterest"] } },
+      select: { platform: true, url: true },
+    }),
   ]);
+
+  const instagram = socialLinks.find((l) => l.platform === "instagram")?.url ?? "";
+  const pinterest = socialLinks.find((l) => l.platform === "pinterest")?.url ?? "";
+
+  const personalInfo = {
+    firstName: user.firstName,
+    lastName: user.lastName,
+    email: user.email,
+    phone: user.phone ?? "",
+    birthday: user.birthday
+      ? user.birthday.toISOString().slice(0, 10)
+      : "",
+    location: formatLocation(primaryLocation),
+    gender: user.gender ?? "",
+    height: bodyProfile?.height ?? "",
+    bodyType: bodyProfile?.bodyType ?? "",
+    occupation: styleProfile?.occupation ?? "",
+    instagram,
+    pinterest,
+  };
 
   const activeSession = subscription
     ? await prisma.session.findFirst({
@@ -115,14 +165,9 @@ export default async function SettingsPage() {
 
   const panels = {
     "personal-info": (
-      <ProfileForm
-        user={{
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          phone: user.phone,
-          avatarUrl: user.avatarUrl,
-        }}
+      <PersonalInfoPanel
+        avatarUrl={user.avatarUrl}
+        initial={personalInfo}
       />
     ),
     membership: (
