@@ -35,25 +35,14 @@ import { SendMoodBoardDialog } from "@/components/stylist/send-moodboard-dialog"
 import ClientDetailPanel from "@/components/stylist/client-detail-panel";
 import { toast } from "sonner";
 
-const inspo1 = "/loveable-assets/inspo-1.jpg";
-const inspo2 = "/loveable-assets/inspo-2.jpg";
-const inspo3 = "/loveable-assets/inspo-3.jpg";
-const inspo4 = "/loveable-assets/inspo-4.jpg";
-const inspo5 = "/loveable-assets/inspo-5.jpg";
-const inspo6 = "/loveable-assets/inspo-6.jpg";
-const inspo7 = "/loveable-assets/inspo-7.jpg";
-const inspo8 = "/loveable-assets/inspo-8.jpg";
-const mood1 = "/loveable-assets/mood-1.jpg";
-const mood2 = "/loveable-assets/mood-2.jpg";
-const mood3 = "/loveable-assets/mood-3.jpg";
-const mood4 = "/loveable-assets/mood-4.jpg";
-const mood5 = "/loveable-assets/mood-5.jpg";
-const mood6 = "/loveable-assets/mood-6.jpg";
-
-const allInspirationImages = [
-  inspo1, inspo2, inspo3, inspo4, inspo5, inspo6, inspo7, inspo8,
-  mood1, mood2, mood3, mood4, mood5, mood6,
-];
+interface InspirationPhoto {
+  id: string;
+  url: string;
+  s3Key: string;
+  title: string | null;
+  category: string | null;
+  tags: string[];
+}
 
 interface MoodBoardCreatorProps {
   clientName: string;
@@ -63,7 +52,7 @@ interface MoodBoardCreatorProps {
   onBack: () => void;
   onSend?: (images: string[], note: string) => void;
   onDraftSaved?: () => void;
-  onPhotoAdded?: (url: string) => Promise<boolean>;
+  onPhotoAdded?: (input: { url: string; s3Key: string; inspirationPhotoId: string }) => Promise<boolean>;
   onPhotoRemoved?: (url: string) => Promise<void>;
 }
 
@@ -76,7 +65,27 @@ export function MoodboardBuilder({ clientName, sessionId, draftId, initialImages
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [clientInfoOpen, setClientInfoOpen] = useState(false);
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(draftId || null);
-  const resultCount = allInspirationImages.length;
+  const [inspirations, setInspirations] = useState<InspirationPhoto[]>([]);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (genderFilter !== "all") params.set("category", genderFilter);
+    if (searchQuery.trim()) params.set("q", searchQuery.trim());
+    let cancelled = false;
+    fetch(`/api/inspiration-photos?${params.toString()}`)
+      .then((r) => (r.ok ? r.json() : { photos: [] }))
+      .then((body) => {
+        if (!cancelled) setInspirations(body.photos ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setInspirations([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [genderFilter, searchQuery]);
+
+  const resultCount = inspirations.length;
 
   // Re-flow freestyle items when entering freestyle mode or when images change while in freestyle.
   useEffect(() => {
@@ -96,8 +105,8 @@ export function MoodboardBuilder({ clientName, sessionId, draftId, initialImages
     });
   }, [canvasMode, canvasImages]);
 
-  const addToCanvas = (src: string) => {
-    if (canvasImages.includes(src)) {
+  const addToCanvas = (photo: InspirationPhoto) => {
+    if (canvasImages.includes(photo.url)) {
       toast("Already added to board");
       return;
     }
@@ -105,10 +114,14 @@ export function MoodboardBuilder({ clientName, sessionId, draftId, initialImages
       toast("Maximum 9 images per mood board");
       return;
     }
-    setCanvasImages((prev) => [...prev, src]);
+    setCanvasImages((prev) => [...prev, photo.url]);
     if (onPhotoAdded) {
-      void onPhotoAdded(src).then((ok) => {
-        if (!ok) setCanvasImages((prev) => prev.filter((s) => s !== src));
+      void onPhotoAdded({
+        url: photo.url,
+        s3Key: photo.s3Key,
+        inspirationPhotoId: photo.id,
+      }).then((ok) => {
+        if (!ok) setCanvasImages((prev) => prev.filter((s) => s !== photo.url));
       });
     }
   };
@@ -250,17 +263,17 @@ export function MoodboardBuilder({ clientName, sessionId, draftId, initialImages
           {/* Photo grid */}
           <ScrollArea className="flex-1">
             <div className="columns-4 gap-2 p-5">
-              {allInspirationImages.map((src, i) => {
-                const isAdded = canvasImages.includes(src);
+              {inspirations.map((photo, i) => {
+                const isAdded = canvasImages.includes(photo.url);
                 return (
                   <div
-                    key={i}
+                    key={photo.id}
                     className="relative mb-2 group cursor-pointer break-inside-avoid"
-                    onClick={() => addToCanvas(src)}
+                    onClick={() => addToCanvas(photo)}
                   >
                     <Image
-                      src={src}
-                      alt={`Inspiration ${i + 1}`}
+                      src={photo.url}
+                      alt={photo.title || `Inspiration ${i + 1}`}
                       width={400}
                       height={600}
                       unoptimized

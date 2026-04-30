@@ -26,12 +26,20 @@ export function MoodboardBuilderShell({
   // url → photo.id map; mutated as photos are added/removed.
   const photoIdsRef = useRef<Record<string, string>>({ ...initialPhotoIds });
 
-  const onPhotoAdded = async (url: string): Promise<boolean> => {
-    if (photoIdsRef.current[url]) return true; // already persisted
+  const onPhotoAdded = async (input: {
+    url: string;
+    s3Key: string;
+    inspirationPhotoId: string;
+  }): Promise<boolean> => {
+    if (photoIdsRef.current[input.url]) return true; // already persisted
     const res = await fetch(`/api/moodboards/${boardId}/photos`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ s3Key: url, url }),
+      body: JSON.stringify({
+        s3Key: input.s3Key,
+        url: input.url,
+        inspirationPhotoId: input.inspirationPhotoId,
+      }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -39,7 +47,7 @@ export function MoodboardBuilderShell({
       return false;
     }
     const photo = await res.json();
-    photoIdsRef.current[url] = photo.id;
+    photoIdsRef.current[input.url] = photo.id;
     return true;
   };
 

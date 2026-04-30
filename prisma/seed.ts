@@ -3,6 +3,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { seedPlans } from "./seeds/plans";
 import { seedQuizzes } from "./seeds/quizzes";
 import { seedDemoUsers } from "./seeds/demo-users";
+import { seedInspirations } from "./seeds/inspirations";
 
 async function main() {
   const connectionString = process.env.DATABASE_URL;
@@ -16,6 +17,7 @@ async function main() {
   await seedPlans(prisma);
   await seedQuizzes(prisma);
   await seedDemoUsers(prisma);
+  await seedInspirations(prisma);
   console.log("Done.");
 
   await prisma.$disconnect();
