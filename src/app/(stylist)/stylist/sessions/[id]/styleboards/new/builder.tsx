@@ -152,10 +152,20 @@ interface CanvasItem {
 }
 
 type CanvasSize = "min" | "small" | "large";
+// Canvas widths mirror LookCreator.tsx@19f4732:1693-1701. `min` is a
+// collapsed peek-thumbnail the stylist clicks to expand; `small` and
+// `large` are the working sizes.
 const canvasSizeClass: Record<CanvasSize, string> = {
-  min: "max-w-[480px]",
-  small: "max-w-[640px]",
-  large: "max-w-[880px]",
+  min: "max-w-[160px]",
+  small: "max-w-[420px]",
+  large: "max-w-[640px]",
+};
+// Tile width as % of canvas — Loveable widens tiles in small mode so
+// they read at the smaller canvas size.
+const canvasTileWidthClass: Record<CanvasSize, string> = {
+  min: "w-[22%]",
+  small: "w-[26%]",
+  large: "w-[22%]",
 };
 
 const MIN_ITEMS = 3;
@@ -1615,12 +1625,23 @@ export function StyleboardBuilder({
           <CanvasSizeToggle value={canvasSize} onChange={setCanvasSize} />
           <div
             ref={canvasRef}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={handleCanvasDrop}
-            onClick={() => setSelectedId(null)}
+            onDragOver={(e) =>
+              canvasSize === "min" ? undefined : e.preventDefault()
+            }
+            onDrop={canvasSize === "min" ? undefined : handleCanvasDrop}
+            onClick={() => {
+              // In peek mode, a click expands back to small instead of
+              // deselecting (matches Loveable's collapsed-thumbnail UX).
+              if (canvasSize === "min") {
+                setCanvasSize("small");
+                return;
+              }
+              setSelectedId(null);
+            }}
             className={cn(
-              "relative w-full aspect-square rounded-sm border-2 border-dashed border-border bg-background overflow-hidden",
+              "relative w-full aspect-square rounded-sm border-2 border-dashed border-border bg-background overflow-hidden transition-[max-width]",
               canvasSizeClass[canvasSize],
+              canvasSize === "min" && "cursor-zoom-in",
             )}
           >
             {canvas.length === 0 && (
@@ -1641,14 +1662,17 @@ export function StyleboardBuilder({
               const clipPath = c.crop
                 ? `inset(${c.crop.top}% ${c.crop.right}% ${c.crop.bottom}% ${c.crop.left}%)`
                 : undefined;
+              const peek = canvasSize === "min";
               return (
                 <div
                   key={c.id}
-                  draggable
+                  draggable={!peek}
                   onDragStart={() => {
+                    if (peek) return;
                     movingId.current = c.id;
                   }}
                   onClick={(e) => {
+                    if (peek) return;
                     e.stopPropagation();
                     setSelectedId(c.id);
                   }}
@@ -1658,10 +1682,14 @@ export function StyleboardBuilder({
                     zIndex: c.zIndex,
                   }}
                   className={cn(
-                    "absolute w-[22%] aspect-square -translate-x-1/2 -translate-y-1/2 rounded-sm overflow-hidden border-2 bg-card cursor-move transition-shadow",
-                    selectedId === c.id
+                    "absolute aspect-square -translate-x-1/2 -translate-y-1/2 rounded-sm overflow-hidden border-2 bg-card transition-shadow",
+                    canvasTileWidthClass[canvasSize],
+                    peek
+                      ? "pointer-events-none border-transparent"
+                      : "cursor-move",
+                    !peek && selectedId === c.id
                       ? "border-foreground shadow-lg"
-                      : "border-transparent hover:border-border",
+                      : !peek && "border-transparent hover:border-border",
                   )}
                 >
                   {c.imageUrl ? (

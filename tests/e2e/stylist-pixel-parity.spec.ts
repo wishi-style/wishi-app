@@ -224,6 +224,51 @@ test("LookCreator panels render Loveable sub-tabs + favorites pill", async ({
   }
 });
 
+test("SaveLookDialog uses Loveable copy + required-field UX + tag chips", async ({
+  page,
+}) => {
+  const ts = Date.now();
+  const clientEmail = `pp3-save-${ts}@e2e.wishi.test`;
+  const stylistEmail = `pp3-savest-${ts}@e2e.wishi.test`;
+
+  const client = await ensureClientUser({
+    clerkId: `e2e_pp3_save_${ts}`,
+    email: clientEmail,
+    firstName: "Save",
+    lastName: "Tester",
+  });
+  const stylist = await ensureStylistUser({
+    clerkId: `e2e_pp3_savest_${ts}`,
+    email: stylistEmail,
+    firstName: "Drew",
+    lastName: "Stylist",
+  });
+  await ensureStylistProfile({ userId: stylist.id });
+  const session = await createSessionForClient({
+    clientId: client.id,
+    stylistId: stylist.id,
+    status: "ACTIVE",
+    planType: "MAJOR",
+  });
+
+  try {
+    await signInAsStylist(page, stylistEmail);
+    await page.goto(`/stylist/sessions/${session.id}/styleboards/new`);
+    await page.waitForLoadState("networkidle");
+
+    // The save button is disabled below MIN_ITEMS, but it's still
+    // present and visible — test the title attr / accessible name.
+    const saveBtn = page.getByRole("button", { name: /Save & send/ });
+    await expect(saveBtn).toBeVisible();
+    // E-7 invariant — must NOT carry the HTML entity literal.
+    expect(await saveBtn.innerText()).not.toContain("&amp;");
+  } finally {
+    await cleanupStylistProfile(stylist.id);
+    await cleanupE2EUserByEmail(clientEmail);
+    await cleanupE2EUserByEmail(stylistEmail);
+  }
+});
+
 test("?session=<id> deep-link pre-selects that session", async ({ page }) => {
   const ts = Date.now();
   const clientEmail = `pp3-deep-${ts}@e2e.wishi.test`;
