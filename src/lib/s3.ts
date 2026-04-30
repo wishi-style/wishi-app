@@ -105,12 +105,19 @@ export async function getClosetItemPresignedUrl(
 }
 
 /**
- * Build the public URL for an S3 object.
- * Uses direct S3 URL for now; will switch to CloudFront when CDN is configured.
+ * Resolve an S3 object key to a browser-loadable URL. The uploads bucket
+ * itself is fully locked down (BlockPublicPolicy=true,
+ * RestrictPublicBuckets=true — see infra/modules/storage), so direct
+ * `https://<bucket>.s3.<region>.amazonaws.com/<key>` URLs return 403.
+ *
+ * Bytes flow back to the browser through `/api/images/[...key]`, which
+ * pipes the S3 GetObject result with per-prefix auth gating. Returning
+ * a relative path keeps URLs portable across staging/production and
+ * survives a future CloudFront swap (the route handler can become a
+ * 302 to a signed CloudFront URL with no consumer changes).
  */
 export function getPublicUrl(key: string): string {
-  const region = process.env.AWS_REGION ?? "us-east-1";
-  return `https://${getBucket()}.s3.${region}.amazonaws.com/${key}`;
+  return `/api/images/${key}`;
 }
 
 /**
