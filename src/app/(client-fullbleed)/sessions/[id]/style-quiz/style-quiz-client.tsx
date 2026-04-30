@@ -33,7 +33,7 @@ export function StyleQuizClient({ sessionId, questions }: Props) {
         isSubmitting={isPending}
       />
       {error && (
-        <p className="mx-auto max-w-md text-center text-sm text-red-600">
+        <p className="mx-auto max-w-md text-center text-sm text-destructive">
           {error}
         </p>
       )}
