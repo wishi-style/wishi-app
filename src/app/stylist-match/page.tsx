@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { StarIcon } from "lucide-react";
@@ -8,6 +9,13 @@ import { rankStylistsForClient } from "@/lib/services/match.service";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
 import { PortfolioCarousel } from "./portfolio-carousel";
+
+const howItWorksSteps = [
+  { num: "1", title: "Get matched with A-list stylists", image: "/img/hiw-step1-match.png" },
+  { num: "2", title: "Book an online session", image: "/img/hiw-step2-plan.png" },
+  { num: "3", title: "Receive Personalized shoppable looks", image: "/img/hiw-step3-session.png" },
+  { num: "4", title: "Buy what you love on Wishi", image: "/img/hiw-step4-shop.png" },
+];
 
 export const metadata: Metadata = {
   title: "Your stylist match — Wishi",
@@ -235,45 +243,90 @@ export default async function StylistMatchPage() {
             </div>
           </div>
 
-          {orderedOthers.length > 0 && (
-            <section className="mt-16">
-              <h3 className="font-display text-xl md:text-2xl text-center mb-6">
-                Other stylists you might like
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl mx-auto">
-                {orderedOthers.map((profile) => {
-                  const otherFullName =
-                    `${profile.user.firstName} ${profile.user.lastName}`.trim();
-                  return (
-                    <Link
-                      key={profile.id}
-                      href={`/stylists/${profile.id}`}
-                      className="flex items-center gap-4 p-4 rounded-xl border border-border hover:border-foreground/40 transition-colors"
-                    >
-                      {profile.user.avatarUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={profile.user.avatarUrl}
-                          alt={otherFullName}
-                          className="h-14 w-14 rounded-full object-cover"
-                        />
-                      ) : (
-                        <div
-                          aria-hidden="true"
-                          className="h-14 w-14 rounded-full bg-muted"
-                        />
-                      )}
-                      <span className="font-display text-lg">
-                        {otherFullName}
-                      </span>
-                    </Link>
-                  );
-                })}
-              </div>
-            </section>
-          )}
         </div>
       </main>
+
+      {/* How It Works — Loveable StylistMatch.tsx:184-210 */}
+      <section>
+        <div className="container max-w-5xl py-14 md:py-20">
+          <h2 className="font-display text-3xl md:text-4xl text-center mb-12">
+            How it Works
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8">
+            {howItWorksSteps.map((step) => (
+              <div key={step.num} className="text-center">
+                <p className="font-display text-3xl mb-2">{step.num}</p>
+                <p className="font-body text-sm text-foreground/80 mb-5 leading-snug min-h-[40px]">
+                  {step.title}
+                </p>
+                <div className="rounded-xl overflow-hidden border border-border bg-background shadow-sm">
+                  <Image
+                    src={step.image}
+                    alt={step.title}
+                    width={300}
+                    height={300}
+                    className="w-full h-auto object-contain"
+                    loading="lazy"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Other Stylists Recommended — Loveable StylistMatch.tsx:213-254 */}
+      {orderedOthers.length > 0 && (
+        <section className="container max-w-5xl py-14 md:py-20">
+          <h2 className="font-display text-3xl md:text-4xl text-center mb-10">
+            Other Stylists Recommended for You
+          </h2>
+
+          <div className="flex flex-wrap justify-center gap-6 mb-10">
+            {orderedOthers.map((profile) => {
+              const otherFullName =
+                `${profile.user.firstName} ${profile.user.lastName}`.trim();
+              const otherFirstName = profile.user.firstName ?? otherFullName;
+              return (
+                <div
+                  key={profile.id}
+                  className="rounded-xl border border-border bg-card p-6 text-center w-[200px]"
+                >
+                  {profile.user.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={profile.user.avatarUrl}
+                      alt={otherFullName}
+                      className="h-16 w-16 rounded-full object-cover mx-auto mb-3"
+                    />
+                  ) : (
+                    <div
+                      aria-hidden="true"
+                      className="h-16 w-16 rounded-full bg-muted mx-auto mb-3"
+                    />
+                  )}
+                  <p className="font-display text-lg">{otherFirstName}</p>
+                  <Link
+                    href={`/stylists/${profile.id}`}
+                    className="block w-full mt-4 rounded-md bg-foreground text-background py-2.5 text-xs font-body font-medium hover:bg-foreground/90 transition-colors"
+                  >
+                    Meet {otherFirstName}
+                  </Link>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="text-center">
+            <Link
+              href="/stylists"
+              className="inline-flex items-center justify-center border border-foreground rounded-md px-8 py-3 font-body text-sm hover:bg-foreground hover:text-background transition-colors"
+            >
+              View More Stylists
+            </Link>
+          </div>
+        </section>
+      )}
       <SiteFooter />
     </div>
   );
