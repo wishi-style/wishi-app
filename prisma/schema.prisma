@@ -466,6 +466,12 @@ model StyleProfile {
   occupation       String?
   typicallyWears   String?   @map("typically_wears")
   needsDescription String?   @map("needs_description") @db.Text
+  piecesNeeded     String[]  @map("pieces_needed")
+  preferredBrands  String[]  @map("preferred_brands")
+  avoidBrands      String[]  @map("avoid_brands")
+  occasions        String[]
+  notes            String?   @db.Text
+  shoppingValues   String[]  @map("shopping_values")
   quizAnswers      Json?     @map("quiz_answers")
   quizCompletedAt  DateTime? @map("quiz_completed_at")
   createdAt        DateTime  @default(now()) @map("created_at")
@@ -477,16 +483,18 @@ model StyleProfile {
 }
 
 model BodyProfile {
-  id             String         @id @default(cuid())
-  userId         String         @unique @map("user_id")
-  bodyType       String?        @map("body_type")
-  bodyIssues     String?        @map("body_issues") @db.Text
-  highlightAreas String[]       @map("highlight_areas")
-  height         String?
-  topFit         FitPreference? @map("top_fit")
-  bottomFit      FitPreference? @map("bottom_fit")
-  createdAt      DateTime       @default(now()) @map("created_at")
-  updatedAt      DateTime       @updatedAt @map("updated_at")
+  id               String         @id @default(cuid())
+  userId           String         @unique @map("user_id")
+  bodyType         String?        @map("body_type")
+  bodyIssues       String?        @map("body_issues") @db.Text
+  highlightAreas   String[]       @map("highlight_areas")
+  necklinesAvoid   String[]       @map("necklines_avoid")
+  bodyAreasMindful String[]       @map("body_areas_mindful")
+  height           String?
+  topFit           FitPreference? @map("top_fit")
+  bottomFit        FitPreference? @map("bottom_fit")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
 
   user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   sizes BodySize[]
