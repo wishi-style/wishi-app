@@ -7,7 +7,10 @@ import { MembershipCard } from "@/components/billing/membership-card";
 import { LoyaltyTierCard } from "@/components/billing/loyalty-tier-card";
 import { TrialBanner } from "@/components/billing/trial-banner";
 import { PaymentFailureBanner } from "@/components/billing/payment-failure-banner";
-import { StyleInfoPanel } from "@/components/settings/style-info-panel";
+import {
+  StyleInfoPanel,
+  type StyleInfo,
+} from "@/components/settings/style-info-panel";
 import { EditPasswordPanel } from "@/components/settings/edit-password-panel";
 import { SettingsCardGrid, type SettingsCard } from "./settings-card-grid";
 import { DeactivateAccountButton } from "./deactivate-account-button";
@@ -19,6 +22,24 @@ function formatLocation(loc: { city: string | null; state: string | null } | nul
   if (loc.city && loc.state) return `${loc.city}, ${loc.state}`;
   return loc.city ?? loc.state ?? "";
 }
+
+function formatBudget(min: number, max: number): string {
+  return `$${Math.round(min / 100)}–${Math.round(max / 100)}`;
+}
+
+function comfortZoneLabel(level: number | null | undefined): string {
+  if (level === null || level === undefined) return "";
+  if (level <= 3) return "Stay close";
+  if (level <= 7) return "A little outside";
+  return "Push my boundaries";
+}
+
+const FIT_DISPLAY: Record<string, string> = {
+  SLIM: "Slim",
+  REGULAR: "Regular",
+  RELAXED: "Relaxed",
+  OVERSIZED: "Oversized",
+};
 
 export default async function SettingsPage() {
   const user = await getCurrentUser();
@@ -32,6 +53,11 @@ export default async function SettingsPage() {
     styleProfile,
     primaryLocation,
     socialLinks,
+    budgets,
+    colors,
+    fabrics,
+    patterns,
+    latestSession,
   ] = await Promise.all([
     prisma.subscription.findFirst({
       where: { userId: user.id },
@@ -41,12 +67,9 @@ export default async function SettingsPage() {
     getPlanPricesForUi(),
     prisma.bodyProfile.findUnique({
       where: { userId: user.id },
-      select: { height: true, bodyType: true },
+      include: { sizes: true },
     }),
-    prisma.styleProfile.findUnique({
-      where: { userId: user.id },
-      select: { occupation: true },
-    }),
+    prisma.styleProfile.findUnique({ where: { userId: user.id } }),
     prisma.userLocation.findFirst({
       where: { userId: user.id, isPrimary: true },
       select: { city: true, state: true },
@@ -54,6 +77,15 @@ export default async function SettingsPage() {
     prisma.userSocialLink.findMany({
       where: { userId: user.id, platform: { in: ["instagram", "pinterest"] } },
       select: { platform: true, url: true },
+    }),
+    prisma.budgetByCategory.findMany({ where: { userId: user.id } }),
+    prisma.colorPreference.findMany({ where: { userId: user.id } }),
+    prisma.fabricPreference.findMany({ where: { userId: user.id } }),
+    prisma.patternPreference.findMany({ where: { userId: user.id } }),
+    prisma.session.findFirst({
+      where: { clientId: user.id },
+      select: { id: true },
+      orderBy: { createdAt: "desc" },
     }),
   ]);
 
@@ -76,6 +108,78 @@ export default async function SettingsPage() {
     instagram,
     pinterest,
   };
+
+  const sizeByCategory = new Map(
+    (bodyProfile?.sizes ?? []).map((s) => [s.category.toUpperCase(), s.size]),
+  );
+  const budgetByCategory = new Map(budgets.map((b) => [b.category, b]));
+
+  const styleInfo: StyleInfo = {
+    shoppingFor: styleProfile?.needsDescription ?? "",
+    workEnvironment: styleProfile?.dressCode ?? "",
+    occupation: styleProfile?.occupation ?? "",
+    location: formatLocation(primaryLocation),
+    piecesNeeded: (styleProfile?.piecesNeeded ?? []).join(", "),
+    height: bodyProfile?.height ?? "",
+    bodyType: bodyProfile?.bodyType ?? "",
+    fitTops: bodyProfile?.topFit ? FIT_DISPLAY[bodyProfile.topFit] ?? "" : "",
+    fitBottoms: bodyProfile?.bottomFit
+      ? FIT_DISPLAY[bodyProfile.bottomFit] ?? ""
+      : "",
+    tendToWear: styleProfile?.typicallyWears ?? "",
+    accentuate: (bodyProfile?.highlightAreas ?? []).join(", "),
+    necklinesAvoid: (bodyProfile?.necklinesAvoid ?? []).join(", "),
+    bodyAreasMindful: (bodyProfile?.bodyAreasMindful ?? []).join(", "),
+    bodyAreasNotes: bodyProfile?.bodyIssues ?? "",
+    topSize: sizeByCategory.get("TOPS") ?? "",
+    bottomSize: sizeByCategory.get("BOTTOMS") ?? "",
+    jeansSize: sizeByCategory.get("JEANS") ?? "",
+    dressSize: sizeByCategory.get("DRESSES") ?? "",
+    outerwearSize: sizeByCategory.get("OUTERWEAR") ?? "",
+    shoeSize: sizeByCategory.get("SHOES") ?? "",
+    budgetTops: budgetByCategory.has("TOPS")
+      ? formatBudget(budgetByCategory.get("TOPS")!.minInCents, budgetByCategory.get("TOPS")!.maxInCents)
+      : "",
+    budgetBottoms: budgetByCategory.has("BOTTOMS")
+      ? formatBudget(budgetByCategory.get("BOTTOMS")!.minInCents, budgetByCategory.get("BOTTOMS")!.maxInCents)
+      : "",
+    budgetShoes: budgetByCategory.has("SHOES")
+      ? formatBudget(budgetByCategory.get("SHOES")!.minInCents, budgetByCategory.get("SHOES")!.maxInCents)
+      : "",
+    budgetJewelry: budgetByCategory.has("JEWELRY")
+      ? formatBudget(budgetByCategory.get("JEWELRY")!.minInCents, budgetByCategory.get("JEWELRY")!.maxInCents)
+      : "",
+    budgetAccessories: budgetByCategory.has("ACCESSORIES")
+      ? formatBudget(
+          budgetByCategory.get("ACCESSORIES")!.minInCents,
+          budgetByCategory.get("ACCESSORIES")!.maxInCents,
+        )
+      : "",
+    styleKeywords: (styleProfile?.stylePreferences ?? []).join(", "),
+    favoriteColors: colors.filter((c) => c.isLiked).map((c) => c.color).join(", "),
+    avoidColors: colors.filter((c) => !c.isLiked).map((c) => c.color).join(", "),
+    favoritePatterns: patterns
+      .filter((p) => !p.isDisliked)
+      .map((p) => p.pattern)
+      .join(", "),
+    materialsAvoid: fabrics
+      .filter((f) => f.isDisliked)
+      .map((f) => f.fabric)
+      .join(", "),
+    comfortZone: comfortZoneLabel(styleProfile?.comfortZoneLevel),
+    shoppingValues: (styleProfile?.shoppingValues ?? []).join(", "),
+    styleIcons: (styleProfile?.styleIcons ?? []).join(", "),
+    instagram,
+    pinterest,
+    preferredBrands: (styleProfile?.preferredBrands ?? []).join(", "),
+    avoidBrands: (styleProfile?.avoidBrands ?? []).join(", "),
+    occasions: (styleProfile?.occasions ?? []).join(", "),
+    notes: styleProfile?.notes ?? "",
+  };
+
+  const retakeHref = latestSession
+    ? `/sessions/${latestSession.id}/style-quiz`
+    : "/sessions";
 
   const activeSession = subscription
     ? await prisma.session.findFirst({
@@ -199,7 +303,7 @@ export default async function SettingsPage() {
         lifetimeBookingCount={loyaltyAccount?.lifetimeBookingCount ?? 0}
       />
     ),
-    "style-info": <StyleInfoPanel userId={user.id} />,
+    "style-info": <StyleInfoPanel initial={styleInfo} retakeHref={retakeHref} />,
     "edit-password": <EditPasswordPanel />,
   };
 
