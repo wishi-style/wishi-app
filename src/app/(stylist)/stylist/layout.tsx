@@ -1,27 +1,12 @@
-import { getCurrentAuthUser } from "@/lib/auth/server-auth";
-import { StylistTopBar } from "@/components/nav/stylist-top-bar";
-
-function initialsFor(firstName: string | null, lastName: string | null): string {
-  const f = firstName?.trim()?.[0] ?? "";
-  const l = lastName?.trim()?.[0] ?? "";
-  return `${f}${l}`.toUpperCase() || "?";
-}
-
-export default async function StylistChromeLayout({
+// Per Loveable HEAD: each stylist page renders its own chrome.
+// StylistDashboard has an inline custom header; StylistProfile wraps in
+// <StylistLayout> (sidebar + header). The route layout adds none, so
+// neither stacks twice. Auth is enforced one level up in
+// src/app/(stylist)/layout.tsx via requireRole("STYLIST").
+export default function StylistChromeLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const user = await getCurrentAuthUser();
-  const stylistInitials = initialsFor(
-    user?.firstName ?? null,
-    user?.lastName ?? null,
-  );
-
-  return (
-    <>
-      <StylistTopBar stylistInitials={stylistInitials} />
-      {children}
-    </>
-  );
+  return <>{children}</>;
 }
