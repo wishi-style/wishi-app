@@ -45,6 +45,10 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "*.tastegraph.com" },
       { protocol: "https", hostname: "tastegraph.com" },
       { protocol: "https", hostname: "images.unsplash.com" },
+      // Demo seed placeholder hosts. Used by prisma/seeds/demo-users.ts to
+      // populate avatars + profile-board photos without requiring S3.
+      { protocol: "https", hostname: "picsum.photos" },
+      { protocol: "https", hostname: "i.pravatar.cc" },
     ],
   },
   async headers() {
