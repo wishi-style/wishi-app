@@ -9,6 +9,8 @@ export type AuditAction =
   | "user.note_added"
   | "stylist.approve"
   | "stylist.request_changes"
+  | "stylist.invitation_sent"
+  | "stylist.invitation_revoked"
   | "session.reassign"
   | "session.freeze"
   | "session.unfreeze"
