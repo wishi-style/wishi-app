@@ -100,65 +100,126 @@ export function determineAuthProvider(
   return "EMAIL";
 }
 
-export async function reconcileClerkUser(
+/**
+ * Resolve the Prisma User row for a Clerk id (creating it on first contact)
+ * and return the canonical `{role, isAdmin}` from the DB. Does NOT write
+ * Clerk metadata — splitting that out lets the request-time self-heal path
+ * treat the metadata sync as opportunistic without making the DB lookup
+ * itself fragile.
+ */
+async function resolveDbUserForClerk(
   clerkId: string,
   deps: ReconcileClerkUserDeps,
 ): Promise<ReconcileClerkUserResult> {
   const existing = await deps.findUserByClerkId(clerkId);
-
-  let userId: string;
-  let role: UserRole;
-  let isAdmin: boolean;
-  let created = false;
-
   if (existing) {
-    userId = existing.id;
-    role = existing.role;
-    isAdmin = existing.isAdmin;
-  } else {
-    const snapshot = await deps.fetchClerkUser(clerkId);
-    if (!snapshot.emailAddress) {
-      throw new Error(`Clerk user ${clerkId} has no primary email address`);
-    }
-    const referralCode = await deps.generateUniqueReferralCode();
-    let user;
-    try {
-      user = await deps.createUser({
-        clerkId,
-        email: snapshot.emailAddress,
-        firstName: snapshot.firstName ?? "",
-        lastName: snapshot.lastName ?? "",
-        avatarUrl: snapshot.imageUrl,
-        authProvider: determineAuthProvider(snapshot.externalAccounts),
-        referralCode,
-      });
-    } catch (err) {
-      // Tag email-collision failures so CloudWatch can alarm on them
-      // distinctly from generic Clerk SDK / DB errors. The Prisma P2002 with
-      // target=["email"] means a different clerkId already owns this email
-      // — the user can authenticate via Clerk but can't get a DB row, and
-      // every authed page will forbid them until the collision is resolved.
-      const e = err as { code?: string; meta?: { target?: string[] } };
-      if (e.code === "P2002" && e.meta?.target?.includes("email")) {
-        throw new Error(
-          `email_collision: Clerk user ${clerkId} email '${snapshot.emailAddress}' already exists in DB under a different clerkId`,
-        );
-      }
-      throw err;
-    }
-    await deps.seedNotificationPreferences(user.id);
-    userId = user.id;
-    role = user.role;
-    isAdmin = user.isAdmin;
-    created = true;
+    return {
+      userId: existing.id,
+      role: existing.role,
+      isAdmin: existing.isAdmin,
+      created: false,
+    };
   }
+
+  const snapshot = await deps.fetchClerkUser(clerkId);
+  if (!snapshot.emailAddress) {
+    throw new Error(`Clerk user ${clerkId} has no primary email address`);
+  }
+  const referralCode = await deps.generateUniqueReferralCode();
+  let user;
+  try {
+    user = await deps.createUser({
+      clerkId,
+      email: snapshot.emailAddress,
+      firstName: snapshot.firstName ?? "",
+      lastName: snapshot.lastName ?? "",
+      avatarUrl: snapshot.imageUrl,
+      authProvider: determineAuthProvider(snapshot.externalAccounts),
+      referralCode,
+    });
+  } catch (err) {
+    // Tag email-collision failures so CloudWatch can alarm on them
+    // distinctly from generic Clerk SDK / DB errors. The Prisma P2002 with
+    // target=["email"] means a different clerkId already owns this email
+    // — the user can authenticate via Clerk but can't get a DB row, and
+    // every authed page will forbid them until the collision is resolved.
+    const e = err as { code?: string; meta?: { target?: string[] } };
+    if (e.code === "P2002" && e.meta?.target?.includes("email")) {
+      throw new Error(
+        `email_collision: Clerk user ${clerkId} email '${snapshot.emailAddress}' already exists in DB under a different clerkId`,
+      );
+    }
+    throw err;
+  }
+  await deps.seedNotificationPreferences(user.id);
+  return {
+    userId: user.id,
+    role: user.role,
+    isAdmin: user.isAdmin,
+    created: true,
+  };
+}
+
+export async function reconcileClerkUser(
+  clerkId: string,
+  deps: ReconcileClerkUserDeps,
+): Promise<ReconcileClerkUserResult> {
+  const result = await resolveDbUserForClerk(clerkId, deps);
 
   // Always re-write Clerk metadata. Clerk does a deep-merge so this preserves
   // unrelated keys like `onboardingStatus`. The DB row is the source of truth
   // for {role, isAdmin}; this line keeps Clerk in sync with it.
-  await deps.setClerkClaims(clerkId, { role, isAdmin });
+  await deps.setClerkClaims(clerkId, {
+    role: result.role,
+    isAdmin: result.isAdmin,
+  });
 
-  return { userId, role, isAdmin, created };
+  return result;
+}
+
+export type ResilientReconcileResult = ReconcileClerkUserResult & {
+  /**
+   * `true` when `setClerkClaims` succeeded, `false` when it threw. The DB
+   * lookup/create result is returned regardless — callers in the request
+   * path use this to avoid 403'ing a user whose DB row is correctly
+   * identified just because Clerk's API is having a moment.
+   */
+  syncedClerk: boolean;
+};
+
+/**
+ * Same contract as `reconcileClerkUser`, but the trailing Clerk metadata
+ * write is treated as opportunistic — failures are logged and reported via
+ * the `syncedClerk` flag rather than thrown. Use from request-time
+ * self-heal paths (`requireRole`, `requireAdmin`) where a transient Clerk
+ * outage must not lock the user out of the app. The strict variant is
+ * still the right choice for the webhook + the admin resync route, where
+ * the sync is the whole point of the call.
+ */
+export async function reconcileClerkUserResilient(
+  clerkId: string,
+  deps: ReconcileClerkUserDeps,
+): Promise<ResilientReconcileResult> {
+  const result = await resolveDbUserForClerk(clerkId, deps);
+
+  let syncedClerk = false;
+  try {
+    await deps.setClerkClaims(clerkId, {
+      role: result.role,
+      isAdmin: result.isAdmin,
+    });
+    syncedClerk = true;
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "clerk_metadata_sync_failed",
+        clerkId,
+        err: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
+
+  return { ...result, syncedClerk };
 }
 
 // Default deps wired to real Prisma + Clerk SDK. Lazy-imports the Clerk SDK

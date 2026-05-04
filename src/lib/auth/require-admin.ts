@@ -36,16 +36,18 @@ export async function requireAdmin(): Promise<AdminContext> {
   // below is the authoritative one.
   if (parsed.needsReconcile && !isE2E) {
     try {
-      const { reconcileClerkUser, buildDefaultReconcileDeps } = await import(
-        "./reconcile-clerk-user"
-      );
+      const { reconcileClerkUserResilient, buildDefaultReconcileDeps } =
+        await import("./reconcile-clerk-user");
       const deps = await buildDefaultReconcileDeps();
-      await reconcileClerkUser(clerkId, deps);
+      await reconcileClerkUserResilient(clerkId, deps);
     } catch (err) {
-      console.error("requireAdmin reconcile failed", {
-        clerkId,
-        err: err instanceof Error ? err.message : err,
-      });
+      console.error(
+        JSON.stringify({
+          event: "require_admin_reconcile_failed",
+          clerkId,
+          err: err instanceof Error ? err.message : String(err),
+        }),
+      );
     }
   }
 
