@@ -1,11 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useFormStatus } from "react-dom";
+import Link from "next/link";
 import { PlusIcon, MinusIcon } from "lucide-react";
 import type { Plan } from "@/generated/prisma/client";
 import { cn } from "@/lib/utils";
-import { createCheckout } from "@/app/(client)/bookings/new/actions";
 
 type PlanCardCopy = {
   type: "MINI" | "MAJOR" | "LUX";
@@ -302,25 +301,15 @@ function ContinueForm({
   selected: string;
   selectedName: string;
 }) {
+  const params = new URLSearchParams({ plan: selected.toLowerCase() });
+  if (stylistId) params.set("stylistId", stylistId);
+  const href = `/session-checkout?${params.toString()}`;
   return (
-    <form action={createCheckout}>
-      <input type="hidden" name="planType" value={selected} />
-      <input type="hidden" name="stylistId" value={stylistId ?? ""} />
-      <input type="hidden" name="isSubscription" value="false" />
-      <ContinueButton selectedName={selectedName} />
-    </form>
-  );
-}
-
-function ContinueButton({ selectedName }: { selectedName: string }) {
-  const { pending } = useFormStatus();
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="rounded-full bg-foreground text-background py-4 px-12 text-sm font-medium hover:bg-foreground/90 transition-colors disabled:opacity-60"
+    <Link
+      href={href}
+      className="inline-block rounded-full bg-foreground text-background py-4 px-12 text-sm font-medium hover:bg-foreground/90 transition-colors"
     >
-      {pending ? "Loading…" : `Continue with ${selectedName}`}
-    </button>
+      Continue with {selectedName}
+    </Link>
   );
 }
