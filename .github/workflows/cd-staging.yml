@@ -59,17 +59,28 @@ jobs:
           docker push $ECR_REGISTRY/wishi-worker:$IMAGE_TAG
           docker push $ECR_REGISTRY/wishi-worker:latest
 
-      - name: Run database migration
+      - name: Register new task definition
+        id: register-task-def
         env:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          TASK_DEF=$(aws ecs describe-task-definition --task-definition $TASK_FAMILY --query 'taskDefinition' --output json)
+          TASK_DEF=$(aws ecs describe-task-definition --task-definition $TASK_FAMILY --query 'taskDefinition')
+          NEW_TASK_DEF=$(echo $TASK_DEF | jq --arg IMAGE "$ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG" \
+            '.containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_TASK_DEF" --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "new_task_def_arn=$NEW_TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
+          echo "Registered $NEW_TASK_DEF_ARN"
+
+      - name: Run database migration
+        env:
+          NEW_TASK_DEF_ARN: ${{ steps.register-task-def.outputs.new_task_def_arn }}
+        run: |
           NETWORK_CONFIG=$(aws ecs describe-services --cluster $ECS_CLUSTER --services $ECS_SERVICE --query 'services[0].networkConfiguration' --output json)
 
           MIGRATION_TASK_ARN=$(aws ecs run-task \
             --cluster $ECS_CLUSTER \
-            --task-definition $TASK_FAMILY \
+            --task-definition $NEW_TASK_DEF_ARN \
             --launch-type FARGATE \
             --network-configuration "$NETWORK_CONFIG" \
             --overrides "{\"containerOverrides\":[{\"name\":\"web\",\"command\":[\"npx\",\"prisma\",\"migrate\",\"deploy\"]}]}" \
@@ -87,15 +98,13 @@ jobs:
 
       - name: Run database seed (idempotent)
         env:
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+          NEW_TASK_DEF_ARN: ${{ steps.register-task-def.outputs.new_task_def_arn }}
         run: |
-          TASK_DEF=$(aws ecs describe-task-definition --task-definition $TASK_FAMILY --query 'taskDefinition' --output json)
           NETWORK_CONFIG=$(aws ecs describe-services --cluster $ECS_CLUSTER --services $ECS_SERVICE --query 'services[0].networkConfiguration' --output json)
 
           SEED_TASK_ARN=$(aws ecs run-task \
             --cluster $ECS_CLUSTER \
-            --task-definition $TASK_FAMILY \
+            --task-definition $NEW_TASK_DEF_ARN \
             --launch-type FARGATE \
             --network-configuration "$NETWORK_CONFIG" \
             --overrides "{\"containerOverrides\":[{\"name\":\"web\",\"command\":[\"npx\",\"tsx\",\"prisma/seed.ts\"]}]}" \
@@ -113,13 +122,8 @@ jobs:
 
       - name: Update ECS service
         env:
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+          NEW_TASK_DEF_ARN: ${{ steps.register-task-def.outputs.new_task_def_arn }}
         run: |
-          TASK_DEF=$(aws ecs describe-task-definition --task-definition $TASK_FAMILY --query 'taskDefinition')
-          NEW_TASK_DEF=$(echo $TASK_DEF | jq --arg IMAGE "$ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG" \
-            '.containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
-          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_TASK_DEF" --query 'taskDefinition.taskDefinitionArn' --output text)
           aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --task-definition $NEW_TASK_DEF_ARN --force-new-deployment
           echo "Waiting for service to stabilize..."
           aws ecs wait services-stable --cluster $ECS_CLUSTER --services $ECS_SERVICE
