@@ -38,11 +38,15 @@ COPY --from=builder /app/package.json ./package.json
 # typed client (it resolves `../src/generated/prisma/client`). Without
 # this, `npx tsx prisma/seed.ts` fails at module resolution.
 COPY --from=builder --chown=nextjs:nodejs /app/src/generated ./src/generated
-# Shared demo fixture identifiers — imported by prisma/seeds/demo-users.ts
-# as raw TS when the deploy workflow runs the seed outside the Next.js
-# standalone bundle. Same reasoning as src/generated above: seed-time code
-# needs source files that Next's build tracing doesn't pull in.
-COPY --from=builder --chown=nextjs:nodejs /app/src/lib/demo ./src/lib/demo
+# Source files that prisma/seeds/*.ts requires at deploy-time seed
+# execution. The seed runs `npx tsx prisma/seed.ts` as a one-off ECS task,
+# which resolves relative imports like `../../src/lib/demo/constants` and
+# `../../src/lib/stylists/review.service` against the runner filesystem
+# — and Next's standalone tracing doesn't pull them in (it only traces
+# from app entry points). Copy all of src/lib so any future seed-time
+# import works without another Dockerfile change. The image-size cost is
+# trivial relative to the ~300MB node_modules already copied below.
+COPY --from=builder --chown=nextjs:nodejs /app/src/lib ./src/lib
 # Copy full node_modules so the deployed image can run `npx prisma migrate
 # deploy` against the production DB during the deploy workflow. Next.js
 # standalone bundles only what the app code traces — it intentionally does
