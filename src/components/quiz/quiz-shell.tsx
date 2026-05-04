@@ -13,9 +13,21 @@ interface QuizShellProps {
   questions: QuizQuestion[];
   onComplete: (answers: Record<string, unknown>) => void;
   isSubmitting?: boolean;
+  /**
+   * CTA label on the final question. Defaults to "See My Matches" for the
+   * match quiz; the style quiz (post-stylist-selection) overrides this so the
+   * copy reflects the actual destination (the styling session, not a
+   * matches list).
+   */
+  submitLabel?: string;
 }
 
-export function QuizShell({ questions, onComplete, isSubmitting }: QuizShellProps) {
+export function QuizShell({
+  questions,
+  onComplete,
+  isSubmitting,
+  submitLabel = "See My Matches",
+}: QuizShellProps) {
   const [step, setStep] = useState(0);
   // Pre-populate default answers for RANGE questions so they are valid without interaction
   const [answers, setAnswers] = useState<Record<string, unknown>>(() => {
@@ -135,7 +147,7 @@ export function QuizShell({ questions, onComplete, isSubmitting }: QuizShellProp
           disabled={!canAdvance || isSubmitting}
           className="rounded-full bg-black px-8 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
         >
-          {isSubmitting ? "Submitting..." : isLast ? "See My Matches" : "Next"}
+          {isSubmitting ? "Submitting..." : isLast ? submitLabel : "Next"}
         </button>
       </div>
     </div>

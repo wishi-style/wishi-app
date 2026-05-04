@@ -31,6 +31,7 @@ export function StyleQuizClient({ sessionId, questions }: Props) {
         questions={questions}
         onComplete={handleComplete}
         isSubmitting={isPending}
+        submitLabel="Continue to my session"
       />
       {error && (
         <p className="mx-auto max-w-md text-center text-sm text-destructive">

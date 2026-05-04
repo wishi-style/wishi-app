@@ -42,11 +42,17 @@ export default async function SessionDetailPage({ params }: Props) {
   const session = await getSessionById(id);
   if (!session || session.clientId !== user.id) notFound();
 
-  // Check if style quiz needs to be completed
-  const hasStyleProfile = await prisma.styleProfile.findUnique({
+  // Gate the "Complete Style Quiz" CTA on quizCompletedAt, not row existence
+  // — `persistStyleQuizAnswers` upserts a StyleProfile on the first
+  // `style_profile.*` write, so a partially-answered (but unfinished) quiz
+  // would otherwise hide the CTA. /sessions/[id]/chat uses the same field for
+  // its hard gate; keeping these aligned prevents the chat-page redirect from
+  // bouncing users back to a screen that won't show the resume CTA.
+  const styleProfile = await prisma.styleProfile.findUnique({
     where: { userId: user.id },
-    select: { id: true },
+    select: { quizCompletedAt: true },
   });
+  const styleQuizComplete = styleProfile?.quizCompletedAt != null;
 
   const stylistName = session.stylist
     ? `${session.stylist.firstName} ${session.stylist.lastName}`
@@ -138,7 +144,7 @@ export default async function SessionDetailPage({ params }: Props) {
 
         {/* CTAs */}
         <div className="flex flex-wrap gap-3">
-          {!hasStyleProfile && (
+          {!styleQuizComplete && (
             <Link
               href={`/sessions/${session.id}/style-quiz`}
               className="rounded-full bg-black px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
