@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getQuizWithQuestions } from "@/lib/quiz/engine";
+import { hasCompletedStyleQuiz } from "@/lib/quiz/style-quiz-status";
 import { redirect, notFound } from "next/navigation";
 import { StyleQuizClient } from "./style-quiz-client";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
@@ -23,13 +24,8 @@ export default async function StyleQuizPage({ params }: Props) {
   if (!session || session.clientId !== user.id) notFound();
 
   // Skip when already completed — the chat-page gate sends users here when
-  // quizCompletedAt is null, so the matching condition gates the redirect
-  // back into the session room.
-  const existing = await prisma.styleProfile.findUnique({
-    where: { userId: user.id },
-    select: { quizCompletedAt: true },
-  });
-  if (existing?.quizCompletedAt) {
+  // the quiz isn't done, so this guard returns them to the room when it is.
+  if (await hasCompletedStyleQuiz(user.id)) {
     redirect(`/sessions/${sessionId}/chat`);
   }
 

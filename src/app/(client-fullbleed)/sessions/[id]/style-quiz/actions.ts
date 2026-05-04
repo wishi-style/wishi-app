@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { persistStyleQuizAnswers } from "@/lib/quiz/engine";
+import { hasCompletedStyleQuiz } from "@/lib/quiz/style-quiz-status";
 import { redirect } from "next/navigation";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 
@@ -22,17 +23,12 @@ export async function submitStyleQuiz(
     throw new Error("Session not found");
   }
 
-  // Idempotent guard. The chat-page gate (chat/page.tsx) sends users here
-  // when `quizCompletedAt` is null, so the matching condition gates the
-  // bounce back into the chat. Checking row existence (the prior shape)
-  // would short-circuit any user who had partial preferences written by an
-  // earlier `style_profile.*` upsert, redirect them to /chat, get bounced
-  // back here, and loop forever.
-  const existing = await prisma.styleProfile.findUnique({
-    where: { userId: user.id },
-    select: { quizCompletedAt: true },
-  });
-  if (existing?.quizCompletedAt) {
+  // Idempotent guard. Shared with /chat and /sessions/[id] via
+  // hasCompletedStyleQuiz so all three surfaces gate on the same field
+  // (quizCompletedAt). An earlier inline shape gated on row existence,
+  // which short-circuited partial-progress users into a chat-page → quiz
+  // redirect loop.
+  if (await hasCompletedStyleQuiz(user.id)) {
     redirect(`/sessions/${sessionId}/chat`);
   }
 

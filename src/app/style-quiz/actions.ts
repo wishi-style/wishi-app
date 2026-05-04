@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { persistStyleQuizAnswers } from "@/lib/quiz/engine";
+import { hasCompletedStyleQuiz } from "@/lib/quiz/style-quiz-status";
 import { redirect } from "next/navigation";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 
@@ -25,11 +26,7 @@ export async function submitStandaloneStyleQuiz(
   // Idempotent: if the quiz already completed, just redirect — no need to
   // overwrite a returning client's answers. The page-level gate also
   // bypasses but this defends against stale client state.
-  const existing = await prisma.styleProfile.findUnique({
-    where: { userId: user.id },
-    select: { quizCompletedAt: true },
-  });
-  if (existing?.quizCompletedAt) {
+  if (await hasCompletedStyleQuiz(user.id)) {
     redirect(safeReturn(returnPath));
   }
 

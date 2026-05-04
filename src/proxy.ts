@@ -37,6 +37,12 @@ const isPublicRoute = createRouteMatcher([
   // Listing here so Clerk's auth.protect() doesn't blanket-block the
   // public prefixes that anonymous SharedBoard pages need.
   "/api/images/(.*)",
+  // Worker-secret-auth'd admin route: re-syncs DB → Clerk publicMetadata.
+  // Targets the exact users (admins) whose Clerk claims are broken, so
+  // requireAdmin() can't gate it — has to authenticate via x-worker-secret
+  // inside the handler. Public bypass keeps Clerk's auth.protect() out of
+  // the way of that handler-level check.
+  "/api/admin/resync-clerk-claims",
   "/sitemap.xml",
   "/robots.txt",
   "/favicon.ico",
