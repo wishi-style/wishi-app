@@ -34,6 +34,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/package.json ./package.json
+# Required so `npx tsx prisma/seed.ts` can resolve `@/...` path aliases
+# at deploy-time seed execution. Without it, every transitive `@/lib/...`
+# import from the seed graph fails with MODULE_NOT_FOUND.
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
 # Generated Prisma client — needed so prisma/seed.ts can import the
 # typed client (it resolves `../src/generated/prisma/client`). Without
 # this, `npx tsx prisma/seed.ts` fails at module resolution.
