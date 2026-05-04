@@ -26,7 +26,15 @@ export default async function OnboardingStepPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { n } = await params;
-  const stepNum = Number(n);
+  // Next 16 builds the dynamic-segment regex from `step-[n]/page.tsx` as
+  // `^/onboarding/([^/]+?)$` — i.e. the literal "step-" prefix is part of
+  // the captured group, not stripped from the matcher. So a request to
+  // /onboarding/step-1 sets n="step-1", and Number("step-1") is NaN.
+  // Strip the prefix defensively so direct URLs and the redirects from
+  // /onboarding/page.tsx, the wizard shell, and the Stripe Connect return
+  // both resolve.
+  const stepRaw = typeof n === "string" ? n.replace(/^step-/, "") : "";
+  const stepNum = Number(stepRaw);
   if (!Number.isInteger(stepNum) || stepNum < 1 || stepNum > TOTAL_STEPS) notFound();
 
   await requireRole("STYLIST");
