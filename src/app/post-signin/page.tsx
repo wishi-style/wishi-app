@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
+import type { UserRole } from "@/generated/prisma/client";
 import { getServerAuth } from "@/lib/auth/server-auth";
 import {
   buildDefaultReconcileDeps,
   parseRoleClaims,
-  reconcileClerkUser,
+  reconcileClerkUserResilient,
 } from "@/lib/auth/reconcile-clerk-user";
 
 export const dynamic = "force-dynamic";
@@ -18,22 +19,45 @@ export const dynamic = "force-dynamic";
  *
  * Reconciliation: if the JWT claims are missing OR carry a legacy role
  * value (e.g. "ADMIN" from pre-migration sessions), we run
- * `reconcileClerkUser` here so the Prisma row exists and Clerk metadata
- * is normalized before the user lands on their home page. This is the
- * defense-in-depth layer on top of the `requireRole` self-heal — for users
- * coming through the sign-in funnel, the heal happens before any guard runs.
+ * `reconcileClerkUserResilient` here so the Prisma row exists and Clerk
+ * metadata is best-effort normalized before the user lands on their home
+ * page. This is the defense-in-depth layer on top of the `requireRole`
+ * self-heal — for users coming through the sign-in funnel, the heal
+ * happens before any guard runs.
  *
- * Honors `?redirect_url=` if a deep-link bounced through sign-in (e.g.
- * unauthed user clicked /favorites → /sign-in?redirect_url=/favorites →
- * /post-signin?redirect_url=/favorites). The deep link wins over the
- * role-default home.
+ * Honors `?redirect_url=` if a deep-link bounced through sign-in — but
+ * only when the resolved role can actually use that path. A STYLIST whose
+ * Clerk modal opened from a client-only CTA (e.g. /select-plan) gets
+ * redirected to /stylist/dashboard instead of bounced into a flow that
+ * will redirect them right back. Admin (`isAdmin=true`) is exempt — they
+ * may legitimately need to see both surfaces.
  */
 type SearchParams = { redirect_url?: string };
+
+const ROLE_HOME: Record<UserRole, string> = {
+  CLIENT: "/",
+  STYLIST: "/stylist/dashboard",
+};
 
 function isSafeRedirect(url: string | undefined): url is string {
   if (!url) return false;
   // Same-origin only — never accept absolute URLs that could redirect off-site.
   return url.startsWith("/") && !url.startsWith("//");
+}
+
+/**
+ * Conservative path → role match. Mirrors the proxy's `isStylistRoute` /
+ * `isClientOnlyRoute` matchers in spirit: stylist-only paths live under
+ * /stylist/*; everything else is fair game for CLIENTs (including the
+ * marketing homepage). When in doubt, return false so the role-default
+ * redirect runs and the user lands somewhere they can actually use.
+ */
+function pathFitsRole(path: string, role: UserRole | undefined): boolean {
+  if (!role) return false;
+  const stylistOnly =
+    path === "/stylist" || path.startsWith("/stylist/");
+  if (role === "STYLIST") return stylistOnly;
+  return !stylistOnly;
 }
 
 export default async function PostSigninPage({
@@ -50,28 +74,36 @@ export default async function PostSigninPage({
 
   const parsed = parseRoleClaims(sessionClaims?.metadata);
   let role = parsed.role;
+  let isAdmin = parsed.isAdmin;
 
   if (parsed.needsReconcile && !isE2E) {
     try {
       const deps = await buildDefaultReconcileDeps();
-      const result = await reconcileClerkUser(userId, deps);
+      const result = await reconcileClerkUserResilient(userId, deps);
       role = result.role;
+      isAdmin = result.isAdmin;
     } catch (err) {
-      console.error("post-signin reconcile failed", {
-        userId,
-        err: err instanceof Error ? err.message : err,
-      });
+      console.error(
+        JSON.stringify({
+          event: "post_signin_reconcile_failed",
+          userId,
+          err: err instanceof Error ? err.message : String(err),
+        }),
+      );
     }
   }
 
   if (isSafeRedirect(params.redirect_url)) {
-    redirect(params.redirect_url);
+    if (isAdmin || pathFitsRole(params.redirect_url, role)) {
+      redirect(params.redirect_url);
+    }
+    // Fall through to the role-default — the deep link doesn't fit this
+    // user's role and following it would just bounce them through another
+    // redirect (or worse, a 403 if a downstream guard hasn't been updated).
   }
 
   if (role === "STYLIST") {
-    redirect("/stylist/dashboard");
+    redirect(ROLE_HOME.STYLIST);
   }
-
-  // Default destination: Loveable's smart-spark-craft client home.
-  redirect("/");
+  redirect(ROLE_HOME.CLIENT);
 }

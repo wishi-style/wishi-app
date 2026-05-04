@@ -4,6 +4,7 @@ import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 import { SessionWorkspace } from "@/components/session/workspace";
 import { getWorkspaceData } from "@/lib/sessions/workspace-query";
 import { PushPermission } from "@/components/chat/push-permission";
+import { hasCompletedStyleQuiz } from "@/lib/quiz/style-quiz-status";
 
 export const dynamic = "force-dynamic";
 
@@ -77,14 +78,8 @@ export default async function ClientChatPage({ params }: Props) {
   // Style-quiz hard gate: paid sessions only. Inquiries are pre-purchase
   // chats (Loveable-equivalent of the contact flow) and shouldn't push the
   // quiz before the client has even decided to book.
-  if (!isInquiry) {
-    const styleProfile = await prisma.styleProfile.findUnique({
-      where: { userId: user.id },
-      select: { quizCompletedAt: true },
-    });
-    if (!styleProfile?.quizCompletedAt) {
-      redirect(`/sessions/${id}/style-quiz`);
-    }
+  if (!isInquiry && !(await hasCompletedStyleQuiz(user.id))) {
+    redirect(`/sessions/${id}/style-quiz`);
   }
 
   const stylistName = session.stylist

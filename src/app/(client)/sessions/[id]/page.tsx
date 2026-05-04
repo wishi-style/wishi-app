@@ -1,8 +1,8 @@
-import { prisma } from "@/lib/prisma";
 import { redirect, notFound } from "next/navigation";
 import { getSessionById } from "@/lib/sessions/queries";
 import Link from "next/link";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
+import { hasCompletedStyleQuiz } from "@/lib/quiz/style-quiz-status";
 
 export const dynamic = "force-dynamic";
 
@@ -42,11 +42,7 @@ export default async function SessionDetailPage({ params }: Props) {
   const session = await getSessionById(id);
   if (!session || session.clientId !== user.id) notFound();
 
-  // Check if style quiz needs to be completed
-  const hasStyleProfile = await prisma.styleProfile.findUnique({
-    where: { userId: user.id },
-    select: { id: true },
-  });
+  const styleQuizComplete = await hasCompletedStyleQuiz(user.id);
 
   const stylistName = session.stylist
     ? `${session.stylist.firstName} ${session.stylist.lastName}`
@@ -138,7 +134,7 @@ export default async function SessionDetailPage({ params }: Props) {
 
         {/* CTAs */}
         <div className="flex flex-wrap gap-3">
-          {!hasStyleProfile && (
+          {!styleQuizComplete && (
             <Link
               href={`/sessions/${session.id}/style-quiz`}
               className="rounded-full bg-black px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"

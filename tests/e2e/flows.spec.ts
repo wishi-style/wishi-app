@@ -100,8 +100,9 @@ test("style preference quiz populates StyleProfile and BodyProfile", async ({ pa
   for (let i = 0; i < 9; i += 1) {
     await page.getByRole("button", { name: "Next" }).click();
   }
-  // Q22: submit
-  await page.getByRole("button", { name: "See My Matches" }).click();
+  // Q22: submit. Session-scoped quiz uses "Continue to my session" — the
+  // bare "See My Matches" copy is reserved for the match-quiz funnel.
+  await page.getByRole("button", { name: "Continue to my session" }).click();
   // Style-quiz completion redirects to /sessions/[id]/chat (the room).
   // For the BOOKED+no-Twilio test fixture here, the chat-page status guard
   // sends the user back to /sessions/[id]; we accept either landing.

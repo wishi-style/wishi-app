@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
 import { getQuizWithQuestions } from "@/lib/quiz/engine";
+import { hasCompletedStyleQuiz } from "@/lib/quiz/style-quiz-status";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 import { StandaloneStyleQuizClient } from "./style-quiz-client";
 
@@ -31,11 +31,7 @@ export default async function StandaloneStyleQuizPage({ searchParams }: Props) {
   }
 
   // Returning clients skip the quiz — Loveable's contract is "ask once".
-  const existing = await prisma.styleProfile.findUnique({
-    where: { userId: user.id },
-    select: { quizCompletedAt: true },
-  });
-  if (existing?.quizCompletedAt) {
+  if (await hasCompletedStyleQuiz(user.id)) {
     redirect(safeReturn(returnPath));
   }
 

@@ -4,6 +4,7 @@ import { ArrowRightIcon, MessageCircleIcon, SparklesIcon, ShoppingBagIcon } from
 import { stripe } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { hasCompletedStyleQuiz } from "@/lib/quiz/style-quiz-status";
 import { unauthorized } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -57,11 +58,7 @@ export default async function BookingSuccessPage(props: {
   const stylistFirstName = stylist?.firstName ?? "your stylist";
   const stylistPhotoUrl = stylist?.avatarUrl ?? null;
 
-  const styleProfile = await prisma.styleProfile.findUnique({
-    where: { userId: user.id },
-    select: { quizCompletedAt: true },
-  });
-  const quizDone = !!styleProfile?.quizCompletedAt;
+  const quizDone = await hasCompletedStyleQuiz(user.id);
 
   const latestSession = await prisma.session.findFirst({
     where: { clientId: user.id },

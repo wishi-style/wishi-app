@@ -4,6 +4,7 @@ import {
   determineAuthProvider,
   parseRoleClaims,
   reconcileClerkUser,
+  reconcileClerkUserResilient,
   type ReconcileClerkUserDeps,
   type RoleClaims,
 } from "@/lib/auth/reconcile-clerk-user";
@@ -301,4 +302,110 @@ test("idempotency: two consecutive calls with the same existing row both setCler
   assert.equal(lookupCalls, 2);
   assert.equal(spy.setClerkClaimsCalls.length, 2);
   assert.equal(spy.createUserCalls.length, 0);
+});
+
+// ─── reconcileClerkUserResilient ──────────────────────────────────────
+
+test("resilient: existing row + Clerk write succeeds → syncedClerk=true", async () => {
+  const { deps, spy } = buildDeps({
+    findUserByClerkId: async () => ({
+      id: "user_db_r1",
+      role: "CLIENT",
+      isAdmin: false,
+    }),
+  });
+
+  const result = await reconcileClerkUserResilient("user_clerk_r1", deps);
+
+  assert.deepEqual(result, {
+    userId: "user_db_r1",
+    role: "CLIENT",
+    isAdmin: false,
+    created: false,
+    syncedClerk: true,
+  });
+  assert.deepEqual(spy.setClerkClaimsCalls, [
+    { clerkId: "user_clerk_r1", claims: { role: "CLIENT", isAdmin: false } },
+  ]);
+});
+
+test("resilient: existing row + Clerk write throws → DB role still returned, syncedClerk=false", async () => {
+  // The original failure mode this guards against: a transient Clerk API
+  // error throws inside reconcile and `selfHeal` swallows the entire
+  // result, leaving `requireRole` with `role=undefined` and 403'ing a user
+  // we already correctly identified in the DB.
+  const { deps } = buildDeps({
+    findUserByClerkId: async () => ({
+      id: "user_db_r2",
+      role: "STYLIST",
+      isAdmin: false,
+    }),
+    setClerkClaims: async () => {
+      throw new Error("clerk 503");
+    },
+  });
+
+  const result = await reconcileClerkUserResilient("user_clerk_r2", deps);
+
+  // We still report the DB-resolved role. The caller (`requireRole`) can
+  // make a routing decision; the Clerk JWT will catch up on a future
+  // request.
+  assert.equal(result.role, "STYLIST");
+  assert.equal(result.isAdmin, false);
+  assert.equal(result.syncedClerk, false);
+  assert.equal(result.created, false);
+});
+
+test("resilient: missing row + Clerk write throws → still creates user + returns role", async () => {
+  // First-contact failure: webhook never fired, the DB row gets created
+  // here, and even if the metadata write fails the request can proceed.
+  const { deps, spy } = buildDeps({
+    setClerkClaims: async () => {
+      throw new Error("clerk timeout");
+    },
+  });
+
+  const result = await reconcileClerkUserResilient("user_clerk_r3", deps);
+
+  assert.equal(result.created, true);
+  assert.equal(result.role, "CLIENT");
+  assert.equal(result.syncedClerk, false);
+  assert.equal(spy.createUserCalls.length, 1);
+  assert.equal(spy.seedNotificationPreferencesCalls.length, 1);
+});
+
+test("resilient: DB lookup throw still propagates (not swallowed)", async () => {
+  // The Clerk metadata write is opportunistic — the DB read isn't. A DB
+  // outage or schema error should still surface so the caller can 403 (or
+  // decide its own fallback). Resilient ≠ silent.
+  const { deps } = buildDeps({
+    findUserByClerkId: async () => {
+      throw new Error("connection refused");
+    },
+  });
+
+  await assert.rejects(
+    () => reconcileClerkUserResilient("user_clerk_r4", deps),
+    /connection refused/,
+  );
+});
+
+test("resilient: P2002 email collision still throws (not swallowed)", async () => {
+  // Same logic — a real DB constraint failure must surface, even though
+  // we're in the opportunistic branch.
+  const { deps } = buildDeps({
+    findUserByClerkId: async () => null,
+    createUser: async () => {
+      const e = Object.assign(new Error("collision"), {
+        code: "P2002",
+        meta: { target: ["email"] },
+      });
+      throw e;
+    },
+  });
+
+  await assert.rejects(
+    () => reconcileClerkUserResilient("user_clerk_r5", deps),
+    /email_collision/,
+  );
 });
