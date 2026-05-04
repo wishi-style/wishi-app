@@ -1,6 +1,8 @@
+import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
+import { resolveAppUrl } from "@/lib/app-url";
 import { createStylistInvitation } from "@/lib/stylists/invite.service";
 
 export const dynamic = "force-dynamic";
@@ -28,11 +30,16 @@ export async function POST(req: Request) {
     );
   }
 
-  // Use the request's host so the invitation link redirects back into the
-  // same environment that issued it (staging vs prod). Falls back to the
-  // configured app URL when the header is missing.
-  const url = new URL(req.url);
-  const redirectUrl = `${url.origin}/onboarding/step-1`;
+  // Behind ALB → ECS, `req.url` resolves to the container's private
+  // hostname (e.g. ip-10-1-10-34.ec2.internal:3000), which a recipient's
+  // browser can't reach. resolveAppUrl prefers APP_URL (set per env in
+  // task definition), then x-forwarded-host, so the invite link always
+  // points at the public origin.
+  const appUrl = resolveAppUrl({
+    envAppUrl: process.env.APP_URL,
+    headers: await headers(),
+  });
+  const redirectUrl = `${appUrl}/onboarding/step-1`;
 
   try {
     const invitation = await createStylistInvitation({
