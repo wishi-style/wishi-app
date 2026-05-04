@@ -7,6 +7,8 @@ import {
   buildDefaultReconcileDeps,
   reconcileClerkUser,
 } from "@/lib/auth/reconcile-clerk-user";
+import { readStylistInvitationFromMetadata } from "@/lib/stylists/invite.service";
+import { promoteToStylist } from "@/lib/users/admin.service";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +31,35 @@ async function handleUserCreated(data: UserJSON) {
     await claimGuestQuizResult(userId, unsafeMetadata?.guestToken);
   }
 
+  // Stylist invitations: when an admin invites someone via Clerk's
+  // Invitations API, we attach `publicMetadata.stylistInvitation = true`
+  // and the chosen `stylistType`. On signup that metadata flows into the
+  // user.created event — auto-promote the brand-new CLIENT to STYLIST so
+  // they hit /onboarding/step-1 with a real StylistProfile already created.
+  // Failures here must NOT 5xx the webhook (Clerk would retry forever and
+  // the second run would race with the first); log + swallow instead.
+  const invite = readStylistInvitationFromMetadata(
+    data.public_metadata as Record<string, unknown> | null | undefined,
+  );
+  if (invite && created) {
+    try {
+      await promoteToStylist({
+        userId,
+        stylistType: invite.stylistType,
+        actorUserId: userId,
+      });
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          event: "clerk_webhook_stylist_invite_promote_failed",
+          userId,
+          clerkId,
+          err: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
+  }
+
   // Structured success log so CloudWatch metric filters can count successful
   // signups and correlate timing of new users with downstream activity.
   console.log(
@@ -37,6 +68,7 @@ async function handleUserCreated(data: UserJSON) {
       userId,
       clerkId,
       created,
+      stylistInvited: invite !== null,
     }),
   );
 }
