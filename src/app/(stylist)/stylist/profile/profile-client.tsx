@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
-import { CameraIcon, CheckIcon, CheckCircle2Icon, CircleIcon, CloudOffIcon, ImagePlusIcon, Loader2Icon, PencilIcon, PlusIcon, XIcon } from "lucide-react";
+import { CameraIcon, CheckIcon, CheckCircle2Icon, CircleIcon, CloudOffIcon, ImagePlusIcon, Loader2Icon, PencilIcon } from "lucide-react";
 
 function InstagramIcon({ className }: { className?: string }) {
   return (
@@ -31,7 +31,6 @@ function InstagramIcon({ className }: { className?: string }) {
     </svg>
   );
 }
-import { LookLibraryPicker } from "@/components/stylist/LookLibraryPicker";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { saveStylistProfile } from "./actions";
@@ -103,28 +102,6 @@ function instagramUrl(handle: string): string {
 }
 const DRAFT_TS_KEY = "stylist_profile_draft_ts_v1";
 
-const WOMEN_STYLES = [
-  "Classic",
-  "Minimal",
-  "Romantic",
-  "Edgy",
-  "Bohemian",
-  "Streetwear",
-  "Preppy",
-  "Glam",
-];
-
-const MEN_STYLES = [
-  "Classic",
-  "Minimal",
-  "Smart Casual",
-  "Streetwear",
-  "Rugged",
-  "Preppy",
-  "Athleisure",
-  "Tailored",
-];
-
 interface StyleBoardEntry {
   style: string;
   imageUrl: string;
@@ -156,11 +133,22 @@ const emptyProfile: StylistProfileData = {
   menBoards: [],
 };
 
+// localStorage has a per-origin quota of ~5–10 MB. A 5 MB image becomes
+// a ~6.7 MB base64 data URL — one upload fills the quota; two start
+// throwing QuotaExceededError on every setItem. Image fields are
+// DB-authoritative (User.avatarUrl + StylistProfile.profileMoodboard,
+// hydrated by the server component), so the cache only needs to
+// preserve in-progress text drafts. Strip image fields on every read
+// (defangs stale data: URLs from pre-fix sessions) and every write.
+function stripImagesForCache(data: StylistProfileData): StylistProfileData {
+  return { ...data, profilePic: "", moodBoardImage: "" };
+}
+
 function loadProfile(): StylistProfileData | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as StylistProfileData;
+    return stripImagesForCache(JSON.parse(raw) as StylistProfileData);
   } catch {
     return null;
   }
@@ -170,7 +158,7 @@ function loadDraft(): { data: StylistProfileData; savedAt: Date } | null {
   try {
     const raw = localStorage.getItem(DRAFT_KEY);
     if (!raw) return null;
-    const data = JSON.parse(raw) as StylistProfileData;
+    const data = stripImagesForCache(JSON.parse(raw) as StylistProfileData);
     const tsRaw = localStorage.getItem(DRAFT_TS_KEY);
     const savedAt = tsRaw ? new Date(tsRaw) : new Date();
     return { data, savedAt };
@@ -244,17 +232,11 @@ async function validateAndReadImage(
 export default function StylistProfile(props: { initialProfile?: StylistProfileData | null } = {}) {
   const router = useRouter();
   // DB-hydrated state from the server component is the source of truth.
-  // localStorage cache only fills in image fields (avatar / moodboard) that
-  // aren't yet persisted server-side.
+  // The localStorage cache (text-only) is only consulted when the page
+  // had no server-rendered profile to fall back on.
   const existing = useMemo(() => {
-    const cached = loadProfile();
-    if (!props.initialProfile) return cached ?? null;
-    return {
-      ...props.initialProfile,
-      profilePic: props.initialProfile.profilePic || cached?.profilePic || "",
-      moodBoardImage:
-        props.initialProfile.moodBoardImage || cached?.moodBoardImage || "",
-    };
+    if (props.initialProfile) return props.initialProfile;
+    return loadProfile();
   }, [props.initialProfile]);
   const draft = useMemo(() => loadDraft(), []);
   const isCreating = !existing;
@@ -295,7 +277,7 @@ export default function StylistProfile(props: { initialProfile?: StylistProfileD
     const handle = window.setTimeout(() => {
       try {
         const now = new Date();
-        localStorage.setItem(DRAFT_KEY, JSON.stringify(data));
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(stripImagesForCache(data)));
         localStorage.setItem(DRAFT_TS_KEY, now.toISOString());
         setLastSavedAt(now);
         setSaveStatus("saved");
@@ -328,26 +310,6 @@ export default function StylistProfile(props: { initialProfile?: StylistProfileD
     if (!file) return;
     const url = await validateAndReadImage(file, opts);
     if (url) onLoaded(url);
-  };
-
-  const handleAddStyleBoardFromLibrary = (
-    gender: "women" | "men",
-    style: string,
-    look: { id: string; name: string; imageUrl: string }
-  ) => {
-    setData((d) => {
-      const key = gender === "women" ? "womenBoards" : "menBoards";
-      const list = d[key].filter((b) => b.style !== style);
-      return { ...d, [key]: [...list, { style, imageUrl: look.imageUrl }] };
-    });
-    toast.success(`"${look.name}" added to ${style}`);
-  };
-
-  const removeStyleBoard = (gender: "women" | "men", style: string) => {
-    setData((d) => {
-      const key = gender === "women" ? "womenBoards" : "menBoards";
-      return { ...d, [key]: d[key].filter((b) => b.style !== style) };
-    });
   };
 
   type FieldKey =
@@ -444,7 +406,7 @@ export default function StylistProfile(props: { initialProfile?: StylistProfileD
         ...(moodboardUpload ? { moodBoardImage: moodboardUpload.url } : {}),
       };
       setData(persisted);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(stripImagesForCache(persisted)));
       clearDraft();
       setDraftRestored(false);
       setSubmitAttempted(false);
@@ -785,35 +747,38 @@ export default function StylistProfile(props: { initialProfile?: StylistProfileD
             </div>
           </Section>
 
-          {/* Style boards */}
+          {/* Style boards — read-only preview that links to the dedicated
+              manager. Editing inline used to live here but only wrote to
+              localStorage; the canonical "3-10 boards per claimed style"
+              workflow already exists at /stylist/profile/boards. Keeping a
+              section header here so clients still see at a glance what
+              their public profile features. */}
           <Section
             title="Style boards"
-            description="Add a board image for each style you cover, for both Women and Men."
+            description="Your style boards appear on your public profile. Add or update them in the dedicated boards workspace."
           >
-            <Tabs value={genderTab} onValueChange={(v) => setGenderTab(v as "women" | "men")}>
-              <TabsList>
-                <TabsTrigger value="women">Women</TabsTrigger>
-                <TabsTrigger value="men">Men</TabsTrigger>
-              </TabsList>
-              <TabsContent value="women" className="mt-6">
-                <StyleBoardEditor
-                  gender="women"
-                  styles={WOMEN_STYLES}
-                  boards={data.womenBoards}
-                  onPickFromLibrary={handleAddStyleBoardFromLibrary}
-                  onRemove={removeStyleBoard}
-                />
-              </TabsContent>
-              <TabsContent value="men" className="mt-6">
-                <StyleBoardEditor
-                  gender="men"
-                  styles={MEN_STYLES}
-                  boards={data.menBoards}
-                  onPickFromLibrary={handleAddStyleBoardFromLibrary}
-                  onRemove={removeStyleBoard}
-                />
-              </TabsContent>
-            </Tabs>
+            <div className="flex flex-col gap-4">
+              <Tabs value={genderTab} onValueChange={(v) => setGenderTab(v as "women" | "men")}>
+                <TabsList>
+                  <TabsTrigger value="women">Women ({data.womenBoards.length})</TabsTrigger>
+                  <TabsTrigger value="men">Men ({data.menBoards.length})</TabsTrigger>
+                </TabsList>
+                <TabsContent value="women" className="mt-6">
+                  <StyleBoardGrid boards={data.womenBoards} />
+                </TabsContent>
+                <TabsContent value="men" className="mt-6">
+                  <StyleBoardGrid boards={data.menBoards} />
+                </TabsContent>
+              </Tabs>
+              <Button
+                type="button"
+                variant="outline"
+                className="self-start"
+                onClick={() => router.push("/stylist/profile/boards")}
+              >
+                Manage style boards →
+              </Button>
+            </div>
           </Section>
 
           {/* Actions */}
@@ -924,89 +889,6 @@ function StyleBoardGrid({ boards }: { boards: StyleBoardEntry[] }) {
         </div>
       ))}
     </div>
-  );
-}
-
-function StyleBoardEditor({
-  gender,
-  styles,
-  boards,
-  onPickFromLibrary,
-  onRemove,
-}: {
-  gender: "women" | "men";
-  styles: string[];
-  boards: StyleBoardEntry[];
-  onPickFromLibrary: (
-    gender: "women" | "men",
-    style: string,
-    look: { id: string; name: string; imageUrl: string }
-  ) => void;
-  onRemove: (gender: "women" | "men", style: string) => void;
-}) {
-  const [pickerStyle, setPickerStyle] = useState<string | null>(null);
-
-  return (
-    <>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-        {styles.map((style) => {
-          const board = boards.find((b) => b.style === style);
-          return (
-            <div key={style} className="space-y-2">
-              <button
-                type="button"
-                onClick={() => setPickerStyle(style)}
-                aria-label={board ? `Replace ${style} look` : `Add ${style} look`}
-                className="aspect-square w-full block rounded-md border-2 border-dashed border-border bg-muted/30 hover:bg-muted/50 transition-colors overflow-hidden relative cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {board ? (
-                  <>
-                    <Image
-                      src={board.imageUrl}
-                      alt={style}
-                      width={400}
-                      height={400}
-                      unoptimized
-                      className="h-full w-full object-cover"
-                    />
-                    <div className="absolute inset-0 bg-foreground/0 group-hover:bg-foreground/40 transition-colors flex items-center justify-center">
-                      <span className="opacity-0 group-hover:opacity-100 text-background font-body text-xs">
-                        Replace look
-                      </span>
-                    </div>
-                  </>
-                ) : (
-                  <div className="h-full w-full flex flex-col items-center justify-center text-muted-foreground">
-                    <PlusIcon className="h-5 w-5 mb-1" />
-                    <span className="font-body text-xs">Add look</span>
-                  </div>
-                )}
-              </button>
-              {board && (
-                <button
-                  type="button"
-                  onClick={() => onRemove(gender, style)}
-                  className="font-body text-[11px] text-muted-foreground hover:text-destructive transition-colors inline-flex items-center gap-1"
-                >
-                  <XIcon className="h-3 w-3" /> Remove
-                </button>
-              )}
-              <p className="font-body text-sm">{style}</p>
-            </div>
-          );
-        })}
-      </div>
-
-      <LookLibraryPicker
-        open={pickerStyle !== null}
-        onOpenChange={(o) => !o && setPickerStyle(null)}
-        contextLabel={pickerStyle ?? undefined}
-        initialQuery={pickerStyle ?? ""}
-        onSelect={(look) => {
-          if (pickerStyle) onPickFromLibrary(gender, pickerStyle, look);
-        }}
-      />
-    </>
   );
 }
 
