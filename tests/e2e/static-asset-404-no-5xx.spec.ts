@@ -9,9 +9,9 @@ import { expect, test } from "@playwright/test";
  * the 404 page through the root layout, which mounts
  * `ImpersonationBannerMount`. That component calls `auth()`, and Clerk
  * throws "auth() was called but Clerk can't detect usage of
- * clerkMiddleware()". The throw propagates → 500. With enough broken
- * `<img>` requests in flight (the `LookLibraryPicker` fired 8 at once),
- * the ALB 5xx ratio crosses 1% in a minute and the alarm pages.
+ * clerkMiddleware()". The throw propagates → 500. A page that fires
+ * many `<img>` requests against missing static assets in parallel can
+ * push the ALB 5xx ratio across 1% in a minute and trip the alarm.
  *
  * Two production paths could regress this:
  *   1. `ImpersonationBannerMount` losing its try/catch around `auth()`.
