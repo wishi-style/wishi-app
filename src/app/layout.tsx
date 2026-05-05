@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { DM_Sans, Bodoni_Moda } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { ImpersonationBannerMount } from "@/components/admin/impersonation-banner-mount";
-import { StagingBanner } from "@/components/nav/staging-banner";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
@@ -100,7 +99,6 @@ export default async function RootLayout({
           signUpFallbackRedirectUrl="/post-signin"
         >
           <ImpersonationBannerMount />
-          <StagingBanner />
           {children}
           <Toaster />
         </ClerkProvider>
