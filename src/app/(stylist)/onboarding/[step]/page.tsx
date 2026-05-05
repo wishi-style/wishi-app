@@ -103,6 +103,7 @@ export default async function OnboardingStepPage({
           initial={{
             expertiseByGender:
               (profile.expertiseByGender as Record<string, string[]>) ?? {},
+            genderPreference: profile.genderPreference,
           }}
         />
       );

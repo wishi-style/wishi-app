@@ -11,6 +11,7 @@ export function StepEleven({ initial }: { initial: { instagramHandle: string } }
       title="Instagram (optional)"
       subtitle="Clients love browsing your real-world work. Skip if you'd rather not link."
       canAdvance
+      skipLabel="Skip"
       buildPayload={() => ({ instagramHandle: value.trim() || null })}
     >
       <div className="flex items-center gap-2">
