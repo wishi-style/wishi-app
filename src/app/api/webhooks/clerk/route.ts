@@ -9,6 +9,7 @@ import {
 } from "@/lib/auth/reconcile-clerk-user";
 import { readStylistInvitationFromMetadata } from "@/lib/stylists/invite.service";
 import { promoteToStylist } from "@/lib/users/admin.service";
+import { buildUserUpdateData } from "./build-user-update";
 
 export const dynamic = "force-dynamic";
 
@@ -74,21 +75,9 @@ async function handleUserCreated(data: UserJSON) {
 }
 
 async function handleUserUpdated(data: UserJSON) {
-  const clerkId = data.id;
-  const email = data.email_addresses?.[0]?.email_address;
-
-  const updateData: Record<string, unknown> = {
-    lastLoginAt: new Date(),
-  };
-
-  if (email) updateData.email = email;
-  if (data.first_name !== undefined) updateData.firstName = data.first_name;
-  if (data.last_name !== undefined) updateData.lastName = data.last_name;
-  if (data.image_url !== undefined) updateData.avatarUrl = data.image_url;
-
   await prisma.user.update({
-    where: { clerkId },
-    data: updateData,
+    where: { clerkId: data.id },
+    data: buildUserUpdateData(data),
   });
 }
 

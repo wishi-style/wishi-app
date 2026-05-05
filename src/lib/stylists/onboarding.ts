@@ -61,7 +61,13 @@ export const stepSchemas = {
     yearsExperience: z.number().int().min(0).max(80),
   }),
   9: z.object({
-    expertiseByGender: z.record(GenderEnum, z.array(z.string().min(1)).min(1)),
+    // partialRecord accepts a subset of GenderEnum keys (Zod 4's z.record
+    // is exhaustive). The wizard renders only the genders the stylist
+    // selected on step 1, so the payload arrives keyed only on those —
+    // matching the matching-algo's `genderPreference` source of truth.
+    expertiseByGender: z
+      .partialRecord(GenderEnum, z.array(z.string().min(1)).min(1))
+      .refine((m) => Object.keys(m).length > 0, "Pick at least one category"),
   }),
   10: z.object({
     // Step 10 is a transient success state — no payload, just advance.

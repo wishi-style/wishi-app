@@ -156,3 +156,46 @@ test("PLATFORM at intermediate steps does not flip status", () => {
     { step: 4, status: "IN_PROGRESS" }
   );
 });
+
+test("step 9 accepts partial gender records (subset of selected genders)", () => {
+  // Stylist who picked Men + Women on step 1 should be able to save just
+  // those two keys on step 9 — Zod 4's z.record on an enum is exhaustive
+  // by default, which forced the user to fill in NB + PNTS sections that
+  // the UI no longer renders. partialRecord fixes this.
+  assert.equal(
+    stepSchemas[9].safeParse({
+      expertiseByGender: { MALE: ["Everyday"], FEMALE: ["Work"] },
+    }).success,
+    true
+  );
+});
+
+test("step 9 accepts a single-gender record", () => {
+  assert.equal(
+    stepSchemas[9].safeParse({ expertiseByGender: { FEMALE: ["Work"] } }).success,
+    true
+  );
+});
+
+test("step 9 rejects an empty record", () => {
+  assert.equal(
+    stepSchemas[9].safeParse({ expertiseByGender: {} }).success,
+    false
+  );
+});
+
+test("step 9 rejects unknown gender keys", () => {
+  assert.equal(
+    stepSchemas[9].safeParse({
+      expertiseByGender: { BOGUS: ["Work"] },
+    }).success,
+    false
+  );
+});
+
+test("step 9 rejects empty category arrays", () => {
+  assert.equal(
+    stepSchemas[9].safeParse({ expertiseByGender: { FEMALE: [] } }).success,
+    false
+  );
+});
