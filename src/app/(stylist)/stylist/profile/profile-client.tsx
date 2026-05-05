@@ -34,6 +34,7 @@ function InstagramIcon({ className }: { className?: string }) {
 import { LookLibraryPicker } from "@/components/stylist/LookLibraryPicker";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
+import { saveStylistProfile } from "./actions";
 
 const STORAGE_KEY = "stylist_profile_v1";
 const DRAFT_KEY = "stylist_profile_draft_v1";
@@ -201,10 +202,19 @@ async function validateAndReadImage(
 
 export default function StylistProfile(props: { initialProfile?: StylistProfileData | null } = {}) {
   const router = useRouter();
-  const existing = useMemo(
-    () => loadProfile() ?? props.initialProfile ?? null,
-    [props.initialProfile],
-  );
+  // DB-hydrated state from the server component is the source of truth.
+  // localStorage cache only fills in image fields (avatar / moodboard) that
+  // aren't yet persisted server-side.
+  const existing = useMemo(() => {
+    const cached = loadProfile();
+    if (!props.initialProfile) return cached ?? null;
+    return {
+      ...props.initialProfile,
+      profilePic: props.initialProfile.profilePic || cached?.profilePic || "",
+      moodBoardImage:
+        props.initialProfile.moodBoardImage || cached?.moodBoardImage || "",
+    };
+  }, [props.initialProfile]);
   const draft = useMemo(() => loadDraft(), []);
   const isCreating = !existing;
   // Restore the most recent unsaved draft if there is one; otherwise the
@@ -342,7 +352,9 @@ export default function StylistProfile(props: { initialProfile?: StylistProfileD
   // Only surface errors after the first submit attempt
   const visibleErrors: Partial<Record<FieldKey, string>> = submitAttempted ? errors : {};
 
-  const handleSave = () => {
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSave = async () => {
     setSubmitAttempted(true);
     if (errorCount > 0) {
       toast.error(
@@ -352,12 +364,35 @@ export default function StylistProfile(props: { initialProfile?: StylistProfileD
       );
       return;
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    clearDraft();
-    setDraftRestored(false);
-    toast.success(isCreating ? "Profile created" : "Profile updated");
-    setEditing(false);
-    setSubmitAttempted(false);
+    setIsSaving(true);
+    try {
+      const handle = extractInstagramHandle(data.instagram);
+      const result = await saveStylistProfile({
+        fullName: data.fullName,
+        location: data.location,
+        philosophy: data.philosophy,
+        directorsPick: data.directorsPick,
+        bio: data.bio,
+        instagramHandle: handle,
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      // Image fields (avatar, moodboard) still ride localStorage until
+      // the upload-to-S3 follow-up lands. Keep the cache so the editor
+      // doesn't lose them on the redirect / re-render.
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      clearDraft();
+      setDraftRestored(false);
+      setSubmitAttempted(false);
+      toast.success(isCreating ? "Profile created" : "Profile updated");
+      router.push("/stylist/dashboard");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save profile");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCancel = () => {
@@ -723,11 +758,15 @@ export default function StylistProfile(props: { initialProfile?: StylistProfileD
           <div className="flex items-center justify-between gap-3 pt-4 border-t border-border flex-col sm:flex-row">
             <SaveIndicator status={saveStatus} lastSavedAt={lastSavedAt} />
             <div className="flex items-center gap-3">
-              <Button variant="ghost" onClick={handleCancel}>
+              <Button variant="ghost" onClick={handleCancel} disabled={isSaving}>
                 Cancel
               </Button>
-              <Button onClick={handleSave}>
-                {isCreating ? "Create profile" : "Save changes"}
+              <Button onClick={handleSave} disabled={isSaving}>
+                {isSaving
+                  ? "Saving…"
+                  : isCreating
+                    ? "Create profile"
+                    : "Save changes"}
               </Button>
             </div>
           </div>
