@@ -1,12 +1,18 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getPresignedUploadUrl } from "@/lib/s3";
+import {
+  getPresignedUploadUrl,
+  getBoardPhotoPresignedUrl,
+  getPublicUrl,
+} from "@/lib/s3";
 
 export const dynamic = "force-dynamic";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILENAME_LENGTH = 255;
+const ALLOWED_PURPOSES = ["avatar", "profile-moodboard"] as const;
+type Purpose = (typeof ALLOWED_PURPOSES)[number];
 
 export async function GET(req: NextRequest) {
   const { userId: clerkId } = await auth();
@@ -24,6 +30,7 @@ export async function GET(req: NextRequest) {
 
   const filename = req.nextUrl.searchParams.get("filename");
   const contentType = req.nextUrl.searchParams.get("contentType");
+  const purpose = (req.nextUrl.searchParams.get("purpose") ?? "avatar") as Purpose;
 
   if (!filename || !contentType) {
     return Response.json(
@@ -43,11 +50,25 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const { url, key } = await getPresignedUploadUrl(
+  if (!ALLOWED_PURPOSES.includes(purpose)) {
+    return Response.json(
+      { error: `Invalid purpose. Allowed: ${ALLOWED_PURPOSES.join(", ")}` },
+      { status: 400 },
+    );
+  }
+
+  // Avatar: returns `/api/images/avatars/<userId>/<filename>` via getPublicUrl.
+  // Profile moodboard: lives under `boards/<userId>/<timestamp>-<filename>`,
+  // stored on a stylist's profile Board. Both flows use the same presigned
+  // PUT pattern; only the bucket prefix and the publicUrl shape differ.
+  if (purpose === "avatar") {
+    const { url, key } = await getPresignedUploadUrl(user.id, filename, contentType);
+    return Response.json({ url, key, publicUrl: getPublicUrl(key) });
+  }
+  const { uploadUrl, key, publicUrl } = await getBoardPhotoPresignedUrl(
     user.id,
     filename,
     contentType,
   );
-
-  return Response.json({ url, key });
+  return Response.json({ url: uploadUrl, key, publicUrl });
 }

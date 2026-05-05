@@ -33,6 +33,32 @@ test("stylist profile save persists to DB and hydrates after refresh", async ({
     lastName: "Name",
   });
   await ensureStylistProfile({ userId: stylist.id });
+  // The form requires a profile picture + moodboard image. Pre-seed both
+  // so the validation gate doesn't block save when this spec only
+  // exercises the text fields. Real S3 uploads are covered by the unit
+  // tests on uploadIfDataUrl + the integration test on setProfileMoodboard.
+  await getPool().query(
+    `UPDATE users SET avatar_url = $2 WHERE id = $1`,
+    [stylist.id, "https://placehold.co/256x256.jpg"],
+  );
+  const moodboardId = `e2e_pmb_${stamp}`;
+  const profileId = (
+    await getPool().query(`SELECT id FROM stylist_profiles WHERE user_id = $1`, [stylist.id])
+  ).rows[0].id;
+  await getPool().query(
+    `INSERT INTO boards (id, type, stylist_profile_id, is_featured_on_profile, created_at, updated_at)
+     VALUES ($1, 'MOODBOARD', $2, true, NOW(), NOW())`,
+    [moodboardId, profileId],
+  );
+  await getPool().query(
+    `INSERT INTO board_photos (id, board_id, s3_key, url, order_index, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, 0, NOW(), NOW())`,
+    [`e2e_pmbp_${stamp}`, moodboardId, "seed/key", "https://placehold.co/512x512.jpg"],
+  );
+  await getPool().query(
+    `UPDATE stylist_profiles SET profile_moodboard_id = $2 WHERE id = $1`,
+    [profileId, moodboardId],
+  );
 
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
