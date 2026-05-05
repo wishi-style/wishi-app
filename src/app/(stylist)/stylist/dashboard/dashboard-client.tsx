@@ -79,7 +79,7 @@ type SessionType = "mini" | "major" | "lux";
 
 type LoyaltyTier = "new" | "bronze" | "silver" | "gold" | "vip";
 
-interface MockSession {
+interface DashboardSessionRow {
   id: string;
   clientId?: string;
   clientName: string;
@@ -117,195 +117,6 @@ interface ChatMessage {
   attachment?: ChatAttachment;
   endRequestId?: string; // session id for end request actions
 }
-
-const loyaltyConfig: Record<LoyaltyTier, { label: string; icon: React.ElementType; className: string }> = {
-  new: { label: "New Client", icon: SparklesIcon, className: "text-foreground bg-muted" },
-  bronze: { label: "Bronze", icon: StarIcon, className: "text-amber-800 bg-amber-100" },
-  silver: { label: "Silver", icon: StarIcon, className: "text-slate-500 bg-slate-100" },
-  gold: { label: "Gold", icon: CrownIcon, className: "text-amber-600 bg-amber-50" },
-  vip: { label: "VIP", icon: CrownIcon, className: "text-accent bg-accent/10" },
-};
-
-/* ─── Mock Data ─── */
-const mockSessions: MockSession[] = [
-  {
-    id: "s1",
-    clientName: "Feizhen Dang",
-    clientInitials: "FD",
-    sessionType: "lux",
-    priority: "overdue",
-    dueLabel: "Due: 33 days ago",
-    lastMessage: "New Booking - active",
-    lastMessageDate: "Mar 28",
-    boardsDelivered: 0,
-    boardsTotal: 3,
-    status: "New Booking - active",
-    actionLabel: "Create Moodboard",
-    loyaltyTier: "gold",
-    totalSessions: 8,
-  },
-  {
-    id: "s2",
-    clientName: "Crystal Stokey",
-    clientInitials: "CS",
-    sessionType: "major",
-    priority: "due_today",
-    dueLabel: "Due Today",
-    lastMessage: "Crystal's comment: Like some items.",
-    lastMessageDate: "Mar 27",
-    boardsDelivered: 1,
-    boardsTotal: 2,
-    status: "Crystal's comment: Like some items.",
-    actionLabel: "Create Look",
-    loyaltyTier: "silver",
-    totalSessions: 4,
-  },
-  {
-    id: "s3",
-    clientName: "Natalie Ramos",
-    clientInitials: "NR",
-    sessionType: "mini",
-    priority: "due_today",
-    dueLabel: "Due Today",
-    lastMessage: "New booking - needs moodboard",
-    lastMessageDate: "Mar 27",
-    boardsDelivered: 0,
-    boardsTotal: 1,
-    status: "New booking - needs moodboard",
-    actionLabel: "Create Moodboard",
-    loyaltyTier: "new",
-    totalSessions: 1,
-  },
-  {
-    id: "s4",
-    clientName: "Marcus Johnson",
-    clientInitials: "MJ",
-    sessionType: "lux",
-    priority: "active",
-    dueLabel: "Due in 3 days",
-    lastMessage: "The style board is perfect! Let me know about alternatives for the jacket.",
-    lastMessageDate: "Mar 25",
-    boardsDelivered: 2,
-    boardsTotal: 3,
-    status: "Style board delivered",
-    actionLabel: "View session",
-    loyaltyTier: "vip",
-    totalSessions: 15,
-  },
-  {
-    id: "s5",
-    clientName: "Emma Blakewell",
-    clientInitials: "EB",
-    sessionType: "major",
-    priority: "active",
-    dueLabel: "Due in 5 days",
-    lastMessage: "Thanks for the recommendations! I'll review them tonight.",
-    lastMessageDate: "Mar 24",
-    boardsDelivered: 1,
-    boardsTotal: 2,
-    status: "Awaiting feedback",
-    actionLabel: "View session",
-    loyaltyTier: "bronze",
-    totalSessions: 3,
-  },
-  {
-    id: "s6",
-    clientName: "Sofia Nakamura",
-    clientInitials: "SN",
-    sessionType: "mini",
-    priority: "new",
-    dueLabel: "Respond within 24h",
-    lastMessage: "Just booked! Need help with work-from-home outfits.",
-    lastMessageDate: "Mar 28",
-    boardsDelivered: 0,
-    boardsTotal: 1,
-    status: "New booking",
-    actionLabel: "Start styling",
-    loyaltyTier: "new",
-    totalSessions: 1,
-  },
-  {
-    id: "s7",
-    clientName: "Daniel Kim",
-    clientInitials: "DK",
-    sessionType: "lux",
-    priority: "new",
-    dueLabel: "Respond within 24h",
-    lastMessage: "Looking forward to a full wardrobe overhaul for spring.",
-    lastMessageDate: "Mar 28",
-    boardsDelivered: 0,
-    boardsTotal: 3,
-    status: "New booking",
-    actionLabel: "Start styling",
-    loyaltyTier: "gold",
-    totalSessions: 10,
-  },
-  {
-    id: "s8",
-    clientName: "Olivia Bennett",
-    clientInitials: "OB",
-    sessionType: "major",
-    priority: "active",
-    dueLabel: "All boards delivered",
-    lastMessage: "Loved everything! Ready to wrap up.",
-    lastMessageDate: "Mar 26",
-    boardsDelivered: 2,
-    boardsTotal: 2,
-    status: "All boards delivered",
-    actionLabel: "Create Look",
-    loyaltyTier: "silver",
-    totalSessions: 6,
-  },
-  {
-    id: "s9",
-    clientName: "Hannah Wright",
-    clientInitials: "HW",
-    sessionType: "mini",
-    priority: "completed",
-    dueLabel: "Session ended",
-    lastMessage: "Thanks so much, this was perfect!",
-    lastMessageDate: "Mar 20",
-    boardsDelivered: 1,
-    boardsTotal: 1,
-    status: "Session ended",
-    actionLabel: "View summary",
-    loyaltyTier: "bronze",
-    totalSessions: 2,
-    // Ended ~3 days ago — already archived
-    endedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-];
-
-const mockChats: Record<string, ChatMessage[]> = {
-  s1: [
-    { id: "1", sender: "client", text: "Friday at 2 would work for me", timestamp: new Date(2026, 1, 24, 11, 22) },
-    { id: "2", sender: "stylist", text: "Perfect! I'll schedule the call via Concierge for us and you should be receiving their email with details for the call by end of the day! 💗 I look forward to our chat!", timestamp: new Date(2026, 1, 24, 12, 41) },
-    { id: "3", sender: "stylist", text: "Hey Feizhen! I'm excited to chat in a few minutes!", timestamp: new Date(2026, 1, 27, 13, 47) },
-    { id: "4", sender: "stylist", text: "Hi Feizhen! I held on the call, but perhaps you weren't able to hop on. I have availability Monday from 9AM-11:30 and 3-5PM. On Tuesday I have availability from 9:30-2PM, and as I mentioned I will be going out of office and returning on March 11. Let me know if these times work for you or if you prefer to wait until March 11 when I return! Very best!", timestamp: new Date(2026, 1, 27, 14, 16) },
-  ],
-  s2: [
-    { id: "1", sender: "client", text: "I like some of the items but the colors aren't quite right for me.", timestamp: new Date(2026, 2, 26, 10, 0) },
-    { id: "2", sender: "stylist", text: "Thanks for the feedback Crystal! I'll adjust the palette. Are you leaning more towards warm or cool tones?", timestamp: new Date(2026, 2, 26, 10, 30) },
-    { id: "3", sender: "client", text: "Warm tones for sure — think burnt orange, olive, warm browns.", timestamp: new Date(2026, 2, 26, 11, 15) },
-  ],
-  s3: [
-    { id: "1", sender: "client", text: "Hi! Just booked a mini session. Looking for casual but polished looks.", timestamp: new Date(2026, 2, 27, 9, 0) },
-  ],
-  s4: [
-    { id: "1", sender: "stylist", text: "Here's your updated style board with the jacket alternatives!", timestamp: new Date(2026, 2, 24, 14, 0) },
-    { id: "2", sender: "client", text: "The style board is perfect! Let me know about alternatives for the jacket.", timestamp: new Date(2026, 2, 25, 9, 30) },
-  ],
-  s5: [
-    { id: "1", sender: "stylist", text: "Your curated pieces are ready! Take a look when you get a chance.", timestamp: new Date(2026, 2, 23, 16, 0) },
-    { id: "2", sender: "client", text: "Thanks for the recommendations! I'll review them tonight.", timestamp: new Date(2026, 2, 24, 18, 0) },
-  ],
-  s6: [
-    { id: "1", sender: "client", text: "Just booked! Need help with work-from-home outfits.", timestamp: new Date(2026, 2, 28, 8, 0) },
-  ],
-  s7: [
-    { id: "1", sender: "client", text: "Looking forward to a full wardrobe overhaul for spring.", timestamp: new Date(2026, 2, 28, 10, 0) },
-  ],
-};
 
 /* ─── Priority helpers ─── */
 const priorityOrder: Record<SessionPriority, number> = {
@@ -349,15 +160,15 @@ type StatFilter = "overdue" | "due_today" | "important" | "new" | "active" | "al
 
 /* ─── Component ─── */
 export default function StylistDashboard({
-  initialSessions = mockSessions,
+  initialSessions,
 }: {
-  initialSessions?: MockSession[];
-} = {}) {
+  initialSessions: DashboardSessionRow[];
+}) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<StatFilter | null>(null);
   const [folder, setFolder] = useState<"inbox" | "archive">("inbox");
-  const [sessions, setSessions] = useState<MockSession[]>(initialSessions);
+  const [sessions, setSessions] = useState<DashboardSessionRow[]>(initialSessions);
   const [sessionTypeFilter, setSessionTypeFilter] = useState<SessionType | "all">("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [pendingActionFilter, setPendingActionFilter] = useState<string>("all");
@@ -370,7 +181,7 @@ export default function StylistDashboard({
   const [itemRecOpen, setItemRecOpen] = useState(false);
   const [itemForm, setItemForm] = useState({ name: "", brand: "", price: "", link: "", note: "" });
   const [inputValue, setInputValue] = useState("");
-  const [messages, setMessages] = useState<Record<string, ChatMessage[]>>(mockChats);
+  const [messages, setMessages] = useState<Record<string, ChatMessage[]>>({});
   const [detailOpen, setDetailOpen] = useState(false);
   const [drafts, setDrafts] = useState<MoodBoardDraft[]>([]);
   const router = useRouter();
@@ -409,10 +220,10 @@ export default function StylistDashboard({
   }, []);
 
   const ARCHIVE_DELAY_MS = 24 * 60 * 60 * 1000;
-  const isArchived = (s: MockSession) =>
+  const isArchived = (s: DashboardSessionRow) =>
     // eslint-disable-next-line react-hooks/purity
     !!s.endedAt && Date.now() - new Date(s.endedAt).getTime() >= ARCHIVE_DELAY_MS;
-  const isEndedActive = (s: MockSession) => !!s.endedAt && !isArchived(s);
+  const isEndedActive = (s: DashboardSessionRow) => !!s.endedAt && !isArchived(s);
 
   const visibleSessions = sessions.filter((s) =>
     folder === "archive" ? isArchived(s) : !isArchived(s)

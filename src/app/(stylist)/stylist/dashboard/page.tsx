@@ -11,7 +11,8 @@ export default async function StylistDashboardPage() {
   if (!user) return null;
 
   const sessions = await getStylistDashboardData(user.id);
-  // MockSession uses optional fields; DashboardSession uses nullable.
+  // DashboardSession (service) uses nullable fields;
+  // DashboardSessionRow (client) uses optional. Coerce.
   const initialSessions = sessions.map((s) => ({
     ...s,
     endedAt: s.endedAt ?? undefined,
