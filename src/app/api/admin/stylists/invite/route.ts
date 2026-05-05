@@ -39,7 +39,12 @@ export async function POST(req: Request) {
     envAppUrl: process.env.APP_URL,
     headers: await headers(),
   });
-  const redirectUrl = `${appUrl}/onboarding/1`;
+  // Land returning stylists on /onboarding (which calls resume() and forwards
+  // ELIGIBLE/AWAITING_ELIGIBILITY profiles to /stylist/dashboard) instead of
+  // /onboarding/1. A re-invited stylist whose profile is already complete
+  // would otherwise see Q1, overwrite her gender_preference, and have
+  // advance() short-circuit her back to AWAITING_ELIGIBILITY → dashboard.
+  const redirectUrl = `${appUrl}/onboarding`;
 
   try {
     const invitation = await createStylistInvitation({
