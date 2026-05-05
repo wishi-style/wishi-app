@@ -39,6 +39,7 @@ export default async function OnboardingStepPage({
       id: true,
       stylistType: true,
       onboardingStep: true,
+      onboardingStatus: true,
       genderPreference: true,
       bodySpecialties: true,
       styleSpecialties: true,
@@ -54,6 +55,19 @@ export default async function OnboardingStepPage({
     },
   });
   if (!profile) notFound();
+
+  // Already-onboarded stylists who land on a numbered step URL (e.g. via a
+  // re-invite that points at /onboarding/1) shouldn't be allowed to re-run
+  // the wizard. The bare /onboarding entry already does this via resume();
+  // mirror it here so any path into a numbered step URL is gated. Without
+  // this, saveStep(1) overwrites her existing genderPreference and advance()
+  // bounces her to /stylist/dashboard with Q2–Q11 silently skipped.
+  if (
+    profile.onboardingStatus === "AWAITING_ELIGIBILITY" ||
+    profile.onboardingStatus === "ELIGIBLE"
+  ) {
+    redirect("/stylist/dashboard");
+  }
 
   // Block navigating past an unfinished earlier step. If the user has only
   // reached step N via the wizard, jumping to step N+2 by URL could skip

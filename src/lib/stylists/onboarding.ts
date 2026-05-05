@@ -270,6 +270,20 @@ export function computeNextState(current: AdvanceState): {
   step: number;
   status: string;
 } {
+  // Already past the wizard. Calling advance() against an AWAITING_ELIGIBILITY
+  // or ELIGIBLE profile is a no-op — preserve both step and status untouched.
+  // Without this guard, the PROFILE_CREATED override below silently demotes
+  // an admin-approved ELIGIBLE stylist back to AWAITING_ELIGIBILITY (and the
+  // re-invite flow exposes this: the wizard's Q1 Continue → save → advance
+  // round-trip would bounce a returning stylist to the dashboard while
+  // overwriting her gender_preference and degrading her status).
+  if (
+    current.onboardingStatus === "AWAITING_ELIGIBILITY" ||
+    current.onboardingStatus === "ELIGIBLE"
+  ) {
+    return { step: current.onboardingStep, status: current.onboardingStatus };
+  }
+
   const maxStep = current.isInHouse ? 11 : 12;
   let step = Math.min(current.onboardingStep + 1, maxStep);
   let status = current.onboardingStatus;

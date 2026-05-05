@@ -157,6 +157,44 @@ test("PLATFORM at intermediate steps does not flip status", () => {
   );
 });
 
+// Regression: a re-invited stylist whose profile is already AWAITING_ELIGIBILITY
+// or ELIGIBLE used to trip the AWAITING_ELIGIBILITY override (and demote
+// ELIGIBLE → PROFILE_CREATED → AWAITING_ELIGIBILITY) when the wizard's Q1
+// Continue triggered another advance() round-trip. Both inputs must now be
+// no-ops so the admin's eligibility approval survives stray advance calls.
+test("AWAITING_ELIGIBILITY is a no-op (PLATFORM)", () => {
+  assert.deepEqual(
+    computeNextState({
+      onboardingStep: 12,
+      onboardingStatus: "AWAITING_ELIGIBILITY",
+      isInHouse: false,
+    }),
+    { step: 12, status: "AWAITING_ELIGIBILITY" }
+  );
+});
+
+test("AWAITING_ELIGIBILITY is a no-op (IN_HOUSE)", () => {
+  assert.deepEqual(
+    computeNextState({
+      onboardingStep: 11,
+      onboardingStatus: "AWAITING_ELIGIBILITY",
+      isInHouse: true,
+    }),
+    { step: 11, status: "AWAITING_ELIGIBILITY" }
+  );
+});
+
+test("ELIGIBLE survives advance() — no demotion", () => {
+  assert.deepEqual(
+    computeNextState({
+      onboardingStep: 12,
+      onboardingStatus: "ELIGIBLE",
+      isInHouse: false,
+    }),
+    { step: 12, status: "ELIGIBLE" }
+  );
+});
+
 test("step 9 accepts partial gender records (subset of selected genders)", () => {
   // Stylist who picked Men + Women on step 1 should be able to save just
   // those two keys on step 9 — Zod 4's z.record on an enum is exhaustive
