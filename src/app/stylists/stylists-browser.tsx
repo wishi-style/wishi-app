@@ -79,27 +79,33 @@ export function StylistsBrowser({
 
   const enrich = (s: StylistRow): StylistRow => ({ ...s });
 
-  const discoverList = useMemo(
-    () =>
-      all
-        .map(enrich)
-        .filter((s) => {
-          if (activeTab === "favorites" && !favorites.has(s.id)) return false;
-          if (
-            searchQuery &&
-            !s.name.toLowerCase().includes(searchQuery.toLowerCase())
-          ) {
-            return false;
-          }
-          return true;
-        }),
-    [all, activeTab, favorites, searchQuery],
-  );
+  // On the Favorites tab, source from the full universe so favorites
+  // saved on top-3 match cards surface here too — `all` excludes those by
+  // construction in the server component. On the All tab, keep the
+  // original split (matched cards live in their own section above).
+  const discoverList = useMemo(() => {
+    const source = activeTab === "favorites" ? [...matched, ...all] : all;
+    return source.map(enrich).filter((s) => {
+      if (activeTab === "favorites" && !favorites.has(s.id)) return false;
+      if (
+        searchQuery &&
+        !s.name.toLowerCase().includes(searchQuery.toLowerCase())
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [matched, all, activeTab, favorites, searchQuery]);
+
+  const showMatchedSection =
+    isLoggedIn && matched.length > 0 && activeTab !== "favorites";
 
   return (
     <>
-      {/* Your Stylists Match — only for logged-in users with matched data */}
-      {isLoggedIn && matched.length > 0 ? (
+      {/* Your Stylists Match — only for logged-in users with matched data,
+          and hidden on the Favorites tab so favorited matches show in the
+          single Discover/Favorites grid below without duplication. */}
+      {showMatchedSection ? (
         <section className="container max-w-5xl py-12 md:py-16">
           <div className="text-center mb-10">
             <h1 className="font-display text-3xl md:text-4xl">
@@ -128,7 +134,7 @@ export function StylistsBrowser({
       <section
         className={cn(
           "container max-w-5xl pb-16",
-          (!isLoggedIn || matched.length === 0) && "pt-12 md:pt-16",
+          !showMatchedSection && "pt-12 md:pt-16",
         )}
       >
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
