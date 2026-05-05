@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 import { SearchIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StylistCard } from "@/components/stylist/stylist-card";
@@ -44,37 +44,36 @@ export function StylistsBrowser({
   );
   const [activeTab, setActiveTab] = useState<"all" | "favorites">("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [, startTransition] = useTransition();
 
   const toggleFavorite = (stylistProfileId: string) => {
+    const isFavorited = favorites.has(stylistProfileId);
+
     setFavorites((prev) => {
       const next = new Set(prev);
-      const isFavorited = next.has(stylistProfileId);
       if (isFavorited) {
         next.delete(stylistProfileId);
       } else {
         next.add(stylistProfileId);
       }
-      startTransition(async () => {
-        try {
-          if (isFavorited) {
-            await fetch(`/api/favorites/stylists/${stylistProfileId}`, {
-              method: "DELETE",
-            });
-          } else {
-            await fetch("/api/favorites/stylists", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ stylistProfileId }),
-            });
-          }
-        } catch {
-          // Optimistic update already applied; revert on next page load if
-          // server disagrees. Surfacing the failure inline is not part of
-          // Loveable's contract for this card.
-        }
-      });
       return next;
+    });
+
+    // Fire-and-forget — kept outside the state updater so the optimistic
+    // commit isn't held back behind an async transition while a previous
+    // toggle's fetch is still in flight.
+    const request = isFavorited
+      ? fetch(`/api/favorites/stylists/${stylistProfileId}`, {
+          method: "DELETE",
+        })
+      : fetch("/api/favorites/stylists", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ stylistProfileId }),
+        });
+    request.catch(() => {
+      // Optimistic update already applied; the server reconciles on next
+      // page load. Surfacing the failure inline is not part of Loveable's
+      // contract for this card.
     });
   };
 
