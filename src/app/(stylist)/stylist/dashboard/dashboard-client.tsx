@@ -3,7 +3,15 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { getDrafts, deleteDraft, type MoodBoardDraft } from "@/lib/moodBoardDrafts";
+
+interface MoodBoardDraft {
+  id: string;
+  sessionId: string | null;
+  clientName: string;
+  images: string[];
+  photoCount: number;
+  updatedAt: string;
+}
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -364,10 +372,34 @@ export default function StylistDashboard({
   const [inputValue, setInputValue] = useState("");
   const [messages, setMessages] = useState<Record<string, ChatMessage[]>>(mockChats);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [drafts, setDrafts] = useState<MoodBoardDraft[]>(getDrafts());
+  const [drafts, setDrafts] = useState<MoodBoardDraft[]>([]);
   const router = useRouter();
   const chatEndRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
+
+  // Hydrate drafts from the canonical Board(type=MOODBOARD, sentAt=null)
+  // rows the new-moodboard page creates. Switched off localStorage so a
+  // stylist who saves on laptop sees the same drafts on phone.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/moodboards?status=draft")
+      .then((r) => (r.ok ? r.json() : { drafts: [] }))
+      .then((body) => {
+        if (!cancelled) setDrafts(body.drafts ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setDrafts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function deleteDraftById(boardId: string): Promise<void> {
+    const res = await fetch(`/api/moodboards/${boardId}`, { method: "DELETE" });
+    if (!res.ok) return;
+    setDrafts((prev) => prev.filter((d) => d.id !== boardId));
+  }
 
   // Tick to re-evaluate archived state every minute
   const [, setNowTick] = useState(0);
@@ -833,8 +865,12 @@ export default function StylistDashboard({
                 className="flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors"
               >
                 <button
-                  onClick={() => router.push(`/stylist/sessions/${draft.id}/moodboards/new`)}
-                  className="flex items-center gap-3 min-w-0 flex-1 text-left"
+                  onClick={() => {
+                    if (!draft.sessionId) return;
+                    router.push(`/stylist/sessions/${draft.sessionId}/moodboards/new`);
+                  }}
+                  disabled={!draft.sessionId}
+                  className="flex items-center gap-3 min-w-0 flex-1 text-left disabled:opacity-50"
                 >
                   <div className="h-10 w-10 rounded-sm bg-muted border border-border flex items-center justify-center shrink-0 overflow-hidden">
                     {draft.images[0] ? (
@@ -846,15 +882,12 @@ export default function StylistDashboard({
                   <div className="min-w-0">
                     <p className="font-display text-sm font-medium truncate">{draft.clientName}</p>
                     <p className="font-body text-[11px] text-muted-foreground">
-                      {draft.images.length} image{draft.images.length !== 1 ? "s" : ""} · {new Date(draft.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      {draft.photoCount} image{draft.photoCount !== 1 ? "s" : ""} · {new Date(draft.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                     </p>
                   </div>
                 </button>
                 <button
-                  onClick={() => {
-                    deleteDraft(draft.id);
-                    setDrafts(getDrafts());
-                  }}
+                  onClick={() => void deleteDraftById(draft.id)}
                   className="text-muted-foreground hover:text-destructive transition-colors p-1"
                 >
                   <TrashIcon className="h-3.5 w-3.5" />
