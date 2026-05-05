@@ -1,87 +1,28 @@
 "use server";
 
 import { getServerAuth } from "@/lib/auth/server-auth";
-import { isE2EAuthModeEnabled } from "@/lib/auth/e2e-auth";
-import { prisma } from "@/lib/prisma";
-import { createOneTimeCheckout, createSubscriptionCheckout } from "@/lib/payments/checkout";
-import { provisionSessionForE2E } from "@/lib/payments/e2e-provision-session";
-import { hasActiveSessionWithStylist } from "@/lib/sessions/queries";
-import type { PlanType } from "@/generated/prisma/client";
 import { resolveAppUrl } from "@/lib/app-url";
+import { runCheckout } from "@/lib/payments/run-checkout";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
+// Thin wrapper. All branching logic lives in `runCheckout` so it can be
+// unit-tested directly. See `src/lib/payments/run-checkout.ts` for the e2e
+// vs Stripe gating rule.
 export async function createCheckout(formData: FormData) {
-  const { userId: clerkId } = await getServerAuth();
-  if (!clerkId) throw new Error("Not authenticated");
-
-  const user = await prisma.user.findUnique({
-    where: { clerkId },
-    select: { id: true },
-  });
-  if (!user) throw new Error("User not found");
-
-  const planType = formData.get("planType") as PlanType;
-  const stylistProfileId = (formData.get("stylistId") as string) || undefined;
-  const isSubscription = formData.get("isSubscription") === "true";
-
-  if (!planType || !["MINI", "MAJOR", "LUX"].includes(planType)) {
-    throw new Error("Invalid plan type");
-  }
-
-  if (isSubscription && planType === "LUX") {
-    throw new Error("Lux plan is one-time only");
-  }
-
-  // Validate the stylist profile exists and resolve to a user id
-  let stylistUserId: string | undefined;
-  if (stylistProfileId) {
-    const profile = await prisma.stylistProfile.findUnique({
-      where: { id: stylistProfileId },
-      select: { userId: true },
-    });
-    if (!profile) {
-      throw new Error("Stylist not found");
-    }
-    stylistUserId = profile.userId;
-
-    const hasActive = await hasActiveSessionWithStylist(user.id, stylistProfileId);
-    if (hasActive) {
-      redirect("/sessions");
-    }
-  }
-
-  if (isE2EAuthModeEnabled()) {
-    await provisionSessionForE2E({
-      userId: user.id,
-      planType,
-      stylistUserId,
-      isSubscription,
-    });
-    redirect("/sessions");
-  }
-
+  const auth = await getServerAuth();
   const appUrl = resolveAppUrl({
     envAppUrl: process.env.APP_URL,
     headers: await headers(),
   });
 
-  const options = {
-    userId: user.id,
-    planType,
-    stylistId: stylistProfileId,
-    stylistUserId,
-    successUrl: `${appUrl}/bookings/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancelUrl: `${appUrl}/bookings/new${stylistProfileId ? `?stylistId=${stylistProfileId}` : ""}`,
-  };
+  const outcome = await runCheckout({ auth, formData, appUrl });
 
-  const session = isSubscription
-    ? await createSubscriptionCheckout(options)
-    : await createOneTimeCheckout(options);
-
-  if (session.url) {
-    redirect(session.url);
+  switch (outcome.kind) {
+    case "redirect-to-active-session":
+    case "e2e-provisioned":
+      redirect("/sessions");
+    case "redirect-to-stripe":
+      redirect(outcome.url);
   }
-
-  throw new Error("Failed to create checkout session");
 }
