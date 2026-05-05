@@ -35,7 +35,7 @@ async function handleUserCreated(data: UserJSON) {
   // Invitations API, we attach `publicMetadata.stylistInvitation = true`
   // and the chosen `stylistType`. On signup that metadata flows into the
   // user.created event — auto-promote the brand-new CLIENT to STYLIST so
-  // they hit /onboarding/step-1 with a real StylistProfile already created.
+  // they hit /onboarding/1 with a real StylistProfile already created.
   // Failures here must NOT 5xx the webhook (Clerk would retry forever and
   // the second run would race with the first); log + swallow instead.
   const invite = readStylistInvitationFromMetadata(

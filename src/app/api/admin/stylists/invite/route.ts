@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     envAppUrl: process.env.APP_URL,
     headers: await headers(),
   });
-  const redirectUrl = `${appUrl}/onboarding/step-1`;
+  const redirectUrl = `${appUrl}/onboarding/1`;
 
   try {
     const invitation = await createStylistInvitation({

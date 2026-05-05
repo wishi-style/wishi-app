@@ -105,7 +105,7 @@ export default async function StylistPayoutsPage() {
           Payout rows are being written for every completed session, but funds
           can&apos;t be transferred until you finish Stripe Connect onboarding.
           <div className="mt-2">
-            <Link href="/onboarding/step-12" className="underline">
+            <Link href="/onboarding/12" className="underline">
               Continue Connect setup →
             </Link>
           </div>

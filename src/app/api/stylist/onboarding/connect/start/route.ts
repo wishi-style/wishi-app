@@ -2,7 +2,7 @@
 //
 // Creates a Stripe Connect Express account for the current stylist if they
 // don't have one yet, then returns a fresh onboarding AccountLink URL.
-// The client redirects to that URL; Stripe bounces back to /onboarding/step-12
+// The client redirects to that URL; Stripe bounces back to /onboarding/12
 // where the return endpoint picks up.
 
 import { NextResponse } from "next/server";
@@ -55,8 +55,8 @@ export async function POST(req: Request) {
     const origin = new URL(req.url).origin;
     const link = await createAccountLink({
       accountId,
-      refreshUrl: `${origin}/onboarding/step-12?status=refresh`,
-      returnUrl: `${origin}/onboarding/step-12?status=complete`,
+      refreshUrl: `${origin}/onboarding/12?status=refresh`,
+      returnUrl: `${origin}/onboarding/12?status=complete`,
     });
 
     return NextResponse.json({ url: link.url });
