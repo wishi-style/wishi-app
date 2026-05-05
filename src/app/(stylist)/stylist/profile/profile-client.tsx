@@ -57,6 +57,47 @@ function extractInstagramHandle(input: string): string | null {
   }
 }
 
+// Upload a data: URL to S3 via the presigned-URL flow and return the
+// resulting public URL. Pass-through for regular http(s) URLs (already
+// uploaded). Empty input returns null so the caller can clear the field.
+async function uploadIfDataUrlWithKey(
+  src: string,
+  purpose: "avatar" | "profile-moodboard",
+): Promise<{ s3Key: string; url: string } | null> {
+  if (!src) return null;
+  if (!src.startsWith("data:")) return null;
+  const blob = await (await fetch(src)).blob();
+  const ext = blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg";
+  const filename = `${purpose}-${Date.now()}.${ext}`;
+  const presignRes = await fetch(
+    `/api/uploads/presigned?purpose=${purpose}&filename=${encodeURIComponent(filename)}&contentType=${encodeURIComponent(blob.type)}`,
+  );
+  if (!presignRes.ok) {
+    const body = await presignRes.json().catch(() => ({}));
+    throw new Error(body.error ?? "Failed to get upload URL");
+  }
+  const { url: uploadUrl, key, publicUrl } = await presignRes.json();
+  const putRes = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": blob.type },
+    body: blob,
+  });
+  if (!putRes.ok) throw new Error(`Upload failed (${putRes.status})`);
+  return { s3Key: key, url: publicUrl };
+}
+
+// Same as above but only returns the URL (used for avatar where the
+// server only needs the URL, not the s3Key).
+async function uploadIfDataUrl(
+  src: string,
+  purpose: "avatar" | "profile-moodboard",
+): Promise<string | null | undefined> {
+  if (!src) return null;
+  if (!src.startsWith("data:")) return undefined; // pass through unchanged
+  const result = await uploadIfDataUrlWithKey(src, purpose);
+  return result?.url ?? null;
+}
+
 function instagramUrl(handle: string): string {
   return `https://instagram.com/${handle}`;
 }
@@ -367,6 +408,16 @@ export default function StylistProfile(props: { initialProfile?: StylistProfileD
     setIsSaving(true);
     try {
       const handle = extractInstagramHandle(data.instagram);
+
+      // Upload any newly-picked images (data: URLs) to S3 before calling
+      // saveStylistProfile so the action only ever sees S3-backed URLs.
+      // Already-saved images (regular URLs) are forwarded unchanged.
+      const avatarUrl = await uploadIfDataUrl(data.profilePic, "avatar");
+      const moodboardUpload = await uploadIfDataUrlWithKey(
+        data.moodBoardImage,
+        "profile-moodboard",
+      );
+
       const result = await saveStylistProfile({
         fullName: data.fullName,
         location: data.location,
@@ -374,15 +425,26 @@ export default function StylistProfile(props: { initialProfile?: StylistProfileD
         directorsPick: data.directorsPick,
         bio: data.bio,
         instagramHandle: handle,
+        // Only forward avatarUrl when we actually have one — otherwise
+        // omit the key so the server doesn't overwrite an existing value.
+        ...(avatarUrl !== undefined ? { avatarUrl } : {}),
+        ...(moodboardUpload ? { moodboardUpload } : {}),
       });
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
-      // Image fields (avatar, moodboard) still ride localStorage until
-      // the upload-to-S3 follow-up lands. Keep the cache so the editor
-      // doesn't lose them on the redirect / re-render.
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      // Patch local state with the resolved S3 URLs so the in-memory
+      // copy + localStorage cache match what's now in the DB.
+      const persisted: StylistProfileData = {
+        ...data,
+        ...(avatarUrl !== undefined && avatarUrl !== null
+          ? { profilePic: avatarUrl }
+          : {}),
+        ...(moodboardUpload ? { moodBoardImage: moodboardUpload.url } : {}),
+      };
+      setData(persisted);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
       clearDraft();
       setDraftRestored(false);
       setSubmitAttempted(false);

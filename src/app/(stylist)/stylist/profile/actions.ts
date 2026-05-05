@@ -4,11 +4,17 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 import { splitName, splitLocation } from "./helpers";
+import { setProfileMoodboard } from "@/lib/stylists/profile-images.service";
 
-// Persists the text/identity fields edited on /stylist/profile. Image
-// fields (avatar, moodboard) and style boards are managed elsewhere and
-// not touched here — the editor still keeps those in localStorage for
-// now; tracked as a follow-up.
+// Persists the editable fields on /stylist/profile. Text and identity
+// fields write to User / StylistProfile / UserLocation; the optional
+// avatar URL writes to User.avatarUrl; the optional moodboard upload
+// writes to StylistProfile.profileMoodboardId via setProfileMoodboard().
+//
+// Image uploads use the presigned-URL flow: client requests a URL via
+// /api/uploads/presigned?purpose=..., PUTs the file to S3, then passes
+// the resulting public URL + s3 key here. Already-saved images come
+// back through the form unchanged and are passed-through verbatim.
 //
 // `fullName` is split on the first whitespace into firstName / lastName
 // so the existing User shape stays intact. `location` is split on
@@ -26,6 +32,19 @@ const payloadSchema = z.object({
     .string()
     .regex(/^[A-Za-z0-9_.]{1,30}$/)
     .nullable(),
+  // Already-uploaded image URL (or null to clear). The client never
+  // forwards data: URLs — those go through presign+PUT first so the DB
+  // only ever sees S3-backed URLs.
+  avatarUrl: z.string().min(1).nullable().optional(),
+  // Profile moodboard upload — only the *new* upload's s3Key + url are
+  // sent; existing moodboards are addressed by the URL alone (no-op).
+  moodboardUpload: z
+    .object({
+      s3Key: z.string().min(1),
+      url: z.string().min(1),
+    })
+    .nullable()
+    .optional(),
 });
 
 export type SaveStylistProfilePayload = z.infer<typeof payloadSchema>;
@@ -51,10 +70,10 @@ export async function saveStylistProfile(
   const { city, state } = splitLocation(data.location);
 
   await prisma.$transaction(async (tx) => {
-    await tx.user.update({
-      where: { id: user.id },
-      data: { firstName, lastName },
-    });
+    const userUpdate: Record<string, unknown> = { firstName, lastName };
+    if (data.avatarUrl !== undefined) userUpdate.avatarUrl = data.avatarUrl;
+
+    await tx.user.update({ where: { id: user.id }, data: userUpdate });
 
     await tx.stylistProfile.update({
       where: { userId: user.id },
@@ -81,6 +100,28 @@ export async function saveStylistProfile(
       });
     }
   });
+
+  // Moodboard upsert is its own transaction (deletes old photos, creates
+  // a new one, links the Board → StylistProfile). Run after the text-fields
+  // commit so a moodboard failure doesn't roll back the rest — the user
+  // gets the saved bio/etc and a clear error to retry the upload.
+  if (data.moodboardUpload) {
+    try {
+      await setProfileMoodboard(
+        user.id,
+        data.moodboardUpload.s3Key,
+        data.moodboardUpload.url,
+      );
+    } catch (err) {
+      return {
+        ok: false,
+        error:
+          err instanceof Error
+            ? `Profile saved, but moodboard upload failed: ${err.message}`
+            : "Profile saved, but moodboard upload failed",
+      };
+    }
+  }
 
   return { ok: true };
 }
