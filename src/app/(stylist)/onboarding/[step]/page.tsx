@@ -22,32 +22,12 @@ export default async function OnboardingStepPage({
   params,
   searchParams,
 }: {
-  params: Promise<{ n: string }>;
+  params: Promise<{ step: string }>;
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const resolvedParams = await params;
-  const rawN = (resolvedParams as Record<string, unknown>)?.n;
-  const fallbackKey = Object.keys(resolvedParams ?? {})[0];
-  const fallbackVal = fallbackKey
-    ? (resolvedParams as Record<string, unknown>)[fallbackKey]
-    : undefined;
-  const candidate = typeof rawN === "string" ? rawN : typeof fallbackVal === "string" ? fallbackVal : "";
-  const stepRaw = candidate.replace(/^step-/, "");
-  let stepNum = Number(stepRaw);
-  console.log(
-    JSON.stringify({
-      event: "onboarding_step_resolve",
-      paramsKeys: Object.keys(resolvedParams ?? {}),
-      rawN,
-      fallbackKey,
-      fallbackVal,
-      stepRaw,
-      stepNum,
-    }),
-  );
-  if (!Number.isInteger(stepNum) || stepNum < 1 || stepNum > TOTAL_STEPS) {
-    stepNum = 1;
-  }
+  const { step } = await params;
+  const stepNum = Number(step);
+  if (!Number.isInteger(stepNum) || stepNum < 1 || stepNum > TOTAL_STEPS) notFound();
 
   await requireRole("STYLIST");
   const user = await getCurrentAuthUser();
@@ -82,7 +62,7 @@ export default async function OnboardingStepPage({
   // defense-in-depth for direct step URLs).
   const currentStep = Math.max(1, profile.onboardingStep || 1);
   if (stepNum > currentStep) {
-    redirect(`/onboarding/step-${currentStep}`);
+    redirect(`/onboarding/${currentStep}`);
   }
 
   const sp = (await searchParams) ?? {};

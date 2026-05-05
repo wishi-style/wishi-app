@@ -16,7 +16,7 @@ export type OnboardingShellProps = {
   buildPayload: () => Record<string, unknown> | null;
   children: React.ReactNode;
   skipPersist?: boolean; // step 10 & step 12 just advance
-  nextHref?: string; // override the default /onboarding/step-N+1 route
+  nextHref?: string; // override the default /onboarding/N+1 route
   primaryLabel?: string;
 };
 
@@ -55,7 +55,7 @@ export function OnboardingShell(props: OnboardingShellProps) {
         return;
       }
       const { onboardingStep } = await advanceRes.json();
-      router.push(props.nextHref ?? `/onboarding/step-${onboardingStep}`);
+      router.push(props.nextHref ?? `/onboarding/${onboardingStep}`);
     });
   }
 
@@ -85,7 +85,7 @@ export function OnboardingShell(props: OnboardingShellProps) {
         {props.step > 1 ? (
           <button
             type="button"
-            onClick={() => router.push(`/onboarding/step-${props.step - 1}`)}
+            onClick={() => router.push(`/onboarding/${props.step - 1}`)}
             className="text-sm text-muted-foreground underline"
           >
             Back

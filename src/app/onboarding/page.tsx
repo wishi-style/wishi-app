@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 //
 // Lives at the top level (not under `(stylist)`) so the stylist layout's
 // requireRole guard doesn't 401 guests before this server component runs.
-// Wizard step pages stay under `(stylist)/onboarding/step-[n]/` and inherit
+// Wizard step pages stay under `(stylist)/onboarding/[step]/` and inherit
 // the stylist layout's auth gate as expected.
 export default async function OnboardingEntry() {
   const user = await getCurrentAuthUser();
@@ -23,5 +23,5 @@ export default async function OnboardingEntry() {
   if (status === "AWAITING_ELIGIBILITY" || status === "ELIGIBLE") {
     redirect("/stylist/dashboard");
   }
-  redirect(`/onboarding/step-${step}`);
+  redirect(`/onboarding/${step}`);
 }
