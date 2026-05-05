@@ -104,6 +104,7 @@ Before pushing, every PR has:
 - **`unused-vars` on React event handlers** — ESLint flags `(_e: MouseEvent) => ...`. Drop the param if unused.
 - **Next.js dev server "another instance running"** — Next 16 detects port collisions and refuses to start a second `next dev` *anywhere*, even on a different port. `pkill -f "next dev"` before starting a second instance.
 - **Stale `.env.local`** — `next dev` reads `.env.local` over `.env`. Wrong hosts (e.g. a docker bridge IP that isn't routable on macOS) silently break DB connectivity. Check `.env.local` first when `/api/health` returns 503.
+- **Clerk redirect loop after Stripe Hosted Checkout on HTTP staging** — Returning from Stripe to `/bookings/success` on the HTTP staging ALB can put Clerk's middleware into an infinite session-refresh loop. Symptom: white page, URL bar spinning, CloudWatch logs `Clerk: Refreshing the session token resulted in an infinite redirect loop. This usually means that your Clerk instance keys do not match`. The keys do match — both `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` resolve to the same instance. Most likely root cause is Clerk's `Secure`-flagged session cookies being skipped over HTTP. Booking-side effects (Session row, Payment row, webhook delivery) all complete; the loop only breaks the success-page render. Don't chase the misleading "keys do not match" message — pre-launch verification needs HTTPS in front of staging or a first-cohort production smoke on `wishi.me`.
 
 ### Post-merge cleanup is yours, not the user's
 

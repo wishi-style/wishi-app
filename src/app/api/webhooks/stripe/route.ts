@@ -39,6 +39,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
+  // Log every signature-verified event so "did the webhook arrive?" is
+  // answerable from CloudWatch without inferring from downstream side effects.
+  // Successful handlers below are silent on purpose; this line is the only
+  // proof-of-receipt we emit.
+  console.log("[stripe webhook] received", { type: event.type, id: event.id });
+
   try {
     switch (event.type) {
       case "checkout.session.completed":
