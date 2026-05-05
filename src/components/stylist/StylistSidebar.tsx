@@ -33,9 +33,9 @@ export function StylistSidebar() {
 
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
-      <div className="p-4 border-b border-sidebar-border">
+      <div className="h-14 px-4 flex items-center border-b border-sidebar-border shrink-0">
         <Link href="/stylist/dashboard" className="flex items-center gap-3">
-          <div className="h-9 w-9 shrink-0 rounded-full border-2 border-foreground flex items-center justify-center">
+          <div className="h-8 w-8 shrink-0 rounded-full border-2 border-foreground flex items-center justify-center">
             <span className="font-display text-sm font-semibold">W</span>
           </div>
           {!collapsed && (

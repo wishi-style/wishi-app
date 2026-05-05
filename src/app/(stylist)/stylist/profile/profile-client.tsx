@@ -37,6 +37,28 @@ import { toast } from "sonner";
 
 const STORAGE_KEY = "stylist_profile_v1";
 const DRAFT_KEY = "stylist_profile_draft_v1";
+
+// Accepts "@handle", "handle", "https://instagram.com/handle",
+// "instagram.com/handle". Returns the bare handle, or null when input
+// can't be parsed as an Instagram identifier.
+function extractInstagramHandle(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  const direct = trimmed.match(/^@?([A-Za-z0-9_.]{1,30})$/);
+  if (direct) return direct[1];
+  try {
+    const url = new URL(trimmed.startsWith("http") ? trimmed : `https://${trimmed}`);
+    if (!/(^|\.)instagram\.com$/i.test(url.hostname)) return null;
+    const seg = url.pathname.replace(/^\/+|\/+$/g, "").split("/")[0] ?? "";
+    return /^[A-Za-z0-9_.]{1,30}$/.test(seg) ? seg : null;
+  } catch {
+    return null;
+  }
+}
+
+function instagramUrl(handle: string): string {
+  return `https://instagram.com/${handle}`;
+}
 const DRAFT_TS_KEY = "stylist_profile_draft_ts_v1";
 
 const WOMEN_STYLES = [
@@ -309,14 +331,8 @@ export default function StylistProfile(props: { initialProfile?: StylistProfileD
     if (!data.bio.trim()) errors.bio = "Bio is required";
     else if (data.bio.trim().length > 1000)
       errors.bio = "Keep it under 1000 characters";
-    if (data.instagram.trim()) {
-      try {
-        const u = new URL(data.instagram.trim());
-        if (!/instagram\.com$/i.test(u.hostname) && !/\.instagram\.com$/i.test(u.hostname))
-          errors.instagram = "Must be an instagram.com link";
-      } catch {
-        errors.instagram = "Enter a valid URL (https://instagram.com/…)";
-      }
+    if (data.instagram.trim() && !extractInstagramHandle(data.instagram)) {
+      errors.instagram = "Enter a handle like @yourhandle";
     }
     return errors;
   };
@@ -405,16 +421,20 @@ export default function StylistProfile(props: { initialProfile?: StylistProfileD
               </Avatar>
               <h2 className="font-display text-2xl sm:text-3xl">{data.fullName}</h2>
               <p className="text-sm text-muted-foreground font-body mt-1">{data.location}</p>
-              {data.instagram && (
-                <a
-                  href={data.instagram}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-2 text-sm font-body mt-3 text-accent hover:underline"
-                >
-                  <InstagramIcon className="h-4 w-4" /> Instagram
-                </a>
-              )}
+              {(() => {
+                const handle = extractInstagramHandle(data.instagram);
+                if (!handle) return null;
+                return (
+                  <a
+                    href={instagramUrl(handle)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 text-sm font-body mt-3 text-accent hover:underline"
+                  >
+                    <InstagramIcon className="h-4 w-4" /> @{handle}
+                  </a>
+                );
+              })()}
             </div>
           </div>
 
@@ -552,8 +572,8 @@ export default function StylistProfile(props: { initialProfile?: StylistProfileD
                 </Field>
                 <div className="sm:col-span-2">
                   <Field
-                    label="Instagram link"
-                    hint="Optional"
+                    label="Instagram"
+                    hint="Optional — handle only, e.g. @yourhandle"
                     error={visibleErrors.instagram}
                   >
                     <div className="relative">
@@ -561,7 +581,7 @@ export default function StylistProfile(props: { initialProfile?: StylistProfileD
                       <Input
                         value={data.instagram}
                         onChange={(e) => update("instagram", e.target.value)}
-                        placeholder="https://instagram.com/yourhandle"
+                        placeholder="@yourhandle"
                         className="pl-9"
                         aria-invalid={!!visibleErrors.instagram}
                       />
