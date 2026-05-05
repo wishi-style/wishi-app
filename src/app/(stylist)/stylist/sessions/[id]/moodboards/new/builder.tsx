@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { saveDraft, deleteDraft, type MoodBoardDraft } from "@/lib/moodBoardDrafts";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import {
@@ -47,16 +46,14 @@ interface InspirationPhoto {
 interface MoodBoardCreatorProps {
   clientName: string;
   sessionId?: string | null;
-  draftId?: string | null;
   initialImages?: string[];
   onBack: () => void;
   onSend?: (images: string[], note: string) => void;
-  onDraftSaved?: () => void;
   onPhotoAdded?: (input: { url: string; s3Key: string; inspirationPhotoId: string }) => Promise<boolean>;
   onPhotoRemoved?: (url: string) => Promise<void>;
 }
 
-export function MoodboardBuilder({ clientName, sessionId, draftId, initialImages, onBack, onSend, onDraftSaved, onPhotoAdded, onPhotoRemoved }: MoodBoardCreatorProps) {
+export function MoodboardBuilder({ clientName, sessionId, initialImages, onBack, onSend, onPhotoAdded, onPhotoRemoved }: MoodBoardCreatorProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [genderFilter, setGenderFilter] = useState("female");
   const [canvasImages, setCanvasImages] = useState<string[]>(initialImages || []);
@@ -64,7 +61,6 @@ export function MoodboardBuilder({ clientName, sessionId, draftId, initialImages
   const [freestyleItems, setFreestyleItems] = useState<FreestyleItem[]>([]);
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [clientInfoOpen, setClientInfoOpen] = useState(false);
-  const [currentDraftId, setCurrentDraftId] = useState<string | null>(draftId || null);
   const [inspirations, setInspirations] = useState<InspirationPhoto[]>([]);
 
   useEffect(() => {
@@ -142,23 +138,18 @@ export function MoodboardBuilder({ clientName, sessionId, draftId, initialImages
     }
   };
 
+  // Photos auto-persist to the underlying Board(type=MOODBOARD, sentAt=null)
+  // via onPhotoAdded/onPhotoRemoved on every change. The button is a UX
+  // affordance that confirms the autosave; there is nothing extra to write.
   const handleSaveDraft = () => {
     if (canvasImages.length === 0) {
       toast("Add images before saving a draft");
       return;
     }
-    const saved = saveDraft(
-      { clientName, sessionId: sessionId || null, images: canvasImages },
-      currentDraftId || undefined
-    );
-    setCurrentDraftId(saved.id);
-    onDraftSaved?.();
     toast.success("Draft saved");
   };
 
   const handleSend = (images: string[], note: string) => {
-    // Delete draft after sending
-    if (currentDraftId) deleteDraft(currentDraftId);
     toast.success("Mood board sent to " + clientName, {
       description: "Redirecting to dashboard…",
     });
