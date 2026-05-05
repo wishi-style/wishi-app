@@ -16,10 +16,16 @@ const GENDER_LABELS: Record<string, string> = {
 export function StepNine({
   initial,
 }: {
-  initial: { expertiseByGender: Record<string, string[]> };
+  initial: { expertiseByGender: Record<string, string[]>; genderPreference: string[] };
 }) {
   const [map, setMap] = useState<Record<string, string[]>>(initial.expertiseByGender ?? {});
-  const genders = Object.keys(GENDER_LABELS);
+  // Show only the genders the stylist said they style on step 1. Fall back to
+  // all four if step 1 hasn't been answered yet (defensive — page guard
+  // shouldn't allow that, but better than rendering an empty form).
+  const genders =
+    initial.genderPreference.length > 0
+      ? initial.genderPreference
+      : Object.keys(GENDER_LABELS);
 
   function toggle(gender: string, cat: string) {
     setMap((prev) => {

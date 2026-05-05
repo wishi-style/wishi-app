@@ -18,6 +18,9 @@ export type OnboardingShellProps = {
   skipPersist?: boolean; // step 10 & step 12 just advance
   nextHref?: string; // override the default /onboarding/N+1 route
   primaryLabel?: string;
+  // Optional secondary action — currently used by step 11 to surface an
+  // explicit "Skip" affordance. Bypasses save and just calls advance.
+  skipLabel?: string;
 };
 
 export function OnboardingShell(props: OnboardingShellProps) {
@@ -26,10 +29,10 @@ export function OnboardingShell(props: OnboardingShellProps) {
   const [isPending, startTransition] = useTransition();
   const pct = Math.round((props.step / props.totalSteps) * 100);
 
-  async function handleNext() {
+  async function runFlow(opts: { skipSave: boolean }) {
     setErrorMessage(null);
     startTransition(async () => {
-      if (!props.skipPersist) {
+      if (!opts.skipSave && !props.skipPersist) {
         const payload = props.buildPayload();
         if (payload === null) {
           setErrorMessage("Fill in the required fields before continuing");
@@ -54,8 +57,17 @@ export function OnboardingShell(props: OnboardingShellProps) {
         setErrorMessage(body.error ?? "Failed to advance");
         return;
       }
-      const { onboardingStep } = await advanceRes.json();
-      router.push(props.nextHref ?? `/onboarding/${onboardingStep}`);
+      const { onboardingStep, onboardingStatus } = await advanceRes.json();
+      // Wizard is done when advance flips status to AWAITING_ELIGIBILITY (IN_HOUSE
+      // step 11, PLATFORM step 12 return). Without this branch, IN_HOUSE stylists
+      // get pushed back to /onboarding/11 (capped maxStep) and the click looks
+      // like a no-op. nextHref still wins so step 12's Stripe-Connect handoff
+      // can override.
+      const fallback =
+        onboardingStatus === "AWAITING_ELIGIBILITY" || onboardingStatus === "ELIGIBLE"
+          ? "/stylist/dashboard"
+          : `/onboarding/${onboardingStep}`;
+      router.push(props.nextHref ?? fallback);
     });
   }
 
@@ -93,14 +105,26 @@ export function OnboardingShell(props: OnboardingShellProps) {
         ) : (
           <span />
         )}
-        <button
-          type="button"
-          onClick={handleNext}
-          disabled={!props.canAdvance || isPending}
-          className="rounded-full bg-foreground px-6 py-2 text-sm font-medium text-background disabled:opacity-50"
-        >
-          {isPending ? "Saving…" : (props.primaryLabel ?? "Continue")}
-        </button>
+        <div className="flex items-center gap-3">
+          {props.skipLabel && (
+            <button
+              type="button"
+              onClick={() => runFlow({ skipSave: true })}
+              disabled={isPending}
+              className="text-sm text-muted-foreground underline disabled:opacity-50"
+            >
+              {props.skipLabel}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => runFlow({ skipSave: false })}
+            disabled={!props.canAdvance || isPending}
+            className="rounded-full bg-foreground px-6 py-2 text-sm font-medium text-background disabled:opacity-50"
+          >
+            {isPending ? "Saving…" : (props.primaryLabel ?? "Continue")}
+          </button>
+        </div>
       </div>
     </div>
   );
