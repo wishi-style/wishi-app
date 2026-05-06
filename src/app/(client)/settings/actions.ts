@@ -1,13 +1,13 @@
 "use server";
 
-import { auth } from "@clerk/nextjs/server";
+import { getServerAuth } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
 import { getPublicUrl } from "@/lib/s3";
 import { revalidatePath } from "next/cache";
 import { Gender, FitPreference } from "@/generated/prisma/client";
 
 export async function confirmAvatarUpload(s3Key: string) {
-  const { userId: clerkId } = await auth();
+  const { userId: clerkId } = await getServerAuth();
   if (!clerkId) throw new Error("Unauthorized");
 
   const avatarUrl = getPublicUrl(s3Key);
@@ -57,7 +57,7 @@ function parseLocation(
 }
 
 export async function updateProfile(formData: FormData) {
-  const { userId: clerkId } = await auth();
+  const { userId: clerkId } = await getServerAuth();
   if (!clerkId) throw new Error("Unauthorized");
 
   const user = await prisma.user.findUnique({
@@ -248,7 +248,7 @@ const BUDGET_CATEGORIES = [
 type BudgetCategory = (typeof BUDGET_CATEGORIES)[number];
 
 export async function updateStyleInfo(formData: FormData) {
-  const { userId: clerkId } = await auth();
+  const { userId: clerkId } = await getServerAuth();
   if (!clerkId) throw new Error("Unauthorized");
 
   const user = await prisma.user.findUnique({

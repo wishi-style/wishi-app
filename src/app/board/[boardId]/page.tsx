@@ -3,7 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ShoppingBagIcon } from "lucide-react";
-import { auth } from "@clerk/nextjs/server";
+import { getServerAuth } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
@@ -134,7 +134,7 @@ export default async function SharedBoardPage({ params }: Props) {
 
   // Floating cart bar: only when this viewer is signed in and has items
   // queued in their cart — Loveable parity (SharedBoard.tsx:82-99).
-  const { userId: viewerClerkId } = await auth();
+  const { userId: viewerClerkId } = await getServerAuth();
   const viewerCartCount = viewerClerkId
     ? await getCartCountForClerkUser(viewerClerkId)
     : 0;

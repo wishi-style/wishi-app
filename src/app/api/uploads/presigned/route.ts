@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { getServerAuth } from "@/lib/auth/server-auth";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
@@ -15,7 +15,7 @@ const ALLOWED_PURPOSES = ["avatar", "profile-moodboard"] as const;
 type Purpose = (typeof ALLOWED_PURPOSES)[number];
 
 export async function GET(req: NextRequest) {
-  const { userId: clerkId } = await auth();
+  const { userId: clerkId } = await getServerAuth();
   if (!clerkId) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }

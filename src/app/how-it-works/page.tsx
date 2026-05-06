@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { auth } from "@clerk/nextjs/server";
+import { getServerAuth } from "@/lib/auth/server-auth";
 import { ArrowRightIcon } from "lucide-react";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
@@ -44,7 +44,7 @@ const occasions = [
 ] as const;
 
 export default async function HowItWorksPage() {
-  const { userId } = await auth();
+  const { userId } = await getServerAuth();
   const signedIn = userId !== null && userId !== undefined;
   // Logged-in users have already onboarded — send them straight to the
   // stylist roster. New visitors land in the /match-quiz funnel.

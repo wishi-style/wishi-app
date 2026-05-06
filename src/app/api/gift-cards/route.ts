@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
-import { auth } from "@clerk/nextjs/server";
+import { getServerAuth } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
 import { createGiftCardCheckout } from "@/lib/promotions/gift-card.service";
 import { resolveAppUrl } from "@/lib/app-url";
@@ -15,7 +15,7 @@ interface Body {
 }
 
 export async function POST(req: Request) {
-  const { userId: clerkId } = await auth();
+  const { userId: clerkId } = await getServerAuth();
   if (!clerkId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

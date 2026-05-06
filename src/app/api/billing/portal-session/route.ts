@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { getServerAuth } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { resolveAppUrl } from "@/lib/app-url";
@@ -8,7 +8,7 @@ import { headers } from "next/headers";
 export const dynamic = "force-dynamic";
 
 export async function POST() {
-  const { userId: clerkId } = await auth();
+  const { userId: clerkId } = await getServerAuth();
   if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const user = await prisma.user.findUnique({
