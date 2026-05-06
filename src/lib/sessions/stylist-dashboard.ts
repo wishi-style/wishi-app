@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { clientDisplayName, clientInitials } from "@/lib/users/display-name";
 import type {
   LoyaltyTier as DbLoyaltyTier,
   PendingActionType,
@@ -43,17 +44,6 @@ function planTypeToSessionType(plan: PlanType): DashboardSessionType {
   if (plan === "MINI") return "mini";
   if (plan === "MAJOR") return "major";
   return "lux";
-}
-
-function initialsFor(firstName: string | null, lastName: string | null): string {
-  const f = firstName?.trim()?.[0] ?? "";
-  const l = lastName?.trim()?.[0] ?? "";
-  const joined = `${f}${l}`.toUpperCase();
-  return joined || "?";
-}
-
-function clientFullName(firstName: string | null, lastName: string | null): string {
-  return [firstName, lastName].filter(Boolean).join(" ") || "Client";
 }
 
 function mapLoyaltyTier(
@@ -197,6 +187,7 @@ export async function getStylistDashboardData(
         select: {
           firstName: true,
           lastName: true,
+          email: true,
           loyaltyTier: true,
         },
       },
@@ -250,8 +241,16 @@ export async function getStylistDashboardData(
     return {
       id: s.id,
       clientId: s.clientId,
-      clientName: clientFullName(s.client.firstName, s.client.lastName),
-      clientInitials: initialsFor(s.client.firstName, s.client.lastName),
+      clientName: clientDisplayName(
+        s.client.firstName,
+        s.client.lastName,
+        s.client.email,
+      ),
+      clientInitials: clientInitials(
+        s.client.firstName,
+        s.client.lastName,
+        s.client.email,
+      ),
       sessionType: planTypeToSessionType(s.planType),
       priority,
       dueLabel: nextAction

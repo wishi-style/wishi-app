@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { forbidden, notFound } from "next/navigation";
+import { clientDisplayName } from "@/lib/users/display-name";
 import { MoodboardBuilderShell } from "./builder-shell";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export default async function NewMoodboardPage({ params }: Props) {
       id: true,
       stylistId: true,
       clientId: true,
-      client: { select: { firstName: true, lastName: true } },
+      client: { select: { firstName: true, lastName: true, email: true } },
     },
   });
   if (!session) notFound();
@@ -50,10 +51,11 @@ export default async function NewMoodboardPage({ params }: Props) {
 
   if (!board) forbidden();
 
-  const clientName =
-    [session.client.firstName, session.client.lastName]
-      .filter(Boolean)
-      .join(" ") || "Client";
+  const clientName = clientDisplayName(
+    session.client.firstName,
+    session.client.lastName,
+    session.client.email,
+  );
 
   const initialImages = board.photos.map((p) => p.url).filter((u): u is string => !!u);
   const initialPhotoIds = Object.fromEntries(board.photos.map((p) => [p.url, p.id]));

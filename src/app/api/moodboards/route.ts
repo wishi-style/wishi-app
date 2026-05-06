@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createMoodboard } from "@/lib/boards/moodboard.service";
+import { clientDisplayName } from "@/lib/users/display-name";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +45,7 @@ export async function GET(req: Request) {
       updatedAt: true,
       session: {
         select: {
-          client: { select: { firstName: true, lastName: true } },
+          client: { select: { firstName: true, lastName: true, email: true } },
         },
       },
       photos: {
@@ -59,10 +60,11 @@ export async function GET(req: Request) {
   const drafts = boards.map((b) => ({
     id: b.id,
     sessionId: b.sessionId,
-    clientName:
-      [b.session?.client.firstName, b.session?.client.lastName]
-        .filter(Boolean)
-        .join(" ") || "Client",
+    clientName: clientDisplayName(
+      b.session?.client.firstName,
+      b.session?.client.lastName,
+      b.session?.client.email,
+    ),
     images: b.photos.map((p) => p.url),
     photoCount: b._count.photos,
     updatedAt: b.updatedAt.toISOString(),

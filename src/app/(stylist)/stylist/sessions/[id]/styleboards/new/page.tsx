@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { listInspirationPhotos } from "@/lib/boards/inspiration.service";
 import { listClosetItems } from "@/lib/boards/closet.service";
 import { mapLoyalty } from "@/lib/stylists/client-profile";
+import { clientDisplayName, clientInitials } from "@/lib/users/display-name";
 import { getProduct, searchProducts } from "@/lib/inventory/inventory-client";
 import type { ProductSearchDoc } from "@/lib/inventory/types";
 import { StyleboardBuilder } from "./builder";
@@ -59,6 +60,7 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
         select: {
           firstName: true,
           lastName: true,
+          email: true,
           avatarUrl: true,
           loyaltyTier: true,
         },
@@ -167,15 +169,16 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
     doc ? [adaptProductDoc(doc)] : [],
   );
 
-  const clientName =
-    [session.client.firstName, session.client.lastName]
-      .filter(Boolean)
-      .join(" ") || "Client";
-  const initials =
-    [session.client.firstName?.[0], session.client.lastName?.[0]]
-      .filter(Boolean)
-      .join("")
-      .toUpperCase() || "C";
+  const clientName = clientDisplayName(
+    session.client.firstName,
+    session.client.lastName,
+    session.client.email,
+  );
+  const initials = clientInitials(
+    session.client.firstName,
+    session.client.lastName,
+    session.client.email,
+  );
 
   // Adapters: shape real DB rows into Loveable's InventoryItem shape so the
   // verbatim-ported builder JSX consumes them unchanged. Empty-array adapters

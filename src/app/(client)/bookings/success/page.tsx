@@ -5,7 +5,6 @@ import { stripe } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { hasCompletedStyleQuiz } from "@/lib/quiz/style-quiz-status";
-import { unauthorized } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -18,22 +17,26 @@ interface ResolvedStylist {
   avatarUrl: string | null;
 }
 
-async function resolveFromCheckout(stripeSessionId: string | undefined): Promise<{
+interface ResolvedCheckout {
   stylist: ResolvedStylist | null;
-  styleSessionId: string | null;
-}> {
+  userId: string | null;
+}
+
+async function resolveFromCheckout(stripeSessionId: string | undefined): Promise<ResolvedCheckout> {
   if (!stripeSessionId || stripeSessionId === "{CHECKOUT_SESSION_ID}") {
-    return { stylist: null, styleSessionId: null };
+    return { stylist: null, userId: null };
   }
 
   let stylistUserId: string | null = null;
+  let userId: string | null = null;
   try {
     const checkout = await stripe.checkout.sessions.retrieve(stripeSessionId);
     stylistUserId = (checkout.metadata?.stylistUserId as string) || null;
+    userId = (checkout.metadata?.userId as string) || null;
   } catch {
-    return { stylist: null, styleSessionId: null };
+    return { stylist: null, userId: null };
   }
-  if (!stylistUserId) return { stylist: null, styleSessionId: null };
+  if (!stylistUserId) return { stylist: null, userId };
 
   const stylistUser = await prisma.user.findUnique({
     where: { id: stylistUserId },
@@ -43,7 +46,7 @@ async function resolveFromCheckout(stripeSessionId: string | undefined): Promise
     stylist: stylistUser
       ? { firstName: stylistUser.firstName, avatarUrl: stylistUser.avatarUrl }
       : null,
-    styleSessionId: null,
+    userId,
   };
 }
 
@@ -51,20 +54,29 @@ export default async function BookingSuccessPage(props: {
   searchParams: Promise<SearchParams>;
 }) {
   const params = await props.searchParams;
-  const user = await getCurrentUser();
-  if (!user) unauthorized();
 
-  const { stylist } = await resolveFromCheckout(params.session_id);
+  // Don't require Clerk auth here. Stripe redirects land on the HTTP staging
+  // ALB and Clerk's Secure session cookie doesn't always come along, which
+  // historically threw the user into a session-refresh loop. The Stripe
+  // `session_id` (unforgeable, server-to-server retrieve) is sufficient
+  // proof of the booking — fall back to the userId on its metadata when
+  // there is no signed-in user.
+  const signedInUser = await getCurrentUser().catch(() => null);
+  const { stylist, userId: checkoutUserId } = await resolveFromCheckout(params.session_id);
+  const userId = signedInUser?.id ?? checkoutUserId;
+
   const stylistFirstName = stylist?.firstName ?? "your stylist";
   const stylistPhotoUrl = stylist?.avatarUrl ?? null;
 
-  const quizDone = await hasCompletedStyleQuiz(user.id);
+  const quizDone = userId ? await hasCompletedStyleQuiz(userId) : false;
 
-  const latestSession = await prisma.session.findFirst({
-    where: { clientId: user.id },
-    select: { id: true },
-    orderBy: { createdAt: "desc" },
-  });
+  const latestSession = userId
+    ? await prisma.session.findFirst({
+        where: { clientId: userId },
+        select: { id: true },
+        orderBy: { createdAt: "desc" },
+      })
+    : null;
 
   const ctaHref = quizDone
     ? latestSession
