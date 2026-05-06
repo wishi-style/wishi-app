@@ -8,6 +8,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getPrivateNote } from "@/lib/stylists/private-notes";
+import { clientDisplayName } from "@/lib/users/display-name";
 
 export type ViewLoyaltyTier = "new" | "bronze" | "silver" | "gold" | "vip";
 
@@ -152,6 +153,7 @@ export async function resolveClientProfileView(
       select: {
         firstName: true,
         lastName: true,
+        email: true,
         gender: true,
         avatarUrl: true,
         loyaltyTier: true,
@@ -206,8 +208,7 @@ export async function resolveClientProfileView(
 
   if (!user) return null;
 
-  const fullName =
-    [user.firstName, user.lastName].filter(Boolean).join(" ") || "Client";
+  const fullName = clientDisplayName(user.firstName, user.lastName, user.email);
 
   const location = user.locations[0]
     ? [user.locations[0].city, user.locations[0].country]

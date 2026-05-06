@@ -1,6 +1,14 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
-import { E2E_CLERK_ID_COOKIE } from "@/lib/auth/e2e-auth";
+import {
+  NextResponse,
+  type NextFetchEvent,
+  type NextRequest,
+} from "next/server";
+import {
+  E2E_CLERK_ID_COOKIE,
+  E2E_IS_ADMIN_COOKIE,
+  E2E_ROLE_COOKIE,
+} from "@/lib/auth/e2e-auth";
 
 const isPublicRoute = createRouteMatcher([
   "/",
@@ -18,6 +26,13 @@ const isPublicRoute = createRouteMatcher([
   "/board/(.*)",
   "/gift-cards",
   "/match-quiz(.*)",
+  // Stripe Hosted Checkout redirects clients here over HTTP on staging; Clerk
+  // session cookies are Secure-flagged and don't always survive that hop, so
+  // requiring auth here causes an infinite session-refresh loop. The page
+  // itself authenticates the booking via the Stripe `session_id` metadata
+  // (unforgeable, server-to-server retrieve) and degrades to a generic
+  // confirmation when nothing is signed in.
+  "/bookings/success(.*)",
   // Kept public so the next.config.ts /welcome → /match-quiz redirect can
   // run for unauthed external traffic (Clerk's auth.protect() would
   // otherwise intercept first).
@@ -90,11 +105,43 @@ const isClientOnlyRoute = createRouteMatcher([
 // Statuses that mean "wizard complete — stylist can use the full app".
 const READY_STATUSES = new Set(["AWAITING_ELIGIBILITY", "ELIGIBLE"]);
 
-export default clerkMiddleware(async (auth, req) => {
-  if (process.env.E2E_AUTH_MODE === "true" && req.cookies.get(E2E_CLERK_ID_COOKIE)?.value) {
-    return;
+const isE2EMode = process.env.E2E_AUTH_MODE === "true";
+
+// In E2E mode we bypass clerkMiddleware entirely. clerkMiddleware's
+// dev-browser bootstrap pings Clerk's API on first init, which trips the
+// dev-tier rate-limit ceiling under parallel Playwright workers and
+// surfaces as a `too_many_requests` JSON body for the page response. The
+// e2e harness uses a cookie-based auth bridge (E2E_CLERK_ID_COOKIE);
+// server components / actions look up the user via getServerAuth() rather
+// than Clerk's bare auth(), so no Clerk wiring is needed in this mode.
+function e2eProxy(req: NextRequest): NextResponse | undefined {
+  if (isPublicRoute(req)) return undefined;
+
+  const e2eClerkId = req.cookies.get(E2E_CLERK_ID_COOKIE)?.value;
+  if (!e2eClerkId) {
+    if (req.nextUrl.pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+    }
+    const url = req.nextUrl.clone();
+    url.pathname = "/sign-in";
+    url.search = "";
+    return NextResponse.redirect(url);
   }
 
+  const role = req.cookies.get(E2E_ROLE_COOKIE)?.value;
+  const isAdmin = req.cookies.get(E2E_IS_ADMIN_COOKIE)?.value === "true";
+
+  if (isClientOnlyRoute(req) && role === "STYLIST" && !isAdmin) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/stylist/dashboard";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
+  return undefined;
+}
+
+const realProxy = clerkMiddleware(async (auth, req) => {
   if (!isPublicRoute(req)) {
     await auth.protect();
   }
@@ -149,6 +196,13 @@ export default clerkMiddleware(async (auth, req) => {
     }
   }
 });
+
+export default function middleware(req: NextRequest, event: NextFetchEvent) {
+  if (isE2EMode) {
+    return e2eProxy(req) ?? NextResponse.next();
+  }
+  return realProxy(req, event);
+}
 
 export const config = {
   matcher: [
