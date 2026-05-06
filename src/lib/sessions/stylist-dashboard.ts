@@ -4,6 +4,7 @@ import type {
   LoyaltyTier as DbLoyaltyTier,
   PendingActionType,
   PlanType,
+  SessionStatus,
 } from "@/generated/prisma/client";
 
 export type DashboardSessionType = "mini" | "major" | "lux";
@@ -14,6 +15,23 @@ export type DashboardSessionPriority =
   | "new"
   | "completed";
 export type DashboardLoyaltyTier = "new" | "bronze" | "silver" | "gold" | "vip";
+
+/**
+ * What clicking the dashboard's primary CTA should do for a given session.
+ *
+ * - "navigate" → `actionHref` is a relative path the card/chat-header pushes onto
+ *   the router. Covers Create Moodboard / Create Look / Review Restyle / Open
+ *   Chat / View Summary.
+ * - "approve-end" → fire the existing `approveEndSession` handler. The
+ *   `actionHref` still points at `/stylist/dashboard?session=<id>` so screen
+ *   readers + middle-click open the right place.
+ *
+ * Replaces the previous Loveable-mirrored vocabulary where every label except
+ * Create Moodboard / Create Look was a no-op selector — that surfaced as
+ * dead "Start styling" / "View session" / "Awaiting approval" buttons in
+ * production once real PendingAction states started flowing in.
+ */
+export type DashboardActionKind = "navigate" | "approve-end";
 
 export interface DashboardSession {
   id: string;
@@ -29,6 +47,8 @@ export interface DashboardSession {
   boardsTotal: number;
   status: string;
   actionLabel: string;
+  actionHref: string;
+  actionKind: DashboardActionKind;
   loyaltyTier: DashboardLoyaltyTier;
   totalSessions: number;
   // ISO timestamps powering the Active bookings vs Archive split. The
@@ -85,26 +105,78 @@ function humanDueLabel(earliestDueAt: Date | null, now: Date): string {
   return `Due: ${daysBehind} day${daysBehind === 1 ? "" : "s"} ago`;
 }
 
-// Mirror Loveable's actionLabel vocabulary verbatim. The dashboard click
-// handler only navigates for "Create Moodboard" / "Create Look"; every other
-// label is a no-op selector — chat is the workspace, no separate page.
-export function actionLabelFor(type: PendingActionType | null): string {
-  switch (type) {
-    case "PENDING_MOODBOARD":
-      return "Create Moodboard";
-    case "PENDING_STYLEBOARD":
-      return "Create Look";
-    case "PENDING_RESTYLE":
-      return "Review Restyle Request";
-    case "PENDING_STYLIST_RESPONSE":
-    case "PENDING_CLIENT_FEEDBACK":
-    case "PENDING_FOLLOWUP":
-      return "View session";
-    case "PENDING_END_APPROVAL":
-      return "Awaiting approval";
-    default:
-      return "Start styling";
+export interface DashboardActionContext {
+  sessionId: string;
+  status: SessionStatus;
+  moodboardsSent: number;
+  styleboardsSent: number;
+  styleboardsAllowed: number;
+  endRequestedAt: Date | null;
+  pendingActionType: PendingActionType | null;
+  /** SessionPendingAction.boardId for PENDING_RESTYLE — the original board the
+   *  client wants revised. Pre-fills `?parentBoardId=` so the styleboards
+   *  builder opens with the correct revision context. */
+  pendingRestyleParentBoardId: string | null;
+}
+
+export interface DashboardAction {
+  label: string;
+  href: string;
+  kind: DashboardActionKind;
+}
+
+/**
+ * Derive the dashboard's primary CTA for one session. Six possible labels,
+ * each routing to a real destination — no more no-op buttons. Order matters:
+ * terminal/blocking states win over progress states so the stylist always
+ * sees the action that actually unblocks the session.
+ *
+ *   1. Completed / cancelled               → View Summary  (chat read-only)
+ *   2. End requested by client             → Approve End   (fires existing UI)
+ *   3. No moodboard sent yet               → Create Moodboard
+ *   4. Restyle requested on a sent board   → Review Restyle (?parentBoardId=)
+ *   5. Looks remain in plan quota          → Create Look
+ *   6. Otherwise (quota met, awaiting…)    → Open Chat
+ */
+export function deriveDashboardAction(ctx: DashboardActionContext): DashboardAction {
+  const dashboardChat = `/stylist/dashboard?session=${ctx.sessionId}`;
+
+  if (ctx.status === "COMPLETED" || ctx.status === "CANCELLED") {
+    return { label: "View Summary", href: dashboardChat, kind: "navigate" };
   }
+
+  if (ctx.endRequestedAt) {
+    return { label: "Approve End", href: dashboardChat, kind: "approve-end" };
+  }
+
+  if (ctx.moodboardsSent === 0) {
+    return {
+      label: "Create Moodboard",
+      href: `/stylist/sessions/${ctx.sessionId}/moodboards/new`,
+      kind: "navigate",
+    };
+  }
+
+  if (
+    ctx.pendingActionType === "PENDING_RESTYLE" &&
+    ctx.pendingRestyleParentBoardId
+  ) {
+    return {
+      label: "Review Restyle",
+      href: `/stylist/sessions/${ctx.sessionId}/styleboards/new?parentBoardId=${ctx.pendingRestyleParentBoardId}`,
+      kind: "navigate",
+    };
+  }
+
+  if (ctx.styleboardsSent < ctx.styleboardsAllowed) {
+    return {
+      label: "Create Look",
+      href: `/stylist/sessions/${ctx.sessionId}/styleboards/new`,
+      kind: "navigate",
+    };
+  }
+
+  return { label: "Open Chat", href: dashboardChat, kind: "navigate" };
 }
 
 function statusBlurbFor(
@@ -194,7 +266,9 @@ export async function getStylistDashboardData(
       pendingActions: {
         where: { status: "OPEN" },
         orderBy: { dueAt: "asc" },
-        select: { type: true, dueAt: true },
+        // boardId is the original board for PENDING_RESTYLE — pre-fills the
+        // styleboards builder via ?parentBoardId=. Null for every other type.
+        select: { type: true, dueAt: true, boardId: true },
       },
       messages: {
         orderBy: { createdAt: "desc" },
@@ -238,6 +312,18 @@ export async function getStylistDashboardData(
     const totalSessions = countByClient.get(s.clientId) ?? 1;
     const lastMessageDate = latestMessage?.createdAt ?? s.updatedAt ?? now;
 
+    const action = deriveDashboardAction({
+      sessionId: s.id,
+      status: s.status,
+      moodboardsSent: s.moodboardsSent,
+      styleboardsSent: s.styleboardsSent,
+      styleboardsAllowed: s.styleboardsAllowed,
+      endRequestedAt: s.endRequestedAt,
+      pendingActionType: nextAction?.type ?? null,
+      pendingRestyleParentBoardId:
+        nextAction?.type === "PENDING_RESTYLE" ? nextAction.boardId ?? null : null,
+    });
+
     return {
       id: s.id,
       clientId: s.clientId,
@@ -263,7 +349,9 @@ export async function getStylistDashboardData(
       boardsDelivered: s.styleboardsSent,
       boardsTotal: s.styleboardsAllowed,
       status: statusBlurbFor(nextAction?.type ?? null, s.status),
-      actionLabel: isCompleted ? "View summary" : actionLabelFor(nextAction?.type ?? null),
+      actionLabel: action.label,
+      actionHref: action.href,
+      actionKind: action.kind,
       loyaltyTier: mapLoyaltyTier(s.client.loyaltyTier, totalSessions),
       totalSessions,
       endedAt: s.completedAt?.toISOString() ?? null,
