@@ -109,7 +109,7 @@ export async function ensureClientUser(params: UserParams) {
     `INSERT INTO users (id, clerk_id, auth_provider, email, first_name, last_name, role, referral_code, created_at, updated_at)
      VALUES ($1, $2, 'EMAIL', $3, $4, $5, 'CLIENT', $6, NOW(), NOW())
      RETURNING *`,
-    [id, params.clerkId, params.email, params.firstName, params.lastName, referralCode],
+    [id, params.clerkId, params.email.toLowerCase(), params.firstName, params.lastName, referralCode],
   );
   return rows[0];
 }
@@ -123,7 +123,7 @@ export async function ensureStylistUser(params: UserParams) {
     `INSERT INTO users (id, clerk_id, auth_provider, email, first_name, last_name, role, referral_code, created_at, updated_at)
      VALUES ($1, $2, 'EMAIL', $3, $4, $5, 'STYLIST', $6, NOW(), NOW())
      RETURNING *`,
-    [id, params.clerkId, params.email, params.firstName, params.lastName, referralCode],
+    [id, params.clerkId, params.email.toLowerCase(), params.firstName, params.lastName, referralCode],
   );
   return rows[0];
 }
@@ -137,7 +137,7 @@ export async function ensureAdminUser(params: UserParams) {
     `INSERT INTO users (id, clerk_id, auth_provider, email, first_name, last_name, role, is_admin, referral_code, created_at, updated_at)
      VALUES ($1, $2, 'EMAIL', $3, $4, $5, 'CLIENT', TRUE, $6, NOW(), NOW())
      RETURNING *`,
-    [id, params.clerkId, params.email, params.firstName, params.lastName, referralCode],
+    [id, params.clerkId, params.email.toLowerCase(), params.firstName, params.lastName, referralCode],
   );
   return rows[0];
 }
