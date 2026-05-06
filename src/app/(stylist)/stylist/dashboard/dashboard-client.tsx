@@ -79,6 +79,8 @@ type SessionType = "mini" | "major" | "lux";
 
 type LoyaltyTier = "new" | "bronze" | "silver" | "gold" | "vip";
 
+type ActionKind = "navigate" | "approve-end";
+
 interface DashboardSessionRow {
   id: string;
   clientId?: string;
@@ -93,6 +95,13 @@ interface DashboardSessionRow {
   boardsTotal: number;
   status: string;
   actionLabel: string;
+  // Server-derived destination for the primary CTA. "navigate" pushes the
+  // href onto the router; "approve-end" fires the existing approveEndSession
+  // handler. Replaces the previous literal-string switch in the click
+  // handlers, which left "Start styling" / "View session" / "Awaiting
+  // approval" as no-op buttons in production.
+  actionHref: string;
+  actionKind: ActionKind;
   loyaltyTier: LoyaltyTier;
   totalSessions: number;
   endedAt?: string; // ISO timestamp when client APPROVED end (session completed)
@@ -277,7 +286,14 @@ export default function StylistDashboard({
     setSessions((prev) =>
       prev.map((s) =>
         s.id === id
-          ? { ...s, endRequestedAt: new Date().toISOString(), status: "End requested — awaiting client", actionLabel: "View session" }
+          ? {
+              ...s,
+              endRequestedAt: new Date().toISOString(),
+              status: "End requested — awaiting client",
+              actionLabel: "Open Chat",
+              actionHref: `/stylist/dashboard?session=${id}`,
+              actionKind: "navigate" as ActionKind,
+            }
           : s
       )
     );
@@ -305,7 +321,9 @@ export default function StylistDashboard({
               endedAt: new Date().toISOString(),
               priority: "completed" as SessionPriority,
               status: "Completed",
-              actionLabel: "View summary",
+              actionLabel: "View Summary",
+              actionHref: `/stylist/dashboard?session=${id}`,
+              actionKind: "navigate" as ActionKind,
             }
           : s
       )
@@ -327,7 +345,15 @@ export default function StylistDashboard({
     setSessions((prev) =>
       prev.map((s) =>
         s.id === id
-          ? { ...s, endedAt: undefined, endRequestedAt: undefined, status: "Reopened", actionLabel: "View session" }
+          ? {
+              ...s,
+              endedAt: undefined,
+              endRequestedAt: undefined,
+              status: "Reopened",
+              actionLabel: "Open Chat",
+              actionHref: `/stylist/dashboard?session=${id}`,
+              actionKind: "navigate" as ActionKind,
+            }
           : s
       )
     );
@@ -748,17 +774,23 @@ export default function StylistDashboard({
                 </p>
 
                 <div className="mt-2.5 pl-10">
-                  {session.boardsDelivered >= session.boardsTotal ? (
+                  {session.boardsDelivered >= session.boardsTotal &&
+                  !session.endedAt &&
+                  session.priority !== "completed" ? (
                     <div className="flex gap-2">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedId(session.id);
-                          router.push(`/stylist/sessions/${session.id}/styleboards/new`);
+                          if (session.actionKind === "approve-end") {
+                            approveEndSession(session.id);
+                          } else {
+                            router.push(session.actionHref);
+                          }
                         }}
                         className="flex-1 rounded-sm py-2 text-xs font-body font-medium text-center bg-foreground text-background transition-colors"
                       >
-                        Create look
+                        {session.actionLabel}
                       </button>
                       <button
                         onClick={(e) => {
@@ -776,13 +808,10 @@ export default function StylistDashboard({
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedId(session.id);
-                        if (session.actionLabel === "Create Moodboard") {
-                          router.push(`/stylist/sessions/${session.id}/moodboards/new`);
-                          return;
-                        }
-                        if (session.actionLabel === "Create Look") {
-                          router.push(`/stylist/sessions/${session.id}/styleboards/new`);
-                          return;
+                        if (session.actionKind === "approve-end") {
+                          approveEndSession(session.id);
+                        } else {
+                          router.push(session.actionHref);
                         }
                       }}
                       className={cn(
@@ -891,11 +920,15 @@ export default function StylistDashboard({
               <Button
                 size="sm"
                 className="font-body text-xs h-8 rounded-sm"
-                onClick={() =>
-                  router.push(`/stylist/sessions/${selected.id}/styleboards/new`)
-                }
+                onClick={() => {
+                  if (selected.actionKind === "approve-end") {
+                    approveEndSession(selected.id);
+                  } else {
+                    router.push(selected.actionHref);
+                  }
+                }}
               >
-                Create look
+                {selected.actionLabel}
               </Button>
               <Button
                 variant="outline"
@@ -912,10 +945,10 @@ export default function StylistDashboard({
               size="sm"
               className="font-body text-xs h-8 rounded-sm"
               onClick={() => {
-                if (selected.actionLabel === "Create Moodboard") {
-                  router.push(`/stylist/sessions/${selected.id}/moodboards/new`);
-                } else if (selected.actionLabel === "Create Look") {
-                  router.push(`/stylist/sessions/${selected.id}/styleboards/new`);
+                if (selected.actionKind === "approve-end") {
+                  approveEndSession(selected.id);
+                } else {
+                  router.push(selected.actionHref);
                 }
               }}
             >

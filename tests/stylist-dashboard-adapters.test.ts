@@ -1,15 +1,15 @@
-// Adapter parity tests for the stylist dashboard view-model. These mappers
-// produce the literal strings + tiers Loveable's UI consumes; passes 1+2 of
-// the parity sweep failed because nothing pinned the vocabulary against the
-// Loveable mock data shape.
+// Adapter unit tests for the stylist dashboard view-model.
 //
-// Loveable references:
-//   wishi-reimagined/src/pages/StylistDashboard.tsx mockSessions actionLabel
-//   wishi-reimagined/src/data/clientProfiles.ts ClientProfile shape
+// Pins the new `deriveDashboardAction` vocabulary that replaced the
+// Loveable-mirrored `actionLabelFor`. Every label returned by the new
+// function must navigate to a real destination — the previous Loveable
+// vocabulary left "Start styling" / "View session" / "Awaiting approval"
+// as no-op selectors in production once real PendingAction states started
+// flowing in. The matrix below is the contract: state → label → href.
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { actionLabelFor } from "@/lib/sessions/stylist-dashboard";
+import { deriveDashboardAction } from "@/lib/sessions/stylist-dashboard";
 import {
   comfortZoneLabel,
   extractHandle,
@@ -17,53 +17,151 @@ import {
   splitToChips,
 } from "@/lib/stylists/client-profile";
 
-test("actionLabelFor maps board states to Loveable's vocabulary", () => {
-  assert.equal(actionLabelFor("PENDING_MOODBOARD"), "Create Moodboard");
-  assert.equal(actionLabelFor("PENDING_STYLEBOARD"), "Create Look");
-  assert.equal(actionLabelFor("PENDING_RESTYLE"), "Review Restyle Request");
+function ctx(overrides: Partial<Parameters<typeof deriveDashboardAction>[0]> = {}) {
+  return {
+    sessionId: "sess_test",
+    status: "ACTIVE" as const,
+    moodboardsSent: 1,
+    styleboardsSent: 1,
+    styleboardsAllowed: 5,
+    endRequestedAt: null,
+    pendingActionType: null,
+    pendingRestyleParentBoardId: null,
+    ...overrides,
+  };
+}
+
+test("Create Moodboard fires when no moodboard has been sent", () => {
+  const action = deriveDashboardAction(
+    ctx({ moodboardsSent: 0, status: "BOOKED" }),
+  );
+  assert.equal(action.label, "Create Moodboard");
+  assert.equal(action.href, "/stylist/sessions/sess_test/moodboards/new");
+  assert.equal(action.kind, "navigate");
 });
 
-test("actionLabelFor returns 'View session' (lowercase) for awaiting-feedback states", () => {
-  for (const t of [
-    "PENDING_STYLIST_RESPONSE",
-    "PENDING_CLIENT_FEEDBACK",
-    "PENDING_FOLLOWUP",
-  ] as const) {
-    assert.equal(
-      actionLabelFor(t),
-      "View session",
-      `${t} must map to "View session" (lowercase s) per Loveable mockSessions`,
-    );
-  }
+test("Create Look fires when moodboard is in but quota remains", () => {
+  const action = deriveDashboardAction(
+    ctx({ moodboardsSent: 1, styleboardsSent: 2, styleboardsAllowed: 5 }),
+  );
+  assert.equal(action.label, "Create Look");
+  assert.equal(action.href, "/stylist/sessions/sess_test/styleboards/new");
 });
 
-test("actionLabelFor returns 'Awaiting approval' for pending end approval", () => {
-  assert.equal(actionLabelFor("PENDING_END_APPROVAL"), "Awaiting approval");
+test("Review Restyle pre-fills parentBoardId when PENDING_RESTYLE is open", () => {
+  const action = deriveDashboardAction(
+    ctx({
+      pendingActionType: "PENDING_RESTYLE",
+      pendingRestyleParentBoardId: "board_abc",
+    }),
+  );
+  assert.equal(action.label, "Review Restyle");
+  assert.equal(
+    action.href,
+    "/stylist/sessions/sess_test/styleboards/new?parentBoardId=board_abc",
+  );
+  assert.equal(action.kind, "navigate");
 });
 
-test("actionLabelFor falls through to 'Start styling' for new bookings", () => {
-  assert.equal(actionLabelFor(null), "Start styling");
+test("Review Restyle falls back to Create Look when boardId is missing", () => {
+  // PENDING_RESTYLE rows without a boardId would otherwise produce a broken
+  // ?parentBoardId= URL — degrade to plain Create Look so the stylist still
+  // gets a working button.
+  const action = deriveDashboardAction(
+    ctx({
+      pendingActionType: "PENDING_RESTYLE",
+      pendingRestyleParentBoardId: null,
+    }),
+  );
+  assert.equal(action.label, "Create Look");
+  assert.equal(action.href, "/stylist/sessions/sess_test/styleboards/new");
 });
 
-test("actionLabelFor never returns the literal 'View Session' (Pass 1+2 regression)", () => {
-  // Pass 1+2 collapsed every non-board state to "View Session" (capital S),
-  // which forced the dashboard click handler to navigate to a phantom
-  // /workspace page. Loveable has no such label and no such page.
-  const types = [
-    null,
-    "PENDING_MOODBOARD",
-    "PENDING_STYLEBOARD",
-    "PENDING_RESTYLE",
-    "PENDING_STYLIST_RESPONSE",
-    "PENDING_CLIENT_FEEDBACK",
-    "PENDING_FOLLOWUP",
-    "PENDING_END_APPROVAL",
-  ] as const;
-  for (const t of types) {
-    assert.notEqual(
-      actionLabelFor(t),
-      "View Session",
-      `actionLabelFor(${t}) must not return "View Session" (capital S)`,
+test("Approve End fires when client requested end approval", () => {
+  const action = deriveDashboardAction(
+    ctx({
+      endRequestedAt: new Date(),
+      status: "PENDING_END_APPROVAL",
+    }),
+  );
+  assert.equal(action.label, "Approve End");
+  assert.equal(action.href, "/stylist/dashboard?session=sess_test");
+  assert.equal(action.kind, "approve-end");
+});
+
+test("Approve End wins over Create Moodboard when both signals are present", () => {
+  // Edge case: hypothetical session where the client requested end before
+  // the stylist sent the first moodboard. Approve End is the unblocking
+  // action; Create Moodboard would be useless until the end-request resolves.
+  const action = deriveDashboardAction(
+    ctx({
+      moodboardsSent: 0,
+      endRequestedAt: new Date(),
+      status: "PENDING_END_APPROVAL",
+    }),
+  );
+  assert.equal(action.label, "Approve End");
+  assert.equal(action.kind, "approve-end");
+});
+
+test("View Summary fires for COMPLETED sessions", () => {
+  const action = deriveDashboardAction(ctx({ status: "COMPLETED" }));
+  assert.equal(action.label, "View Summary");
+  assert.equal(action.href, "/stylist/dashboard?session=sess_test");
+  assert.equal(action.kind, "navigate");
+});
+
+test("View Summary fires for CANCELLED sessions", () => {
+  const action = deriveDashboardAction(ctx({ status: "CANCELLED" }));
+  assert.equal(action.label, "View Summary");
+});
+
+test("View Summary wins over the in-progress derivations once status is terminal", () => {
+  // Even with looks remaining, a COMPLETED session should not show
+  // "Create Look" — the chat is read-only.
+  const action = deriveDashboardAction(
+    ctx({ status: "COMPLETED", styleboardsSent: 1, styleboardsAllowed: 5 }),
+  );
+  assert.equal(action.label, "View Summary");
+});
+
+test("Open Chat fires when looks are at quota and session is awaiting client", () => {
+  const action = deriveDashboardAction(
+    ctx({ moodboardsSent: 1, styleboardsSent: 5, styleboardsAllowed: 5 }),
+  );
+  assert.equal(action.label, "Open Chat");
+  assert.equal(action.href, "/stylist/dashboard?session=sess_test");
+  assert.equal(action.kind, "navigate");
+});
+
+test("Every label routes to a real destination — no no-op buttons", () => {
+  // Sweep representative states; assert no empty href, no "Start styling",
+  // no "View session" (lowercase), none of the dead Loveable vocabulary.
+  const sweep = [
+    ctx({ moodboardsSent: 0 }),
+    ctx({ moodboardsSent: 1, styleboardsSent: 0 }),
+    ctx({
+      pendingActionType: "PENDING_RESTYLE",
+      pendingRestyleParentBoardId: "b1",
+    }),
+    ctx({ endRequestedAt: new Date(), status: "PENDING_END_APPROVAL" }),
+    ctx({ status: "COMPLETED" }),
+    ctx({ status: "CANCELLED" }),
+    ctx({ moodboardsSent: 1, styleboardsSent: 5, styleboardsAllowed: 5 }),
+  ];
+  const dead = new Set([
+    "Start styling",
+    "View session",
+    "Awaiting approval",
+    "Review Restyle Request",
+    "View summary",
+  ]);
+  for (const c of sweep) {
+    const action = deriveDashboardAction(c);
+    assert.ok(action.href.length > 0, `empty href for ${JSON.stringify(c)}`);
+    assert.ok(
+      !dead.has(action.label),
+      `${action.label} is from the deprecated vocabulary`,
     );
   }
 });
