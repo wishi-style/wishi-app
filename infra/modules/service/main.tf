@@ -43,11 +43,6 @@ variable "max_count" {
   default = 3
 }
 variable "log_group_name" { type = string }
-variable "enable_demo_mode" {
-  type        = bool
-  default     = false
-  description = "Staging-only: emit E2E_AUTH_MODE + ENABLE_DEMO_SEED on the web task. Never set on production."
-}
 variable "app_url" {
   type        = string
   default     = ""
@@ -74,16 +69,6 @@ locals {
     var.app_url != "" ? [{ name = "APP_URL", value = var.app_url }] : [],
     var.inventory_service_url != "" ? [{ name = "INVENTORY_SERVICE_URL", value = var.inventory_service_url }] : [],
   )
-
-  # Extra env vars that only get emitted on demo-enabled envs (staging).
-  # The second layer of prod-safety (DEPLOYED_ENV=production short-circuit)
-  # comes from DEPLOYED_ENV above — if someone ever accidentally sets
-  # enable_demo_mode=true on production, isE2EAuthModeEnabled() still
-  # returns false.
-  demo_environment = var.enable_demo_mode ? [
-    { name = "E2E_AUTH_MODE", value = "true" },
-    { name = "ENABLE_DEMO_SEED", value = "true" },
-  ] : []
 }
 
 data "aws_region" "current" {}
@@ -309,7 +294,7 @@ resource "aws_ecs_task_definition" "web" {
       protocol      = "tcp"
     }]
 
-    environment = concat(local.base_environment, local.demo_environment)
+    environment = local.base_environment
 
     secrets = [
       { name = "DATABASE_URL", valueFrom = var.db_url_secret_arn },

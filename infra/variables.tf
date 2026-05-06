@@ -92,15 +92,6 @@ variable "app_url" {
   default     = ""
 }
 
-# Demo environment — founder-clickable /demo page + seeded demo accounts +
-# nightly reset. Flip this in staging.tfvars only. Production MUST leave this
-# at the default so the E2E auth bypass stays physically unreachable there.
-variable "enable_demo_mode" {
-  type        = bool
-  description = "Staging-only: surfaces /demo login UI, seeds demo accounts, schedules nightly demo-reset worker. NEVER enable on production."
-  default     = false
-}
-
 variable "alert_email_recipients" {
   type        = list(string)
   description = "Email addresses to subscribe to the per-env alerts SNS topic. Each address must confirm the SES subscription email after the first apply."
