@@ -329,6 +329,7 @@ export default function StylistDashboard({
       )
     );
     const msg: ChatMessage = {
+      // eslint-disable-next-line react-hooks/purity
       id: `end-ok-${Date.now()}`,
       sender: "client",
       text: "Approved end of session.",
