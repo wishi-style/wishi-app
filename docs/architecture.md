@@ -92,7 +92,6 @@ fires, not by what the worker does.
 | `affiliate-prompt` | Every 15 min | Fires `affiliate.purchase_check` for clicks older than 24h |
 | `pending-action-expiry` | Every 15 min | Flips `SessionPendingAction.status = EXPIRED` + fires `session.overdue` |
 | `stale-cleanup` | Daily | Archives session rows past retention |
-| `demo-reset` | Daily | Resets the staging demo environment |
 
 ### EventBridge → API destination workers (Phase 6 + 9)
 

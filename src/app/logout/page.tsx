@@ -7,14 +7,15 @@ import { clearE2EOnLogout } from "./actions";
 
 // Logout entry point linked from the StylistTopBar avatar dropdown
 // (`/logout`). Clears both auth tracks (Clerk session for real users, e2e
-// cookies for demo / E2E_AUTH_MODE) and returns to the Wishi homepage.
+// cookies for the Playwright E2E_AUTH_MODE harness) and returns to the Wishi
+// homepage.
 export default function LogoutPage() {
   const { signOut } = useClerk();
   const router = useRouter();
 
   useEffect(() => {
     void (async () => {
-      // Clear e2e cookies first so a stale demo session doesn't bounce the
+      // Clear e2e cookies first so a stale e2e session doesn't bounce the
       // user back through the proxy auth gate.
       await clearE2EOnLogout();
       // Clerk's signOut accepts a redirectUrl — homepage per founder spec.

@@ -8,8 +8,7 @@ type SignUpSearchParams = { e2e?: string };
 // the test-only E2E form by appending `?e2e=1` to the URL — the env gate is
 // still required, so the form only ever renders on envs with E2E_AUTH_MODE=true
 // AND DEPLOYED_ENV !== production. Without the explicit opt-in param, the
-// E2E form stays hidden even on staging (where E2E_AUTH_MODE is true for the
-// /demo flow).
+// E2E form stays hidden.
 export default async function SignUpPage({
   searchParams,
 }: {

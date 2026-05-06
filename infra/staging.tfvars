@@ -34,11 +34,6 @@ inventory_service_url = "https://inventory.stg.mira.prepx.ai"
 # lands. Manual trigger via POST /api/admin/workers/[name]/run in the meantime.
 app_url = "http://wishi-staging-alb-823228000.us-east-1.elb.amazonaws.com"
 
-# Staging serves the /demo page with seeded accounts + nightly reset.
-# isE2EAuthModeEnabled() double-gates this off on production; never flip it
-# in production.tfvars.
-enable_demo_mode = true
-
 # Alarm fan-out. Each recipient must confirm the SNS subscription email AWS
 # sends after the first apply.
 alert_email_recipients = ["matthewcar@wishi.me"]

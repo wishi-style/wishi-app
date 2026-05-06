@@ -8,13 +8,13 @@ function syntheticStripeId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-// E2E / demo-only path that stands in for the Stripe checkout → webhook chain.
+// E2E-only path that stands in for the Stripe checkout → webhook chain.
 // Creates the Session (+ Subscription for recurring plans) and, for one-time
 // bookings, a synthetic SUCCEEDED Payment row, then runs the auto-matcher.
 // Subscription bootstraps skip the Payment write to match the real Stripe
 // flow — handleSubscriptionCreated doesn't write a Payment either (that
 // happens later on invoice.payment_succeeded), so writing one here would
-// inflate admin revenue metrics against trialing demo accounts.
+// inflate admin revenue metrics against trialing E2E accounts.
 export async function provisionSessionForE2E(params: {
   userId: string;
   planType: PlanType;

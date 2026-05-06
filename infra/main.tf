@@ -120,7 +120,6 @@ module "service" {
   min_count                            = var.ecs_min_count
   max_count                            = var.ecs_max_count
   log_group_name                       = aws_cloudwatch_log_group.web.name
-  enable_demo_mode                     = var.enable_demo_mode
   app_url                              = var.app_url
   inventory_service_url                = var.inventory_service_url
 }
@@ -167,7 +166,6 @@ module "workers" {
   inventory_service_url = var.inventory_service_url
   app_url               = var.app_url
   log_group_name        = module.observability.workers_log_group_name
-  enable_demo_mode      = var.enable_demo_mode
 }
 
 # -----------------------------------------------------------------------------

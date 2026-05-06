@@ -37,7 +37,6 @@ const isPublicRoute = createRouteMatcher([
   // run for unauthed external traffic (Clerk's auth.protect() would
   // otherwise intercept first).
   "/welcome(.*)",
-  "/demo",
   // /onboarding entrypoint is dual-purpose: stylists mid-wizard resume here,
   // and guests/clients get redirected to /match-quiz (Loveable parity). The
   // page handler does the routing, so the bare path must be public. Sub-paths

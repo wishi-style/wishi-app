@@ -143,6 +143,6 @@ Full deploy + rollback + incident-response procedures: [`docs/runbook.md`](./doc
     │   └── sign-up/      Clerk sign-up
     ├── components/       nav/, profile/, quiz/, stylist/, session/, booking/, chat/, board/, closet/, ui/
     ├── lib/              prisma.ts, stripe.ts, stripe-connect.ts, twilio.ts, web-push.ts, auth/, payments/, payouts/, promotions/, loyalty/, orders/, cart/, collections/, closet/, quiz/, matching/, sessions/, services/, chat/, boards/, inventory/, pending-actions/, notifications/, stylists/, workers/, audit/, s3.ts, plans.ts
-    ├── workers/          waitlist-notify.ts, payout-reconcile.ts, loyalty-recalc.ts, demo-reset.ts (HTTP endpoints at /api/workers/*)
+    ├── workers/          waitlist-notify.ts, payout-reconcile.ts, loyalty-recalc.ts (HTTP endpoints at /api/workers/*)
     └── generated/        Prisma client (gitignored)
 ```

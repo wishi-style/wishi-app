@@ -46,9 +46,9 @@ test("favoriting a matched stylist surfaces them under the Favorites tab on /sty
   await ensureStylistProfile({
     userId: stylist.id,
     matchEligible: true,
-    // Unique specialty guarantees this stylist scores higher than seeded
-    // demo stylists for the crafted quiz, so they land in the top-3
-    // matched section regardless of what else is in the DB.
+    // Unique specialty guarantees this stylist scores higher than any other
+    // seeded stylist for the crafted quiz, so they land in the top-3 matched
+    // section regardless of what else is in the DB.
     styleSpecialties: [uniqueStyle],
     genderPreference: ["FEMALE"],
     budgetBrackets: ["moderate"],
