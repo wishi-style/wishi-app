@@ -183,10 +183,28 @@ export async function reorderStyleboardItems(
  * Send a styleboard. Fires the STYLEBOARD (or RESTYLE if isRevision) chat
  * message and increments the counters.
  */
+export interface SendStyleboardItemInput
+  extends Omit<AddItemInput, "x" | "y" | "zIndex"> {
+  x?: number | null;
+  y?: number | null;
+  zIndex?: number | null;
+  flipH?: boolean;
+  flipV?: boolean;
+  cropTop?: number | null;
+  cropRight?: number | null;
+  cropBottom?: number | null;
+  cropLeft?: number | null;
+}
+
 export interface SendStyleboardInput {
   title?: string;
   description?: string;
   tags?: string[];
+  // Optional canvas snapshot. When provided, replaces existing BoardItem rows
+  // inside the same transaction that flips sentAt — so a fresh board with
+  // only client-side canvas state can save & send in one round-trip without
+  // a separate items-persist pass.
+  items?: SendStyleboardItemInput[];
 }
 
 export async function sendStyleboard(
@@ -217,9 +235,6 @@ export async function sendStyleboard(
     throw new BoardSendError("NO_SESSION", `Styleboard ${boardId} has no session`, 400);
   }
   if (board.sentAt) return board;
-  if (board.items.length < 3) {
-    throw new BoardSendError("TOO_FEW_ITEMS", "Styleboards require at least 3 items", 400);
-  }
   if (board.session.status !== "ACTIVE") {
     throw new BoardSendError(
       "SESSION_NOT_ACTIVE",
@@ -239,6 +254,28 @@ export async function sendStyleboard(
       );
     }
   }
+  // If the caller supplied a canvas snapshot, validate the polymorphic shape
+  // up-front so we don't half-write items inside the transaction. When no
+  // snapshot is supplied we fall back to whatever items are already on the
+  // board (the legacy per-item-POST flow).
+  if (input.items) {
+    for (const it of input.items) {
+      validatePolymorphism(it);
+    }
+    if (input.items.length < 3) {
+      throw new BoardSendError(
+        "TOO_FEW_ITEMS",
+        "Styleboards require at least 3 items",
+        400,
+      );
+    }
+  } else if (board.items.length < 3) {
+    throw new BoardSendError(
+      "TOO_FEW_ITEMS",
+      "Styleboards require at least 3 items",
+      400,
+    );
+  }
 
   const sessionId = board.sessionId;
   const isRevision = board.isRevision;
@@ -248,11 +285,44 @@ export async function sendStyleboard(
     .map((t) => t.trim())
     .filter(Boolean)
     .slice(0, 10);
+  const itemsToInsert = input.items;
 
   // Atomic compare-and-set on sentAt: null. If a concurrent send already
   // transitioned the row, `updated` is null and we return without
   // re-running counters / side effects.
   const updated = await prisma.$transaction(async (tx) => {
+    let itemCount = board.items.length;
+    if (itemsToInsert) {
+      await tx.boardItem.deleteMany({ where: { boardId } });
+      if (itemsToInsert.length > 0) {
+        await tx.boardItem.createMany({
+          data: itemsToInsert.map((it, idx) => ({
+            boardId,
+            source: it.source,
+            orderIndex: idx,
+            inventoryProductId: it.inventoryProductId ?? null,
+            closetItemId: it.closetItemId ?? null,
+            inspirationPhotoId: it.inspirationPhotoId ?? null,
+            webItemUrl: it.webItemUrl ?? null,
+            webItemTitle: it.webItemTitle ?? null,
+            webItemBrand: it.webItemBrand ?? null,
+            webItemPriceInCents: it.webItemPriceInCents ?? null,
+            webItemImageUrl: it.webItemImageUrl ?? null,
+            x: it.x ?? null,
+            y: it.y ?? null,
+            zIndex: it.zIndex ?? null,
+            flipH: it.flipH ?? false,
+            flipV: it.flipV ?? false,
+            cropTop: it.cropTop ?? null,
+            cropRight: it.cropRight ?? null,
+            cropBottom: it.cropBottom ?? null,
+            cropLeft: it.cropLeft ?? null,
+          })),
+        });
+      }
+      itemCount = itemsToInsert.length;
+    }
+
     const { count } = await tx.board.updateMany({
       where: { id: boardId, sentAt: null },
       data: {
@@ -268,7 +338,7 @@ export async function sendStyleboard(
       data: {
         styleboardsSent: { increment: 1 },
         ...(isRevision ? { revisionsSent: { increment: 1 } } : {}),
-        itemsSent: { increment: board.items.length },
+        itemsSent: { increment: itemCount },
       },
     });
     // Resolve the PENDING_STYLEBOARD gate that `rateMoodboard(LOVE)` opens.

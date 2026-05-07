@@ -197,7 +197,7 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
   const cartInventoryItems = cartRows.flatMap((c, i) => {
     const doc = cartProductDocs[i];
     if (!doc) return [];
-    return [{ ...adaptProductDoc(doc), id: c.id }];
+    return [{ ...adaptProductDoc(doc), id: c.id, inventoryProductId: doc.id }];
   });
   const inspirationInventoryItems = inspiration.map((p) => ({
     id: p.id,

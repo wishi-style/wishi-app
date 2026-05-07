@@ -69,6 +69,9 @@ type InspoBodyType = "petite" | "tall" | "curvy" | "plus-size" | "athletic" | "p
 
 interface InventoryItem {
   id: string;
+  // For cart entries `id` is the CartItem row id; `inventoryProductId` carries
+  // the underlying tastegraph product id we need to persist on BoardItem.
+  inventoryProductId?: string;
   image: string;
   brand: string;
   name: string;
@@ -150,9 +153,17 @@ const categories: { key: Category; label: string }[] = [
   { key: "shoes", label: "Shoes" },
 ];
 
+type CanvasItemSource = "INVENTORY" | "CLOSET" | "INSPIRATION_PHOTO" | "WEB_ADDED";
+
 interface CanvasItem {
   uid: string;
   itemId: string;
+  // Source-discriminated reference. `source` says which BoardItem column to
+  // populate; `refId` carries the value (inventoryProductId / closetItemId /
+  // inspirationPhotoId). Set when the item is added to the canvas based on
+  // the active tab so the save flow can persist BoardItem rows correctly.
+  source: CanvasItemSource;
+  refId: string;
   image: string;
   originalImage: string;
   x: number; // percent 0-100
@@ -534,11 +545,28 @@ export function StyleboardBuilder({
   };
 
 
+  const sourceForActiveTab = (): { source: CanvasItemSource; refIdFor: (item: InventoryItem) => string } => {
+    if (tab === "inspiration") {
+      return { source: "INSPIRATION_PHOTO", refIdFor: (item) => item.id };
+    }
+    if (tab === "closet" && closetSubTab === "closet") {
+      return { source: "CLOSET", refIdFor: (item) => item.id };
+    }
+    // shop / store / closet>cart / closet>purchased / previous → INVENTORY.
+    // Cart rows expose `inventoryProductId` separately because their `id` is
+    // the CartItem row id, not the underlying product id.
+    return {
+      source: "INVENTORY",
+      refIdFor: (item) => item.inventoryProductId ?? item.id,
+    };
+  };
+
   const addToCanvas = (item: InventoryItem, x?: number, y?: number) => {
     if (canvas.length >= 12) {
       toast("Maximum 12 items on canvas");
       return;
     }
+    const { source, refIdFor } = sourceForActiveTab();
     setCanvas((prev) => {
       // Tile size on canvas (% of canvas) — matches render width
       const tile = 24; // overlap threshold in %
@@ -592,6 +620,8 @@ export function StyleboardBuilder({
         {
           uid: `${item.id}-${Date.now()}`,
           itemId: item.id,
+          source,
+          refId: refIdFor(item),
           image: item.image,
           originalImage: item.image,
           x: finalX,
@@ -727,12 +757,49 @@ export function StyleboardBuilder({
     const toastId = toast.loading(`Saving "${name}"…`);
     try {
       const tagList = [saveTags.event, saveTags.bodyType, saveTags.fitPreference, saveTags.highlights]
+        .flatMap((t) => t.split(/[,\n]/))
         .map((t) => t.trim())
         .filter(Boolean);
+      // Persist the canvas composition in the same request that flips the
+      // board to sent. The send route replaces existing BoardItem rows with
+      // this payload inside the tx that sets sentAt, so a fresh board with
+      // only client-side canvas state can save & send in one round-trip.
+      const items = canvas.map((c, idx) => {
+        const base: {
+          source: CanvasItemSource;
+          x: number;
+          y: number;
+          zIndex: number;
+          inventoryProductId?: string;
+          closetItemId?: string;
+          inspirationPhotoId?: string;
+          flipH?: boolean;
+          flipV?: boolean;
+          cropTop?: number | null;
+          cropRight?: number | null;
+          cropBottom?: number | null;
+          cropLeft?: number | null;
+        } = {
+          source: c.source,
+          x: c.x,
+          y: c.y,
+          zIndex: idx,
+          flipH: c.flipH,
+          flipV: c.flipV,
+          cropTop: c.crop?.top ?? null,
+          cropRight: c.crop?.right ?? null,
+          cropBottom: c.crop?.bottom ?? null,
+          cropLeft: c.crop?.left ?? null,
+        };
+        if (c.source === "INVENTORY") base.inventoryProductId = c.refId;
+        else if (c.source === "CLOSET") base.closetItemId = c.refId;
+        else if (c.source === "INSPIRATION_PHOTO") base.inspirationPhotoId = c.refId;
+        return base;
+      });
       const res = await fetch(`/api/styleboards/${boardId}/send`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title: name, description: desc, tags: tagList }),
+        body: JSON.stringify({ title: name, description: desc, tags: tagList, items }),
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
@@ -1795,16 +1862,18 @@ export function StyleboardBuilder({
                     e.stopPropagation();
                     setSelectedUid(c.uid);
                   }}
-                  style={{ left: `${c.x}%`, top: `${c.y}%`, zIndex: idx + 1 }}
+                  style={{
+                    left: `${c.x}%`,
+                    top: `${c.y}%`,
+                    width: canvasSize === "small" ? "26%" : "22%",
+                    zIndex: idx + 1,
+                  }}
                   className="absolute -translate-x-1/2 -translate-y-1/2"
                 >
                   <div
-                    style={{
-                      width: canvasSize === "small" ? "26%" : "22%",
-                      aspectRatio: "1 / 1",
-                    }}
+                    style={{ aspectRatio: "1 / 1" }}
                     className={cn(
-                      "relative rounded-sm overflow-hidden bg-card shadow-sm cursor-move border",
+                      "relative w-full rounded-sm overflow-hidden bg-card shadow-sm cursor-move border",
                       selected ? "border-foreground ring-2 ring-foreground/20" : "border-border"
                     )}
                   >
@@ -2170,13 +2239,21 @@ export function StyleboardBuilder({
               </div>
               {(saveTags.event || saveTags.bodyType || saveTags.fitPreference || saveTags.highlights) && (
                 <div className="flex flex-wrap gap-2 mt-4">
-                  {Object.entries(saveTags)
-                    .filter(([, v]) => v.trim())
-                    .map(([k, v]) => (
-                      <Badge key={k} variant="secondary" className="font-body text-xs text-foreground">
-                        {v}
-                      </Badge>
-                    ))}
+                  {Object.entries(saveTags).flatMap(([k, v]) =>
+                    v
+                      .split(/[,\n]/)
+                      .map((t) => t.trim())
+                      .filter(Boolean)
+                      .map((t, i) => (
+                        <Badge
+                          key={`${k}-${i}-${t}`}
+                          variant="secondary"
+                          className="font-body text-xs text-foreground"
+                        >
+                          {t}
+                        </Badge>
+                      )),
+                  )}
                 </div>
               )}
             </div>

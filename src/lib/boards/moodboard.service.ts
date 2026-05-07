@@ -202,7 +202,7 @@ export async function rateMoodboard(
   rating: MoodboardRating,
   feedbackText?: string,
   feedbackDetail?: unknown,
-): Promise<Board> {
+): Promise<Board & { photos: BoardPhoto[] }> {
   const board = await prisma.board.findUniqueOrThrow({
     where: { id: boardId },
     include: {
@@ -251,7 +251,10 @@ export async function rateMoodboard(
     if (rating === "LOVE") {
       await openAction(sessionId, "PENDING_STYLEBOARD", { tx });
     }
-    return tx.board.findUniqueOrThrow({ where: { id: boardId } });
+    return tx.board.findUniqueOrThrow({
+      where: { id: boardId },
+      include: { photos: { orderBy: { orderIndex: "asc" } } },
+    });
   });
 
   const client = await prisma.user.findUnique({

@@ -232,6 +232,13 @@ export function MoodboardCard({
         <div className="mb-5 grid h-40 place-items-center rounded-md bg-muted text-xs text-muted-foreground">
           {board ? "No photos yet" : "Loading…"}
         </div>
+      ) : reviewed && viewerRole === "STYLIST" && board ? (
+        <StylistAnnotatedGrid
+          photos={board.photos ?? []}
+          feedbackDetail={board.feedbackDetail}
+          rating={board.rating ?? null}
+          feedbackText={board.feedbackText ?? null}
+        />
       ) : (
         <div className="columns-3 gap-1.5 mb-5">
           {photos.map((src, i) => (
@@ -257,18 +264,6 @@ export function MoodboardCard({
         </Button>
       )}
 
-      {/* Stylist sees the rating + per-image feedback summary inline so they
-          can act on it without re-opening the wizard. The card flipping with
-          this content IS the signal — Loveable's "card update is the signal"
-          contract, adapted for the cross-actor case. */}
-      {reviewed && viewerRole === "STYLIST" && board && (
-        <FeedbackSummary
-          rating={board.rating ?? null}
-          feedbackText={board.feedbackText ?? null}
-          feedbackDetail={board.feedbackDetail}
-        />
-      )}
-
       {submitError && (
         <p className="mt-2 text-xs text-destructive">{submitError}</p>
       )}
@@ -287,61 +282,119 @@ export function MoodboardCard({
   );
 }
 
-function FeedbackSummary({
+const POSITIVE_REASONS = new Set(["Would wear", "Love the vibe"]);
+
+function classifyReasons(reasons: string[]): "positive" | "negative" | "neutral" {
+  if (!reasons || reasons.length === 0) return "neutral";
+  return reasons.some((r) => POSITIVE_REASONS.has(r)) ? "positive" : "negative";
+}
+
+function ratingLabelFor(rating: string | null): string | null {
+  if (!rating) return null;
+  if (rating === "LOVE") return "Loved it";
+  if (rating === "NOT_MY_STYLE") return "Not my style";
+  return rating.replaceAll("_", " ").toLowerCase();
+}
+
+/**
+ * Stylist post-review layout: each image is annotated with the client's
+ * reaction directly beneath it, so chips/notes are unambiguously bound to
+ * the image they describe. Replaces the previous "Image N: …" text list
+ * which forced the stylist to count their way through a multi-column
+ * mosaic to map feedback back to images.
+ */
+function StylistAnnotatedGrid({
+  photos,
+  feedbackDetail,
   rating,
   feedbackText,
-  feedbackDetail,
 }: {
+  photos: Array<{ id: string; url: string | null }>;
+  feedbackDetail: unknown;
   rating: string | null;
   feedbackText: string | null;
-  feedbackDetail: unknown;
 }) {
   const detail =
     feedbackDetail && typeof feedbackDetail === "object"
       ? (feedbackDetail as Record<string, PerImageDetail>)
-      : null;
-  const entries = detail
-    ? Object.entries(detail).filter(
-        ([, v]) => (v?.reasons?.length ?? 0) > 0 || (v?.note ?? "").trim().length > 0,
-      )
-    : [];
-  const ratingLabel = rating
-    ? rating.replaceAll("_", " ").toLowerCase()
-    : null;
-  const hasContent = ratingLabel || feedbackText || entries.length > 0;
-  if (!hasContent) return null;
+      : {};
+  const ratingLabel = ratingLabelFor(rating);
+
+  const hasAnyDetail = Object.values(detail).some(
+    (v) => (v?.reasons?.length ?? 0) > 0 || (v?.note ?? "").trim().length > 0,
+  );
 
   return (
-    <div className="mt-5 space-y-3 border-t border-border pt-5">
+    <div className="mb-5 space-y-4">
       {ratingLabel && (
-        <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-          Client said: <span className="text-foreground">{ratingLabel}</span>
-        </p>
+        <div className="flex items-center gap-2 rounded-full bg-muted/60 px-3 py-1.5 text-xs">
+          <span className="font-medium uppercase tracking-widest text-muted-foreground">
+            Client said
+          </span>
+          <span className="font-medium text-foreground">{ratingLabel}</span>
+        </div>
       )}
-      {entries.length > 0 && (
-        <ul className="space-y-2">
-          {entries.map(([key, value]) => (
-            <li
-              key={key}
-              className="rounded-md bg-muted/40 px-3 py-2 text-xs text-foreground"
-            >
-              <p className="font-medium text-muted-foreground">
-                Image {Number(key) + 1}
-              </p>
-              {value?.reasons && value.reasons.length > 0 && (
-                <p className="mt-0.5">{value.reasons.join(", ")}</p>
-              )}
-              {value?.note && (
-                <p className="mt-0.5 italic text-muted-foreground">
-                  “{value.note}”
+      <div className="grid grid-cols-2 gap-3">
+        {photos.map((photo, i) => {
+          if (!photo.url) return null;
+          const fb = detail[String(i)];
+          const reasons = fb?.reasons ?? [];
+          const note = fb?.note?.trim() ?? "";
+          const tone = classifyReasons(reasons);
+          const ringClass =
+            tone === "positive"
+              ? "ring-2 ring-teal/60"
+              : tone === "negative"
+                ? "ring-2 ring-burgundy/40"
+                : "ring-1 ring-border";
+          const chipClass =
+            tone === "positive"
+              ? "bg-teal/10 text-teal"
+              : "bg-burgundy/10 text-burgundy";
+          return (
+            <div key={photo.id} className="space-y-2">
+              <div className={`overflow-hidden rounded-md ${ringClass}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={photo.url}
+                  alt={`Mood board ${i + 1}`}
+                  className="aspect-[3/4] w-full object-cover"
+                  loading="lazy"
+                />
+              </div>
+              {reasons.length === 0 && !note ? (
+                <p className="text-[11px] text-muted-foreground/60">
+                  No reaction
                 </p>
+              ) : (
+                <div className="space-y-1">
+                  {reasons.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {reasons.map((r) => (
+                        <span
+                          key={r}
+                          className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${chipClass}`}
+                        >
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {note && (
+                    <p className="text-[11px] italic text-muted-foreground">
+                      “{note}”
+                    </p>
+                  )}
+                </div>
               )}
-            </li>
-          ))}
-        </ul>
-      )}
-      {feedbackText && entries.length === 0 && (
-        <p className="whitespace-pre-line text-xs text-foreground">{feedbackText}</p>
+            </div>
+          );
+        })}
+      </div>
+      {!hasAnyDetail && feedbackText && (
+        <p className="whitespace-pre-line border-t border-border pt-4 text-xs text-foreground">
+          {feedbackText}
+        </p>
       )}
     </div>
   );
