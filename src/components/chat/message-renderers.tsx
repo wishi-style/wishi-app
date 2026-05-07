@@ -14,6 +14,12 @@ interface MessageBubbleProps {
   isOwn: boolean;
   sessionId: string;
   viewerRole: ViewerRole;
+  /**
+   * The full chat-stream messages array. Cards subscribe to this to detect
+   * realtime BOARD_UPDATE events for their boardId and refetch their summary.
+   * Optional so server-rendered fallbacks can omit it.
+   */
+  chatMessages?: ChatMessage[];
 }
 
 export function MessageBubble({
@@ -21,6 +27,7 @@ export function MessageBubble({
   isOwn,
   sessionId,
   viewerRole,
+  chatMessages,
 }: MessageBubbleProps) {
   const kind = (message.attributes.kind as string) ?? "TEXT";
   const boardId = (message.attributes.boardId as string) ?? null;
@@ -31,7 +38,13 @@ export function MessageBubble({
     case "PHOTO":
       return <PhotoMessage message={message} isOwn={isOwn} />;
     case "MOODBOARD":
-      return <MoodboardCard boardId={boardId} viewerRole={viewerRole} />;
+      return (
+        <MoodboardCard
+          boardId={boardId}
+          viewerRole={viewerRole}
+          chatMessages={chatMessages}
+        />
+      );
     case "STYLEBOARD":
     case "RESTYLE":
       return (
@@ -41,6 +54,7 @@ export function MessageBubble({
           body={message.body}
           sessionId={sessionId}
           viewerRole={viewerRole}
+          chatMessages={chatMessages}
         />
       );
     case "SINGLE_ITEM":
@@ -56,6 +70,9 @@ export function MessageBubble({
       return <EndSessionCard sessionId={sessionId} viewerRole={viewerRole} />;
     case "SYSTEM_AUTOMATED":
       return <SystemMessage message={message} />;
+    case "BOARD_UPDATE":
+      // Realtime-only signal; cards subscribe and refetch. Never rendered.
+      return null;
     default:
       return <TextMessage message={message} isOwn={isOwn} />;
   }

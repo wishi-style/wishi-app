@@ -85,7 +85,7 @@ export async function requestEnd(sessionId: string): Promise<Session> {
     event: "session.end_requested",
     title: "Session wrap-up",
     body: `${stylist?.firstName ?? "Your stylist"} asked to wrap up. Approve or decline within 72h.`,
-    url: `/sessions/${sessionId}/workspace`,
+    url: `/sessions/${sessionId}/chat`,
   });
   return updated;
 }

@@ -241,6 +241,10 @@ enum MessageKind {
   SINGLE_ITEM
   END_SESSION_REQUEST
   SYSTEM_AUTOMATED
+  // Realtime-only signal: re-fetch the referenced board's state. Carries
+  // boardId in attributes; never rendered in chat. Replaces the FEEDBACK_*
+  // stage bubbles we used to dispatch — same realtime delivery, zero noise.
+  BOARD_UPDATE
 }
 
 // === Boards ===

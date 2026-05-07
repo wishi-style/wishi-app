@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { CheckIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MoodBoardWizard } from "@/components/boards/moodboard-wizard";
+import type { ChatMessage } from "../use-chat";
 import type { ViewerRole } from "../message-renderers";
 
 // Verbatim port of smart-spark-craft/src/components/MoodBoard.tsx (HEAD on
@@ -106,9 +107,11 @@ function summariseFeedback(
 export function MoodboardCard({
   boardId,
   viewerRole,
+  chatMessages,
 }: {
   boardId: string | null;
   viewerRole: ViewerRole;
+  chatMessages?: ChatMessage[];
 }) {
   const [board, setBoard] = useState<MoodBoardSummary | null>(null);
   const [error, setError] = useState(false);
@@ -133,6 +136,29 @@ export function MoodboardCard({
       cancelled = true;
     };
   }, [boardId]);
+
+  // Realtime BOARD_UPDATE subscription. Watches the chat stream for any
+  // BOARD_UPDATE event matching our boardId and re-fetches the summary.
+  // This is what flips the stylist's open card to show the rating + feedback
+  // the moment the client submits the wizard, without dispatching a stage
+  // bubble. Effect re-runs whenever a new message arrives (length change is
+  // sufficient — BOARD_UPDATE is append-only).
+  const boardUpdateCount = chatMessages?.filter(
+    (m) => m.attributes.kind === "BOARD_UPDATE" && m.attributes.boardId === boardId,
+  ).length ?? 0;
+  useEffect(() => {
+    if (!boardId || boardUpdateCount === 0) return;
+    let cancelled = false;
+    fetch(`/api/moodboards/${boardId}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: MoodBoardSummary | null) => {
+        if (!cancelled && data) setBoard(data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [boardId, boardUpdateCount]);
 
   const photos = (board?.photos ?? [])
     .map((p) => p.url)
@@ -230,6 +256,18 @@ export function MoodboardCard({
         </Button>
       )}
 
+      {/* Stylist sees the rating + per-image feedback summary inline so they
+          can act on it without re-opening the wizard. The card flipping with
+          this content IS the signal — Loveable's "card update is the signal"
+          contract, adapted for the cross-actor case. */}
+      {reviewed && viewerRole === "STYLIST" && board && (
+        <FeedbackSummary
+          rating={board.rating ?? null}
+          feedbackText={board.feedbackText ?? null}
+          feedbackDetail={board.feedbackDetail}
+        />
+      )}
+
       {submitError && (
         <p className="mt-2 text-xs text-destructive">{submitError}</p>
       )}
@@ -243,6 +281,66 @@ export function MoodboardCard({
           onClose={() => setWizardOpen(false)}
           onComplete={submitWizard}
         />
+      )}
+    </div>
+  );
+}
+
+function FeedbackSummary({
+  rating,
+  feedbackText,
+  feedbackDetail,
+}: {
+  rating: string | null;
+  feedbackText: string | null;
+  feedbackDetail: unknown;
+}) {
+  const detail =
+    feedbackDetail && typeof feedbackDetail === "object"
+      ? (feedbackDetail as Record<string, PerImageDetail>)
+      : null;
+  const entries = detail
+    ? Object.entries(detail).filter(
+        ([, v]) => (v?.reasons?.length ?? 0) > 0 || (v?.note ?? "").trim().length > 0,
+      )
+    : [];
+  const ratingLabel = rating
+    ? rating.replaceAll("_", " ").toLowerCase()
+    : null;
+  const hasContent = ratingLabel || feedbackText || entries.length > 0;
+  if (!hasContent) return null;
+
+  return (
+    <div className="mt-5 space-y-3 border-t border-border pt-5">
+      {ratingLabel && (
+        <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+          Client said: <span className="text-foreground">{ratingLabel}</span>
+        </p>
+      )}
+      {entries.length > 0 && (
+        <ul className="space-y-2">
+          {entries.map(([key, value]) => (
+            <li
+              key={key}
+              className="rounded-md bg-muted/40 px-3 py-2 text-xs text-foreground"
+            >
+              <p className="font-medium text-muted-foreground">
+                Image {Number(key) + 1}
+              </p>
+              {value?.reasons && value.reasons.length > 0 && (
+                <p className="mt-0.5">{value.reasons.join(", ")}</p>
+              )}
+              {value?.note && (
+                <p className="mt-0.5 italic text-muted-foreground">
+                  “{value.note}”
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {feedbackText && entries.length === 0 && (
+        <p className="whitespace-pre-line text-xs text-foreground">{feedbackText}</p>
       )}
     </div>
   );

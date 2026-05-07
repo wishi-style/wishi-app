@@ -1,7 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { openAction, resolveAction } from "@/lib/pending-actions";
-import { sendSystemMessage, sendBoardMessage } from "@/lib/chat/send-message";
-import { SystemTemplate } from "@/lib/chat/system-templates";
+import {
+  sendBoardMessage,
+  sendBoardUpdateEvent,
+} from "@/lib/chat/send-message";
 import { notifyClient, notifyStylist } from "@/lib/notifications/dispatcher";
 import { endTrialEarly } from "@/lib/payments/subscription-trial";
 import { detectPendingEnd } from "@/lib/sessions/transitions";
@@ -504,6 +506,24 @@ export async function rateStyleboard(
     select: { firstName: true },
   });
   const clientFirstName = client?.firstName ?? "The client";
+
+  // Realtime channel for the stylist's open card to refetch its summary.
+  // Non-rendered chat event; replaces the FEEDBACK_*_LOVE / RESTYLE_REQUESTED
+  // stage bubbles we used to dispatch.
+  await sendBoardUpdateEvent(sessionId, boardId).catch((err) => {
+    console.warn("[styleboard] BOARD_UPDATE dispatch failed", { sessionId, boardId, err });
+  });
+  // If a child restyle board was created on REVISE, dispatch one for it too
+  // so the stylist's queue picks it up in real time.
+  if (result.restyleBoard) {
+    await sendBoardUpdateEvent(sessionId, result.restyleBoard.id).catch((err) => {
+      console.warn("[styleboard] BOARD_UPDATE (restyle) dispatch failed", {
+        sessionId,
+        restyleBoardId: result.restyleBoard?.id,
+        err,
+      });
+    });
+  }
 
   // Loveable contract: the styleboard card flips in place to show the rating.
   // No "loved this look" / "requested a restyle" stage bubbles. Out-of-chat

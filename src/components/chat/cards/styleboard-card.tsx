@@ -16,6 +16,7 @@ import {
   type RestyleProduct,
   type RestyleFeedback,
 } from "@/components/boards/restyle-wizard";
+import type { ChatMessage } from "../use-chat";
 import type { ViewerRole } from "../message-renderers";
 
 // Verbatim port of smart-spark-craft/src/components/StyleBoard.tsx
@@ -37,8 +38,14 @@ interface StyleBoardSummary {
   title?: string | null;
   rating?: Rating | null;
   feedbackText?: string | null;
+  feedbackDetail?: unknown;
   ratedAt?: string | null;
   isRevision?: boolean;
+}
+
+interface PerItemDetail {
+  reasons?: string[];
+  note?: string;
 }
 
 interface PreviewProduct {
@@ -63,12 +70,14 @@ export function StyleboardCard({
   body,
   sessionId,
   viewerRole,
+  chatMessages,
 }: {
   boardId: string | null;
   isRestyle: boolean;
   body: string | null;
   sessionId: string;
   viewerRole: ViewerRole;
+  chatMessages?: ChatMessage[];
 }) {
   const [board, setBoard] = useState<StyleBoardSummary | null>(null);
   const [preview, setPreview] = useState<PreviewPayload | null>(null);
@@ -100,6 +109,28 @@ export function StyleboardCard({
       cancelled = true;
     };
   }, [boardId]);
+
+  // Realtime BOARD_UPDATE subscription. When the client rates the board
+  // through inline pills or RestyleWizard, the server dispatches a
+  // BOARD_UPDATE event onto the conversation. Both sides see it stream in
+  // and re-fetch the summary so the chosen pill flips to filled (stylist
+  // side) and any feedback summary appears without a page reload.
+  const boardUpdateCount = chatMessages?.filter(
+    (m) => m.attributes.kind === "BOARD_UPDATE" && m.attributes.boardId === boardId,
+  ).length ?? 0;
+  useEffect(() => {
+    if (!boardId || boardUpdateCount === 0) return;
+    let cancelled = false;
+    fetch(`/api/styleboards/${boardId}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setBoard(data as StyleBoardSummary);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [boardId, boardUpdateCount]);
 
   async function postFeedback(payload: {
     rating: Rating;
@@ -352,6 +383,18 @@ export function StyleboardCard({
         {feedbackError && (
           <p className="mt-2 text-xs text-destructive">{feedbackError}</p>
         )}
+
+        {/* Stylist sees the rating + per-item feedback inline once the client
+            rates. The card flipping with this content IS the in-chat signal —
+            no separate "loved the styleboard" stage bubble. */}
+        {rating != null && viewerRole === "STYLIST" && board && (
+          <StyleboardFeedbackSummary
+            rating={rating}
+            feedbackText={board.feedbackText ?? null}
+            feedbackDetail={board.feedbackDetail}
+            products={preview?.products ?? []}
+          />
+        )}
       </div>
 
       {viewerRole === "CLIENT" && (
@@ -363,5 +406,67 @@ export function StyleboardCard({
         />
       )}
     </>
+  );
+}
+
+function StyleboardFeedbackSummary({
+  rating,
+  feedbackText,
+  feedbackDetail,
+  products,
+}: {
+  rating: Rating;
+  feedbackText: string | null;
+  feedbackDetail: unknown;
+  products: PreviewProduct[];
+}) {
+  const detail =
+    feedbackDetail && typeof feedbackDetail === "object"
+      ? (feedbackDetail as Record<string, PerItemDetail>)
+      : null;
+  const productById = new Map(products.map((p) => [p.id, p]));
+  const entries = detail
+    ? Object.entries(detail).filter(
+        ([, v]) => (v?.reasons?.length ?? 0) > 0 || (v?.note ?? "").trim().length > 0,
+      )
+    : [];
+  const ratingLabel = rating.replaceAll("_", " ").toLowerCase();
+
+  return (
+    <div className="mt-5 space-y-3 border-t border-border pt-5">
+      <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+        Client said: <span className="text-foreground">{ratingLabel}</span>
+      </p>
+      {entries.length > 0 && (
+        <ul className="space-y-2">
+          {entries.map(([itemId, value]) => {
+            const product = productById.get(itemId);
+            const label =
+              product?.brand && product?.name
+                ? `${product.brand} — ${product.name}`
+                : product?.brand ?? product?.name ?? "Item";
+            return (
+              <li
+                key={itemId}
+                className="rounded-md bg-muted/40 px-3 py-2 text-xs text-foreground"
+              >
+                <p className="font-medium text-muted-foreground">{label}</p>
+                {value?.reasons && value.reasons.length > 0 && (
+                  <p className="mt-0.5">{value.reasons.join(", ")}</p>
+                )}
+                {value?.note && (
+                  <p className="mt-0.5 italic text-muted-foreground">
+                    “{value.note}”
+                  </p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {feedbackText && entries.length === 0 && (
+        <p className="whitespace-pre-line text-xs text-foreground">{feedbackText}</p>
+      )}
+    </div>
   );
 }

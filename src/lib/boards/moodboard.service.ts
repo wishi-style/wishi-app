@@ -1,7 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { openAction, resolveAction } from "@/lib/pending-actions";
-import { sendSystemMessage, sendBoardMessage } from "@/lib/chat/send-message";
-import { SystemTemplate } from "@/lib/chat/system-templates";
+import {
+  sendBoardMessage,
+  sendBoardUpdateEvent,
+} from "@/lib/chat/send-message";
 import { notifyClient, notifyStylist } from "@/lib/notifications/dispatcher";
 import { detectPendingEnd } from "@/lib/sessions/transitions";
 import type { Board, BoardPhoto, BoardRating } from "@/generated/prisma/client";
@@ -254,7 +256,12 @@ export async function rateMoodboard(
     select: { firstName: true },
   });
   // Loveable contract: the moodboard card flips in place to show the rating.
-  // No "loved the moodboard" stage bubble.
+  // No "loved the moodboard" stage bubble. We do dispatch a non-rendered
+  // BOARD_UPDATE Twilio event so the stylist's open card refetches its
+  // summary and shows the rating + feedback in real-time.
+  await sendBoardUpdateEvent(sessionId, boardId).catch((err) => {
+    console.warn("[moodboard] BOARD_UPDATE dispatch failed", { sessionId, boardId, err });
+  });
   await notifyStylist(sessionId, {
     event: "moodboard.feedback",
     title: "Moodboard feedback",

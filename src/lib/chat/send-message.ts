@@ -203,6 +203,26 @@ export async function sendBoardMessage(
 }
 
 /**
+ * Dispatch a non-rendered BOARD_UPDATE event onto the conversation. Used by
+ * the rate-board flows to give both client and stylist sides a realtime
+ * "this board's state changed — refetch it" signal without dispatching a
+ * stage bubble. The chat renderer ignores BOARD_UPDATE messages; the cards
+ * subscribe to them via the message stream and refresh their summary
+ * fetches when one for their boardId arrives.
+ */
+export async function sendBoardUpdateEvent(
+  sessionId: string,
+  boardId: string,
+): Promise<void> {
+  const conversationSid = await getConversationSid(sessionId);
+  await sendTwilioMessage(sessionId, conversationSid, {
+    author: "system",
+    body: "",
+    attributes: { kind: "BOARD_UPDATE", boardId },
+  });
+}
+
+/**
  * Send the special END_SESSION_REQUEST chat card. Uses "system" author so
  * both participants see it and the card isn't mis-attributed to the stylist.
  */
