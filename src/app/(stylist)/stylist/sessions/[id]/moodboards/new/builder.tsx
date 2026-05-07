@@ -46,6 +46,7 @@ interface InspirationPhoto {
 interface MoodBoardCreatorProps {
   clientName: string;
   sessionId?: string | null;
+  clientId?: string | null;
   initialImages?: string[];
   onBack: () => void;
   onSend?: (images: string[], note: string) => void;
@@ -53,7 +54,7 @@ interface MoodBoardCreatorProps {
   onPhotoRemoved?: (url: string) => Promise<void>;
 }
 
-export function MoodboardBuilder({ clientName, sessionId, initialImages, onBack, onSend, onPhotoAdded, onPhotoRemoved }: MoodBoardCreatorProps) {
+export function MoodboardBuilder({ clientName, sessionId, clientId, initialImages, onBack, onSend, onPhotoAdded, onPhotoRemoved }: MoodBoardCreatorProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [genderFilter, setGenderFilter] = useState("female");
   const [canvasImages, setCanvasImages] = useState<string[]>(initialImages || []);
@@ -184,7 +185,7 @@ export function MoodboardBuilder({ clientName, sessionId, initialImages, onBack,
             className="font-body text-xs h-8 rounded-sm gap-1.5"
           >
             <UserIcon className="h-3.5 w-3.5" />
-            Client info
+            Client Profile
           </Button>
           {canvasImages.length > 0 && (
             <>
@@ -392,6 +393,7 @@ export function MoodboardBuilder({ clientName, sessionId, initialImages, onBack,
         open={clientInfoOpen}
         onOpenChange={setClientInfoOpen}
         sessionId={sessionId || null}
+        clientId={clientId ?? null}
       />
     </div>
   );

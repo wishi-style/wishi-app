@@ -8,6 +8,7 @@ import { MoodboardBuilder } from "./builder";
 interface Props {
   boardId: string;
   sessionId: string;
+  clientId: string;
   clientName: string;
   initialImages: string[];
   initialPhotoIds: Record<string, string>;
@@ -16,6 +17,7 @@ interface Props {
 export function MoodboardBuilderShell({
   boardId,
   sessionId,
+  clientId,
   clientName,
   initialImages,
   initialPhotoIds,
@@ -69,6 +71,7 @@ export function MoodboardBuilderShell({
     <MoodboardBuilder
       clientName={clientName}
       sessionId={sessionId}
+      clientId={clientId}
       initialImages={initialImages}
       onBack={back}
       onPhotoAdded={onPhotoAdded}

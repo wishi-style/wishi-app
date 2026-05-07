@@ -9,6 +9,7 @@
 import { prisma } from "@/lib/prisma";
 import { getPrivateNote } from "@/lib/stylists/private-notes";
 import { clientDisplayName } from "@/lib/users/display-name";
+import { ensureUserNamesFromClerk } from "@/lib/users/ensure-clerk-name";
 
 export type ViewLoyaltyTier = "new" | "bronze" | "silver" | "gold" | "vip";
 
@@ -151,6 +152,8 @@ export async function resolveClientProfileView(
     prisma.user.findUnique({
       where: { id: clientUserId },
       select: {
+        id: true,
+        clerkId: true,
         firstName: true,
         lastName: true,
         email: true,
@@ -207,6 +210,21 @@ export async function resolveClientProfileView(
   ]);
 
   if (!user) return null;
+
+  // Backfill firstName/lastName from Clerk for users whose row never picked
+  // them up via the user.created/user.updated webhook. Mutates the local
+  // `user` object so the rest of this resolver sees the freshest values.
+  await ensureUserNamesFromClerk([
+    {
+      id: user.id,
+      clerkId: user.clerkId,
+      firstName: user.firstName,
+      lastName: user.lastName,
+    },
+  ]).then((rows) => {
+    user.firstName = rows[0].firstName;
+    user.lastName = rows[0].lastName;
+  });
 
   const fullName = clientDisplayName(user.firstName, user.lastName, user.email);
 

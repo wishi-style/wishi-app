@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { clientDisplayName, clientInitials } from "@/lib/users/display-name";
+import { ensureUserNamesFromClerk } from "@/lib/users/ensure-clerk-name";
 import type {
   LoyaltyTier as DbLoyaltyTier,
   PendingActionType,
@@ -257,6 +258,8 @@ export async function getStylistDashboardData(
       updatedAt: true,
       client: {
         select: {
+          id: true,
+          clerkId: true,
           firstName: true,
           lastName: true,
           email: true,
@@ -278,6 +281,31 @@ export async function getStylistDashboardData(
     },
     orderBy: { updatedAt: "desc" },
   });
+
+  // Backfill firstName/lastName from Clerk for any client whose row never
+  // picked them up via the user.created/user.updated webhook. Mutates the
+  // session.client objects in place; misses or empty Clerk profiles are
+  // throttled inside the helper so this stays cheap on repeated dashboard
+  // loads.
+  const uniqueClients = new Map<string, { id: string; clerkId: string | null; firstName: string; lastName: string }>();
+  for (const s of sessions) {
+    if (!uniqueClients.has(s.client.id)) {
+      uniqueClients.set(s.client.id, {
+        id: s.client.id,
+        clerkId: s.client.clerkId,
+        firstName: s.client.firstName,
+        lastName: s.client.lastName,
+      });
+    }
+  }
+  await ensureUserNamesFromClerk([...uniqueClients.values()]);
+  for (const s of sessions) {
+    const synced = uniqueClients.get(s.client.id);
+    if (synced) {
+      s.client.firstName = synced.firstName;
+      s.client.lastName = synced.lastName;
+    }
+  }
 
   // Tally each client's lifetime session count (excluding soft-deleted) so we
   // can map to the `totalSessions` loyalty-badge hint.

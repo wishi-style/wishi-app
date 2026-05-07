@@ -199,6 +199,7 @@ interface StyleboardBuilderProps {
 export function StyleboardBuilder({
   boardId,
   sessionId,
+  clientId,
   clientName,
   shopItems,
   closetItems,
@@ -811,7 +812,7 @@ export function StyleboardBuilder({
             className="font-body text-xs h-8 rounded-sm gap-1.5"
           >
             <UserIcon className="h-3.5 w-3.5" />
-            Client info
+            Client Profile
           </Button>
           {canvas.length > 0 && (
             <Button
@@ -1952,6 +1953,7 @@ export function StyleboardBuilder({
         open={clientInfoOpen}
         onOpenChange={setClientInfoOpen}
         sessionId={sessionId || null}
+        clientId={clientId}
       />
 
       <ProductDetailDialog
