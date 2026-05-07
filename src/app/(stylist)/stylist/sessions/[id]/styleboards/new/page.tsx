@@ -7,6 +7,11 @@ import { mapLoyalty } from "@/lib/stylists/client-profile";
 import { clientDisplayName, clientInitials } from "@/lib/users/display-name";
 import { getProduct, searchProducts } from "@/lib/inventory/inventory-client";
 import type { ProductSearchDoc } from "@/lib/inventory/types";
+import {
+  filterOutClientDislikes,
+  mapGenderToInventory,
+  rankByClientLikes,
+} from "@/lib/inventory/client-prefilter";
 import { StyleboardBuilder } from "./builder";
 
 type LoveableCategory = "all" | "tops" | "bottoms" | "outerwear" | "accessories" | "shoes";
@@ -63,6 +68,7 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
           email: true,
           avatarUrl: true,
           loyaltyTier: true,
+          gender: true,
         },
       },
     },
@@ -105,24 +111,66 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
     board = { ...created, items: [] };
   }
 
-  const [closetItems, inspiration, cartRows, bodyProfile, budgetRows] =
-    await Promise.all([
-      listClosetItems({ userId: session.clientId }),
-      listInspirationPhotos({ take: 60 }),
-      prisma.cartItem.findMany({
-        where: { userId: session.clientId, sessionId },
-        orderBy: { addedAt: "desc" },
-        select: { id: true, inventoryProductId: true, quantity: true },
-      }),
-      prisma.bodyProfile.findUnique({
-        where: { userId: session.clientId },
-        select: { sizes: { select: { category: true, size: true } } },
-      }),
-      prisma.budgetByCategory.findMany({
-        where: { userId: session.clientId },
-        select: { category: true, minInCents: true, maxInCents: true },
-      }),
-    ]);
+  const [
+    closetItems,
+    inspiration,
+    cartRows,
+    bodyProfile,
+    budgetRows,
+    matchQuiz,
+    styleProfile,
+    colorPrefs,
+    fabricPrefs,
+  ] = await Promise.all([
+    listClosetItems({ userId: session.clientId }),
+    listInspirationPhotos({ take: 60 }),
+    prisma.cartItem.findMany({
+      where: { userId: session.clientId, sessionId },
+      orderBy: { addedAt: "desc" },
+      select: { id: true, inventoryProductId: true, quantity: true },
+    }),
+    prisma.bodyProfile.findUnique({
+      where: { userId: session.clientId },
+      select: { sizes: { select: { category: true, size: true } } },
+    }),
+    prisma.budgetByCategory.findMany({
+      where: { userId: session.clientId },
+      select: { category: true, minInCents: true, maxInCents: true },
+    }),
+    prisma.matchQuizResult.findFirst({
+      where: { userId: session.clientId },
+      orderBy: { completedAt: "desc" },
+      select: { genderToStyle: true },
+    }),
+    prisma.styleProfile.findUnique({
+      where: { userId: session.clientId },
+      select: { avoidBrands: true, preferredBrands: true },
+    }),
+    prisma.colorPreference.findMany({
+      where: { userId: session.clientId },
+      select: { color: true, isLiked: true },
+    }),
+    prisma.fabricPreference.findMany({
+      where: { userId: session.clientId, isDisliked: true },
+      select: { fabric: true },
+    }),
+  ]);
+
+  // Resolve the gender to filter the tastegraph catalog by. MatchQuizResult
+  // captures shopping intent ("which gender's clothing to style for me"),
+  // which can differ from User.gender (a non-binary client may explicitly
+  // pick men's or women's). Fall back to User.gender, then to no filter.
+  const effectiveGender =
+    matchQuiz?.genderToStyle ?? session.client.gender ?? null;
+  const inventoryGender = mapGenderToInventory(effectiveGender);
+
+  // Build client preference lists for post-filter + ranking. Tastegraph has
+  // no exclusion params, so brand/colour/fabric dislikes apply client-side.
+  const dislikedColors = colorPrefs.filter((c) => !c.isLiked).map((c) => c.color);
+  const likedColors = colorPrefs.filter((c) => c.isLiked).map((c) => c.color);
+  const dislikedFabrics = fabricPrefs.map((f) => f.fabric);
+  const avoidBrands = styleProfile?.avoidBrands ?? [];
+  const preferredBrands = styleProfile?.preferredBrands ?? [];
 
   // Direct-sale id set powers the LookCreator's Shop / Store sub-tabs.
   // Store narrows the inventory grid to MerchandisedProduct rows flagged
@@ -158,13 +206,24 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
   // types, season — stay in the chrome but no-op against this data set;
   // those are deferred to the inventory project.
   const [shopSearch, storeProductDocs, cartProductDocs] = await Promise.all([
-    searchProducts({ pageSize: 60 }),
+    searchProducts({ pageSize: 60, gender: inventoryGender }),
     Promise.all(
       directSaleProductIds.slice(0, 60).map((id) => getProduct(id)),
     ),
     Promise.all(cartRows.map((c) => getProduct(c.inventoryProductId))),
   ]);
-  const shopInventoryItems = shopSearch.results.map(adaptProductDoc);
+  // Apply client preference filters + ranking before adapting to the
+  // builder's InventoryItem shape so the chrome never sees an item the
+  // client has explicitly opted out of, and preferred brands surface first.
+  const shopProducts = rankByClientLikes(
+    filterOutClientDislikes(shopSearch.results, {
+      avoidBrands,
+      dislikedColors,
+      dislikedFabrics,
+    }),
+    { preferredBrands, likedColors },
+  );
+  const shopInventoryItems = shopProducts.map(adaptProductDoc);
   const storeInventoryItems = storeProductDocs.flatMap((doc) =>
     doc ? [adaptProductDoc(doc)] : [],
   );
