@@ -14,6 +14,38 @@ import { applyDirectSaleFromCheckout } from "./direct-sale.service";
 import { applyDirectSalePaymentIntentSucceeded } from "./direct-sale-elements.service";
 import { handleTipPaymentSucceeded } from "./payout-webhooks";
 import { applyGiftCardPurchaseFromCheckout } from "@/lib/promotions/gift-card.service";
+import { parseFullName } from "@/lib/users/ensure-stripe-name";
+
+// Capture cardholder name from a completed Stripe Checkout when our DB row is
+// still empty. Every paid Wishi flow (one-time bookings, subscription
+// bookings, upgrades, buy-more-looks, direct sales) lands here, so this is
+// the universal name-backfill seam. Skips gift-card purchases — the buyer's
+// name is captured against THEIR own user row, but the metadata.userId on a
+// gift-card session is the buyer, so the same path applies. We never
+// overwrite an existing name (precedence: Clerk > /settings edit > Stripe).
+async function captureNameFromCheckoutSession(
+  session: Stripe.Checkout.Session,
+): Promise<void> {
+  const userId = session.metadata?.userId;
+  if (!userId) return;
+  const parsed = parseFullName(session.customer_details?.name);
+  if (!parsed || (!parsed.firstName && !parsed.lastName)) return;
+  try {
+    await prisma.user.updateMany({
+      where: { id: userId, firstName: "", lastName: "" },
+      data: { firstName: parsed.firstName, lastName: parsed.lastName },
+    });
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "checkout_name_capture_failed",
+        userId,
+        sessionId: session.id,
+        err: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
+}
 
 /**
  * Router for `payment_intent.succeeded`. Multiple flows now land here:
@@ -46,6 +78,10 @@ export async function handlePaymentIntentSucceeded(
 }
 
 export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
+  // Universal name backfill — runs before purpose-specific routing so it
+  // covers every flow that lands in checkout.session.completed.
+  await captureNameFromCheckoutSession(session);
+
   const purpose = session.metadata?.purpose;
   if (purpose === "UPGRADE") {
     await applyUpgradeFromCheckout(session);

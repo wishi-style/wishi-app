@@ -186,6 +186,7 @@ export async function createDirectSaleCheckout(input: CreateDirectSaleCheckoutIn
   const checkout = await createCheckoutImpl(
     {
       customer: customerId,
+      customer_update: { name: "auto", shipping: "auto" },
       mode: "payment",
       line_items: lineItems,
       automatic_tax: { enabled: true },

@@ -957,7 +957,7 @@ export default function StylistDashboard({
             </Button>
           )}
           <Button variant="ghost" size="sm" className="font-body text-xs text-muted-foreground h-8" onClick={() => setDetailOpen(true)}>
-            Details
+            Client Profile
           </Button>
         </div>
       </div>

@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { clientDisplayName, clientInitials } from "@/lib/users/display-name";
+import { ensureUserNamesFromClerk } from "@/lib/users/ensure-clerk-name";
+import { ensureUserNamesFromStripe } from "@/lib/users/ensure-stripe-name";
 import type {
   LoyaltyTier as DbLoyaltyTier,
   PendingActionType,
@@ -257,6 +259,9 @@ export async function getStylistDashboardData(
       updatedAt: true,
       client: {
         select: {
+          id: true,
+          clerkId: true,
+          stripeCustomerId: true,
           firstName: true,
           lastName: true,
           email: true,
@@ -278,6 +283,42 @@ export async function getStylistDashboardData(
     },
     orderBy: { updatedAt: "desc" },
   });
+
+  // Backfill firstName/lastName from Clerk first, falling through to Stripe
+  // (cardholder name on the user's first checkout) for rows still empty.
+  // Mutates the session.client objects in place; per-source throttles inside
+  // each helper keep repeated dashboard loads cheap.
+  const uniqueClients = new Map<
+    string,
+    {
+      id: string;
+      clerkId: string | null;
+      stripeCustomerId: string | null;
+      firstName: string;
+      lastName: string;
+    }
+  >();
+  for (const s of sessions) {
+    if (!uniqueClients.has(s.client.id)) {
+      uniqueClients.set(s.client.id, {
+        id: s.client.id,
+        clerkId: s.client.clerkId,
+        stripeCustomerId: s.client.stripeCustomerId,
+        firstName: s.client.firstName,
+        lastName: s.client.lastName,
+      });
+    }
+  }
+  const clientArr = [...uniqueClients.values()];
+  await ensureUserNamesFromClerk(clientArr);
+  await ensureUserNamesFromStripe(clientArr);
+  for (const s of sessions) {
+    const synced = uniqueClients.get(s.client.id);
+    if (synced) {
+      s.client.firstName = synced.firstName;
+      s.client.lastName = synced.lastName;
+    }
+  }
 
   // Tally each client's lifetime session count (excluding soft-deleted) so we
   // can map to the `totalSessions` loyalty-badge hint.

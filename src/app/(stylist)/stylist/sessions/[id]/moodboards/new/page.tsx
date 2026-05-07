@@ -64,6 +64,7 @@ export default async function NewMoodboardPage({ params }: Props) {
     <MoodboardBuilderShell
       boardId={board.id}
       sessionId={sessionId}
+      clientId={session.clientId}
       clientName={clientName}
       initialImages={initialImages}
       initialPhotoIds={initialPhotoIds}
