@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { getServerAuth } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
 import { endImpersonation } from "@/lib/admin/impersonation.service";
 
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  * Clerk session so the browser is signed out.
  */
 export async function POST() {
-  const session = await auth();
+  const session = await getServerAuth();
   if (!session.userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -31,9 +31,13 @@ export async function POST() {
   });
 
   if (admin) {
+    const sessionId =
+      "sessionId" in session && typeof session.sessionId === "string"
+        ? session.sessionId
+        : null;
     await endImpersonation({
       adminUserId: admin.id,
-      sessionId: session.sessionId ?? null,
+      sessionId,
     });
   }
 

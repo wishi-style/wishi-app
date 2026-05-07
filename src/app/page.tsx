@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { auth } from "@clerk/nextjs/server";
+import { getServerAuth } from "@/lib/auth/server-auth";
 import { StarIcon } from "lucide-react";
 import { getPlanPricesForUi } from "@/lib/plans";
 import { planTierOrder, type PlanTier } from "@/lib/ui/plan-copy";
@@ -160,7 +160,10 @@ const faqLd = {
 };
 
 export default async function HomePage() {
-  const [{ userId }, prices] = await Promise.all([auth(), getPlanPricesForUi()]);
+  const [{ userId }, prices] = await Promise.all([
+    getServerAuth(),
+    getPlanPricesForUi(),
+  ]);
   const isLoggedIn = userId !== null && userId !== undefined;
   const matchHref = isLoggedIn ? "/stylists" : "/match-quiz";
   const priceFor: Record<PlanTier, number> = {

@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { getServerAuth } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
 import { ImpersonationBanner } from "./impersonation-banner";
 
@@ -17,9 +17,9 @@ import { ImpersonationBanner } from "./impersonation-banner";
  * on 2026-05-05. Treat a missing Clerk context as "no impersonation".
  */
 export async function ImpersonationBannerMount() {
-  let session: Awaited<ReturnType<typeof auth>>;
+  let session: Awaited<ReturnType<typeof getServerAuth>>;
   try {
-    session = await auth();
+    session = await getServerAuth();
   } catch {
     return null;
   }

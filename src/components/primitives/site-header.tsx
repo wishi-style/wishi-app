@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { auth } from "@clerk/nextjs/server";
+import { getServerAuth } from "@/lib/auth/server-auth";
 import { ShoppingBagIcon } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { SiteHeaderNav } from "./site-header-nav";
@@ -22,7 +22,7 @@ async function getCartCountForClerkUser(clerkId: string): Promise<number> {
 }
 
 export async function SiteHeader() {
-  const { userId } = await auth();
+  const { userId } = await getServerAuth();
   const signedIn = userId !== null && userId !== undefined;
   const cartCount = signedIn ? await getCartCountForClerkUser(userId) : 0;
 

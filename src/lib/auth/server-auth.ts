@@ -31,15 +31,24 @@ export async function getServerAuth() {
         sessionClaims: role
           ? { metadata: { role, isAdmin } }
           : undefined,
-        isE2E: true,
+        isE2E: true as const,
       };
     }
+    // No e2e cookie + e2e mode = guest. The proxy bypasses clerkMiddleware
+    // entirely in E2E mode, so falling through to auth() would throw
+    // "Clerk: auth() was called but Clerk can't detect usage of
+    // clerkMiddleware()". Return a signed-out shape directly.
+    return {
+      userId: null,
+      sessionClaims: undefined,
+      isE2E: true as const,
+    };
   }
 
   const session = await auth();
   return {
     ...session,
-    isE2E: false,
+    isE2E: false as const,
   };
 }
 
