@@ -501,33 +501,12 @@
 
 ### 12. `/board/[boardId]` — Public Shared Board View
 
-**Loveable:** `smart-spark-craft/src/pages/SharedBoard.tsx`  
-**Staging:** `wishi-app/src/app/(client)/sessions/[id]/styleboards/[boardId]/page.tsx` (nested, authed-only)
+**Loveable:** `smart-spark-craft/src/pages/SharedBoard.tsx`
+**Staging:** `wishi-app/src/app/board/[boardId]/page.tsx` (public, sent styleboards only)
 
-**Biggest gap:** Loveable's SharedBoard is a public board viewer with SiteHeader, board images in a 2-column grid, board title + description, CTA buttons ("View Full Session"). Staging nests board viewing under session routes AND creates separate moodboards/styleboards routes. URL structure differs completely (public `/board/[id]` vs. authed `/sessions/[id]/styleboards/[id]`). Copy and layout are similar, but access control is inverted.
+**In-session board viewing** (the original "authed-nested" gap below) was eliminated by the inline-session-room work: client and stylist see boards as inline cards inside `/sessions/[id]/chat`, with `MoodBoardWizard` / `RestyleWizard` opening as modals in place. There are no longer any `/sessions/[id]/moodboards/[boardId]` or `/sessions/[id]/styleboards/[boardId]` routes.
 
-**Title:**
-- Loveable: Board title centered h1
-- Staging: (likely in the workspace/board detail component)
-
-**Layout:**
-- Loveable: SiteHeader + centered container, h1 title, description, 2-column image grid, CTA buttons
-- Staging: (nested under session, likely server-rendered board detail)
-
-**Public access:**
-- Loveable: Anyone with URL can view (public)
-- Staging: Authed user only; nested under /sessions/[id]/
-
-**CTAs:**
-- Loveable: "View Full Session" (links to session if user is logged in? Not shown in code)
-- Staging: (likely browse-session or back-to-session navigation)
-
-**Notable rebuild-only extras:**
-- Staging's board view is authed + nested; Loveable is public
-- Staging may have separate moodboards/styleboards routes for different board types
-
-**Notable Loveable gaps in staging:**
-- Loveable's public board share link structure (/board/[id]) is not present in staging; boards are session-nested only
+**Public sharing** is what `/board/[boardId]` covers. Anyone with the URL can view a sent STYLEBOARD; drafts (`sentAt = null`) 404; no token / expiry. This matches Loveable's public-by-default contract.
 
 ---
 
@@ -557,7 +536,7 @@
 | `/cart` | Sort bar + 3 sections (Wishi/Retailer/Sold Out) present; order summary sidebar same | `MyBag.tsx` | `cart/page.tsx` |
 | `/checkout` | Loveable has mocked card form; staging uses Stripe PaymentElement; 3-step flow identical | `Checkout.tsx` | `checkout/page.tsx` |
 | `/style-quiz` | Loveable hardcoded (1017 lines); staging fully DB-driven; nested under session in staging | `StyleQuiz.tsx` | `sessions/[id]/style-quiz/page.tsx` |
-| `/board/[boardId]` | Loveable public (/board/[id]); staging authed + nested (/sessions/[id]/styleboards/[id]) | `SharedBoard.tsx` | `sessions/[id]/styleboards/[boardId]/page.tsx` |
+| `/board/[boardId]` | Public-by-default; sent styleboards only; in-session board viewing is inline chat cards (no separate routes) | `SharedBoard.tsx` | `board/[boardId]/page.tsx` |
 | `/bookings` (new + success) | Loveable SessionCheckout is single page; staging splits into /new + /success routes | `SessionCheckout.tsx` | `bookings/new/page.tsx` + `bookings/success/page.tsx` |
 
 ---

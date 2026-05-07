@@ -133,7 +133,7 @@ Full deploy + rollback + incident-response procedures: [`docs/runbook.md`](./doc
 │   └── seeds/            Domain seeders (plans, quizzes)
 └── src/
     ├── app/
-    │   ├── (client)/     Client routes: /sessions, /sessions/[id]/workspace, /sessions/[id]/moodboards/*, /sessions/[id]/styleboards/*, /sessions/[id]/end-session, /sessions/[id]/buy-more-looks, /closet, /collections/[id], /favorites, /orders, /settings
+    │   ├── (client)/     Client routes: /sessions, /sessions/[id]/chat, /sessions/[id]/end-session, /sessions/[id]/buy-more-looks, /closet, /collections/[id], /favorites, /orders, /settings
     │   ├── (stylist)/    Stylist routes: /onboarding/[step], /stylist/dashboard, /stylist/sessions/*, /stylist/clients, /stylist/clients/[id], /stylist/profile/boards, /stylist/payouts
     │   ├── (admin)/      Admin routes: /admin/dashboard, /admin/users, /admin/sessions, /admin/subscriptions, /admin/stylists, /admin/looks, /admin/inspiration-photos, /admin/quiz-builder, /admin/orders, /admin/promo-codes, /admin/audit-log
     │   ├── api/          health, webhooks/{clerk,stripe,twilio}, products, moodboards, styleboards, closet, collections, favorites/{boards,items,stylists}, inspiration-photos, cart, orders, payments/checkout, sessions/[id]/end/{request,approve,decline}, sessions/[id]/upgrade, stylist/onboarding/{save,advance,connect/{start,return}}, stylist/profile/boards, stylists/[id]/{waitlist,reviews}, payments/payouts, workers/{waitlist-notify,payout-reconcile}, admin/orders/[id]/{tracking,status,notes,refund,approve-refund}, uploads, stylists, subscriptions, billing, chat, push
