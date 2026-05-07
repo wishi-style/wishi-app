@@ -105,3 +105,59 @@ test("handleCheckoutCompleted skips the default-booking path when metadata.purpo
   const sessions = await prisma.session.count({ where: { clientId: buyer.id } });
   assert.equal(sessions, 0);
 });
+
+function fakeCheckoutSessionWithName(opts: {
+  userId: string;
+  name: string | null;
+}): Stripe.Checkout.Session {
+  return {
+    id: `cs_test_name_${opts.userId}`,
+    metadata: { userId: opts.userId, planType: "MINI" },
+    customer_details: { name: opts.name },
+    amount_total: 6000,
+  } as unknown as Stripe.Checkout.Session;
+}
+
+test("handleCheckoutCompleted captures customer_details.name into empty User row", async () => {
+  const suffix = randomUUID().slice(0, 8);
+  const user = await ensureClientUser({
+    clerkId: `rt_name_${suffix}`,
+    email: `rt-name-${suffix}@example.com`,
+    firstName: "",
+    lastName: "",
+  });
+  teardown.push(user as User);
+
+  await handleCheckoutCompleted(
+    fakeCheckoutSessionWithName({ userId: user.id, name: "Matt Cardozo" }),
+  );
+
+  const after = await prisma.user.findUniqueOrThrow({
+    where: { id: user.id },
+    select: { firstName: true, lastName: true },
+  });
+  assert.equal(after.firstName, "Matt");
+  assert.equal(after.lastName, "Cardozo");
+});
+
+test("handleCheckoutCompleted does not overwrite an existing name", async () => {
+  const suffix = randomUUID().slice(0, 8);
+  const user = await ensureClientUser({
+    clerkId: `rt_name2_${suffix}`,
+    email: `rt-name2-${suffix}@example.com`,
+    firstName: "Already",
+    lastName: "Named",
+  });
+  teardown.push(user as User);
+
+  await handleCheckoutCompleted(
+    fakeCheckoutSessionWithName({ userId: user.id, name: "Different Person" }),
+  );
+
+  const after = await prisma.user.findUniqueOrThrow({
+    where: { id: user.id },
+    select: { firstName: true, lastName: true },
+  });
+  assert.equal(after.firstName, "Already");
+  assert.equal(after.lastName, "Named");
+});

@@ -22,6 +22,10 @@ export async function createOneTimeCheckout(options: CheckoutOptions) {
 
   return stripe.checkout.sessions.create({
     customer: customerId,
+    // Have Stripe sync the cardholder name into Customer.name on completion
+    // so subsequent backfills via customers.retrieve see the correct value
+    // without needing to fall through to PaymentMethod.billing_details.name.
+    customer_update: { name: "auto" },
     mode: "payment",
     line_items: [{ price: plan.stripePriceIdOneTime, quantity: 1 }],
     success_url: options.successUrl,
@@ -49,6 +53,7 @@ export async function createSubscriptionCheckout(options: CheckoutOptions) {
 
   return stripe.checkout.sessions.create({
     customer: customerId,
+    customer_update: { name: "auto" },
     mode: "subscription",
     line_items: [{ price: plan.stripePriceIdSubscription, quantity: 1 }],
     subscription_data: {

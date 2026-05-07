@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { getPrivateNote } from "@/lib/stylists/private-notes";
 import { clientDisplayName } from "@/lib/users/display-name";
 import { ensureUserNamesFromClerk } from "@/lib/users/ensure-clerk-name";
+import { ensureUserNamesFromStripe } from "@/lib/users/ensure-stripe-name";
 
 export type ViewLoyaltyTier = "new" | "bronze" | "silver" | "gold" | "vip";
 
@@ -154,6 +155,7 @@ export async function resolveClientProfileView(
       select: {
         id: true,
         clerkId: true,
+        stripeCustomerId: true,
         firstName: true,
         lastName: true,
         email: true,
@@ -211,20 +213,26 @@ export async function resolveClientProfileView(
 
   if (!user) return null;
 
-  // Backfill firstName/lastName from Clerk for users whose row never picked
-  // them up via the user.created/user.updated webhook. Mutates the local
-  // `user` object so the rest of this resolver sees the freshest values.
-  await ensureUserNamesFromClerk([
-    {
-      id: user.id,
-      clerkId: user.clerkId,
-      firstName: user.firstName,
-      lastName: user.lastName,
-    },
-  ]).then((rows) => {
-    user.firstName = rows[0].firstName;
-    user.lastName = rows[0].lastName;
-  });
+  // Backfill firstName/lastName from Clerk first, falling through to Stripe
+  // (cardholder name on the user's first checkout) for rows still empty.
+  // Mutates the local `user` object so the rest of this resolver sees the
+  // freshest values.
+  const clerkRow = {
+    id: user.id,
+    clerkId: user.clerkId,
+    firstName: user.firstName,
+    lastName: user.lastName,
+  };
+  await ensureUserNamesFromClerk([clerkRow]);
+  const stripeRow = {
+    id: user.id,
+    stripeCustomerId: user.stripeCustomerId,
+    firstName: clerkRow.firstName,
+    lastName: clerkRow.lastName,
+  };
+  await ensureUserNamesFromStripe([stripeRow]);
+  user.firstName = stripeRow.firstName;
+  user.lastName = stripeRow.lastName;
 
   const fullName = clientDisplayName(user.firstName, user.lastName, user.email);
 

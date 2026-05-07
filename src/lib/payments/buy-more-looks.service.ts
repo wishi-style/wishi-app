@@ -54,6 +54,7 @@ export async function createBuyMoreLooksCheckout(
 
   return stripe.checkout.sessions.create({
     customer: customerId,
+    customer_update: { name: "auto" },
     mode: "payment",
     line_items: [
       {
