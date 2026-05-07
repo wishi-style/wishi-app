@@ -11,17 +11,23 @@ import {
 } from "./db";
 
 /**
- * §3.3 + §3.4 — `/sessions` list rebuilt to Loveable's SessionCard contract
- * and the chat-link redirect hop dropped.
+ * `/sessions` list — SessionCard contract.
  *
  *  - SessionCard renders stylist name + plan badge + relative-time +
  *    status-aware action CTA
- *  - Active sessions with a Twilio channel link straight to `/sessions/[id]/chat`
- *    (no /sessions/[id] redirect hop)
+ *  - ACTIVE sessions link straight to `/sessions/[id]/chat`
  *  - PENDING_END_APPROVAL CTA points at `/end-session`
  *  - COMPLETED sessions surface a "Book {stylist} Again" CTA pointing at the
  *    stylist's public profile
- *  - An unrated sent board flips the card into "Review Style Board" priority
+ *  - An unrated sent board flips the card into a high-priority "Review …"
+ *    CTA. Label varies by board kind:
+ *      MOODBOARD                → "Review Moodboard"
+ *      STYLEBOARD               → "Review Styleboard"
+ *      STYLEBOARD (isRevision)  → "Review Revised Look"
+ *    All three MUST link to `/sessions/[id]/chat`. The chat surface renders
+ *    the board inline as a card with rate + RestyleWizard pills — there is
+ *    no standalone `/sessions/[id]/{moodboards,styleboards}/[boardId]`
+ *    viewer in the client tree, and any link that points there 404s.
  */
 
 test.afterAll(async () => {
@@ -55,7 +61,7 @@ test("sessions list renders Loveable cards with status-aware CTAs", async ({ pag
   const stylistProfile = await ensureStylistProfile({ userId: stylist.id });
 
   // Three sessions cover the major card states:
-  //  - active w/ channel → "View Session" + chat link
+  //  - active w/ channel → "Open Chat" + chat link
   //  - PENDING_END_APPROVAL → "Approve End" + end-session link
   //  - COMPLETED → "Book Maya Again" + stylist profile link
   const active = await createSessionForClient({
@@ -103,18 +109,18 @@ test("sessions list renders Loveable cards with status-aware CTAs", async ({ pag
     expect(body).toMatch(/Lux/i);
 
     // Status-aware CTA labels.
-    await expect(page.getByRole("link", { name: "View Session" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open Chat" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Approve End" })).toBeVisible();
     await expect(
       page.getByRole("link", { name: "Book Maya Again" }),
     ).toBeVisible();
 
-    // §3.4 — active session card jumps straight to /chat, not the
-    // /sessions/[id] detail hop.
-    const viewSessionHref = await page
-      .getByRole("link", { name: "View Session" })
+    // Active session card jumps straight to /chat, not the /sessions/[id]
+    // detail hop.
+    const openChatHref = await page
+      .getByRole("link", { name: "Open Chat" })
       .getAttribute("href");
-    expect(viewSessionHref).toBe(`/sessions/${active.id}/chat`);
+    expect(openChatHref).toBe(`/sessions/${active.id}/chat`);
 
     // PENDING_END_APPROVAL routes to the end-session modal page.
     const approveHref = await page
@@ -138,56 +144,94 @@ test("sessions list renders Loveable cards with status-aware CTAs", async ({ pag
   }
 });
 
-test("unrated sent board flips card to Review Style Board priority", async ({ page }) => {
-  const ts = Date.now() + 1;
-  const clientEmail = `sl-board-c-${ts}@e2e.wishi.test`;
-  const stylistEmail = `sl-board-s-${ts}@e2e.wishi.test`;
+// Each new_board variant: card label + URL the CTA must point at. ALL go
+// to /chat — there is no /sessions/[id]/{moodboards,styleboards}/[boardId]
+// page in the client tree. A regression here is what landed users on the
+// global 404 ("Oops! This page couldn't be found") after tapping a styleboard
+// notification.
+const NEW_BOARD_VARIANTS = [
+  {
+    name: "moodboard",
+    label: "Review Moodboard",
+    boardType: "MOODBOARD" as const,
+    isRevision: false,
+  },
+  {
+    name: "styleboard",
+    label: "Review Styleboard",
+    boardType: "STYLEBOARD" as const,
+    isRevision: false,
+  },
+  {
+    name: "restyle revision",
+    label: "Review Revised Look",
+    boardType: "STYLEBOARD" as const,
+    isRevision: true,
+  },
+];
 
-  const client = await ensureClientUser({
-    clerkId: `e2e_sl_board_c_${ts}`,
-    email: clientEmail,
-    firstName: "Board",
-    lastName: "Watcher",
-  });
-  const stylist = await ensureStylistUser({
-    clerkId: `e2e_sl_board_s_${ts}`,
-    email: stylistEmail,
-    firstName: "Iris",
-    lastName: "Park",
-  });
-  const stylistProfile = await ensureStylistProfile({ userId: stylist.id });
-  const session = await createSessionForClient({
-    clientId: client.id,
-    stylistId: stylist.id,
-    status: "ACTIVE",
-    planType: "MAJOR",
-  });
-  const pool = getPool();
-  await pool.query(
-    `UPDATE sessions SET twilio_channel_sid = $1 WHERE id = $2`,
-    [`CH_e2e_sl_board_${ts}`, session.id],
-  );
-  // A sent + unrated styleboard for this session lights up the high-priority
-  // "Review Style Board" CTA.
-  await pool.query(
-    `INSERT INTO boards (id, type, session_id, stylist_profile_id, is_revision, sent_at, created_at, updated_at)
-     VALUES ($1, 'STYLEBOARD', $2, $3, false, NOW(), NOW(), NOW())`,
-    [`board_e2e_sl_${ts}`, session.id, stylistProfile.id],
-  );
+for (const variant of NEW_BOARD_VARIANTS) {
+  test(`unrated sent ${variant.name} → "${variant.label}" CTA links to /chat`, async ({
+    page,
+  }) => {
+    const ts = Date.now() + Math.floor(Math.random() * 1000);
+    const slug = variant.name.replace(/\s+/g, "-");
+    const clientEmail = `sl-${slug}-c-${ts}@e2e.wishi.test`;
+    const stylistEmail = `sl-${slug}-s-${ts}@e2e.wishi.test`;
 
-  try {
-    await signIn(page, clientEmail);
-    await page.goto("/sessions");
-    await page.waitForLoadState("networkidle");
-    await expect(page.getByRole("link", { name: "Review Style Board" })).toBeVisible();
-  } finally {
-    await pool.query(`DELETE FROM boards WHERE id = $1`, [`board_e2e_sl_${ts}`]);
+    const client = await ensureClientUser({
+      clerkId: `e2e_sl_${slug}_c_${ts}`,
+      email: clientEmail,
+      firstName: "Board",
+      lastName: "Watcher",
+    });
+    const stylist = await ensureStylistUser({
+      clerkId: `e2e_sl_${slug}_s_${ts}`,
+      email: stylistEmail,
+      firstName: "Iris",
+      lastName: "Park",
+    });
+    const stylistProfile = await ensureStylistProfile({ userId: stylist.id });
+    const session = await createSessionForClient({
+      clientId: client.id,
+      stylistId: stylist.id,
+      status: "ACTIVE",
+      planType: "MAJOR",
+    });
+    const pool = getPool();
     await pool.query(
-      `DELETE FROM session_pending_actions WHERE session_id = $1`,
-      [session.id],
+      `UPDATE sessions SET twilio_channel_sid = $1 WHERE id = $2`,
+      [`CH_e2e_sl_${slug}_${ts}`, session.id],
     );
-    await cleanupStylistProfile(stylist.id);
-    await cleanupE2EUserByEmail(clientEmail);
-    await cleanupE2EUserByEmail(stylistEmail);
-  }
-});
+    const boardId = `board_e2e_sl_${slug}_${ts}`;
+    await pool.query(
+      `INSERT INTO boards (id, type, session_id, stylist_profile_id, is_revision, sent_at, created_at, updated_at)
+       VALUES ($1, $2::"BoardType", $3, $4, $5, NOW(), NOW(), NOW())`,
+      [boardId, variant.boardType, session.id, stylistProfile.id, variant.isRevision],
+    );
+
+    try {
+      await signIn(page, clientEmail);
+      await page.goto("/sessions");
+      await page.waitForLoadState("networkidle");
+
+      const cta = page.getByRole("link", { name: variant.label });
+      await expect(cta).toBeVisible();
+      // Regression guard for the broken "/sessions/[id]/{path}/[boardId]"
+      // dead-link bug — the chat page is the only place that renders the
+      // board card inline with rate/restyle pills.
+      expect(await cta.getAttribute("href")).toBe(
+        `/sessions/${session.id}/chat`,
+      );
+    } finally {
+      await pool.query(`DELETE FROM boards WHERE id = $1`, [boardId]);
+      await pool.query(
+        `DELETE FROM session_pending_actions WHERE session_id = $1`,
+        [session.id],
+      );
+      await cleanupStylistProfile(stylist.id);
+      await cleanupE2EUserByEmail(clientEmail);
+      await cleanupE2EUserByEmail(stylistEmail);
+    }
+  });
+}
