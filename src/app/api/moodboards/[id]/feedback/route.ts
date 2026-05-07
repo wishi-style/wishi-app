@@ -31,6 +31,11 @@ export async function POST(
   if (board.session.clientId !== user.id) {
     return NextResponse.json({ error: "Only the client can rate" }, { status: 403 });
   }
-  const updated = await rateMoodboard(id, rating, body?.feedbackText ?? undefined);
+  const updated = await rateMoodboard(
+    id,
+    rating,
+    body?.feedbackText ?? undefined,
+    body?.feedbackDetail ?? undefined,
+  );
   return NextResponse.json(updated);
 }

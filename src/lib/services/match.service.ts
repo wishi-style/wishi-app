@@ -1,8 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { Gender } from "@/generated/prisma/client";
 import { createChatConversation } from "@/lib/chat/create-conversation";
-import { sendSystemMessage } from "@/lib/chat/send-message";
-import { SystemTemplate } from "@/lib/chat/system-templates";
 import { openAction } from "@/lib/pending-actions";
 import { dispatchNotification, notifyClient, notifyStylist } from "@/lib/notifications/dispatcher";
 import { stripe } from "@/lib/stripe";
@@ -172,18 +170,16 @@ export async function matchStylistForSession(sessionId: string) {
     );
   }
 
-  // SESSION_ACTIVATED system message (welcome already sent by createChatConversation).
+  // Loveable contract: the WELCOME bubble already fired from
+  // createChatConversation; no additional "session activated" stage bubble is
+  // dispatched here. Push + email notifications still fan out so both sides
+  // get paged off-session.
   try {
     const [client, stylist] = await Promise.all([
       prisma.user.findUnique({ where: { id: session.clientId }, select: { firstName: true } }),
       prisma.user.findUnique({ where: { id: assignedStylistId! }, select: { firstName: true } }),
     ]);
-    await sendSystemMessage(sessionId, SystemTemplate.SESSION_ACTIVATED, {
-      clientFirstName: client?.firstName ?? "there",
-      stylistFirstName: stylist?.firstName ?? "your stylist",
-    });
 
-    // Notify both sides that the session is live.
     await notifyClient(sessionId, {
       event: "session.activated",
       title: "Your stylist is ready",

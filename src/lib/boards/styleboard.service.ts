@@ -301,16 +301,13 @@ export async function sendStyleboard(
       body: "",
     });
   }
-  await sendSystemMessage(
-    sessionId,
-    isRevision ? SystemTemplate.RESTYLE_DELIVERED : SystemTemplate.STYLEBOARD_DELIVERED,
-    { stylistFirstName: stylist?.firstName ?? "Your stylist" },
-  );
+  // Loveable contract: the styleboard card appearing in chat IS the delivery
+  // signal. No "created a styleboard for you" stage bubble.
   await notifyClient(sessionId, {
     event: isRevision ? "restyle.sent" : "styleboard.sent",
     title: isRevision ? "Revised look" : "New styleboard",
     body: `${stylist?.firstName ?? "Your stylist"} sent you a new ${isRevision ? "revised look" : "styleboard"}.`,
-    url: `/sessions/${sessionId}/styleboards/${boardId}`,
+    url: `/sessions/${sessionId}/chat`,
   });
 
   // Lux milestone payout: fires when styleboardsSent reaches the plan's
@@ -370,6 +367,10 @@ export interface RateStyleboardInput {
   rating: BoardRating;
   feedbackText?: string;
   itemFeedback?: ItemFeedback[];
+  // Loveable RestyleWizard structured payload (per-item chips + notes).
+  // Stored on Board.feedbackDetail for full fidelity. Optional — inline pills
+  // (LOVE / NOT_MY_STYLE) submit without it.
+  feedbackDetail?: unknown;
 }
 
 export interface RateStyleboardResult {
@@ -427,6 +428,10 @@ export async function rateStyleboard(
       data: {
         rating: input.rating,
         feedbackText: input.feedbackText ?? null,
+        feedbackDetail:
+          input.feedbackDetail === undefined
+            ? undefined
+            : (input.feedbackDetail as Prisma.InputJsonValue),
         ratedAt: new Date(),
       },
     });
@@ -500,10 +505,10 @@ export async function rateStyleboard(
   });
   const clientFirstName = client?.firstName ?? "The client";
 
+  // Loveable contract: the styleboard card flips in place to show the rating.
+  // No "loved this look" / "requested a restyle" stage bubbles. Out-of-chat
+  // notifications still fire so the stylist gets paged off-session.
   if (input.rating === "LOVE") {
-    await sendSystemMessage(sessionId, SystemTemplate.FEEDBACK_STYLEBOARD_LOVE, {
-      clientFirstName,
-    });
     await notifyStylist(sessionId, {
       event: "styleboard.reviewed",
       title: "Styleboard loved",
@@ -511,9 +516,6 @@ export async function rateStyleboard(
       url: `/stylist/dashboard?session=${sessionId}`,
     });
   } else if (input.rating === "REVISE") {
-    await sendSystemMessage(sessionId, SystemTemplate.RESTYLE_REQUESTED, {
-      clientFirstName,
-    });
     await notifyStylist(sessionId, {
       event: "styleboard.reviewed",
       title: "Revise requested",
@@ -521,11 +523,6 @@ export async function rateStyleboard(
       url: `/stylist/dashboard?session=${sessionId}`,
     });
   } else {
-    await sendSystemMessage(
-      sessionId,
-      SystemTemplate.FEEDBACK_STYLEBOARD_NOT_MY_STYLE,
-      { clientFirstName },
-    );
     await notifyStylist(sessionId, {
       event: "styleboard.reviewed",
       title: "Styleboard feedback",

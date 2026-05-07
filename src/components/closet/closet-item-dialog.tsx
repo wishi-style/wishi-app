@@ -229,7 +229,7 @@ export function ClosetItemDialog({
                   {outfits.map((o) => (
                     <Link
                       key={o.boardId}
-                      href={`/sessions/${o.sessionId}/styleboards/${o.boardId}`}
+                      href={`/sessions/${o.sessionId}/chat`}
                       className="block"
                     >
                       {o.heroImageUrl ? (

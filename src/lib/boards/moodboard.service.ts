@@ -5,6 +5,7 @@ import { SystemTemplate } from "@/lib/chat/system-templates";
 import { notifyClient, notifyStylist } from "@/lib/notifications/dispatcher";
 import { detectPendingEnd } from "@/lib/sessions/transitions";
 import type { Board, BoardPhoto, BoardRating } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 
 export class BoardSendError extends Error {
   readonly code: string;
@@ -165,14 +166,13 @@ export async function sendMoodboard(
       body: "",
     });
   }
-  await sendSystemMessage(sessionId, SystemTemplate.MOODBOARD_DELIVERED, {
-    stylistFirstName: stylist?.firstName ?? "Your stylist",
-  });
+  // Loveable contract: the moodboard card appearing in chat IS the delivery
+  // signal. No "shared a moodboard with you" stage bubble.
   await notifyClient(sessionId, {
     event: "moodboard.sent",
     title: "New moodboard",
     body: `${stylist?.firstName ?? "Your stylist"} shared a moodboard for you.`,
-    url: `/sessions/${sessionId}/moodboards/${boardId}`,
+    url: `/sessions/${sessionId}/chat`,
   });
 
   // Auto-progress to PENDING_END if all deliverables are now in. Idempotent
@@ -196,6 +196,7 @@ export async function rateMoodboard(
   boardId: string,
   rating: MoodboardRating,
   feedbackText?: string,
+  feedbackDetail?: unknown,
 ): Promise<Board> {
   const board = await prisma.board.findUniqueOrThrow({
     where: { id: boardId },
@@ -225,7 +226,15 @@ export async function rateMoodboard(
   const updated = await prisma.$transaction(async (tx) => {
     const { count } = await tx.board.updateMany({
       where: { id: boardId, rating: null, sentAt: { not: null } },
-      data: { rating, feedbackText: feedbackText ?? null, ratedAt: new Date() },
+      data: {
+        rating,
+        feedbackText: feedbackText ?? null,
+        feedbackDetail:
+          feedbackDetail === undefined
+            ? undefined
+            : (feedbackDetail as Prisma.InputJsonValue),
+        ratedAt: new Date(),
+      },
     });
     if (count === 0) {
       throw new Error(`Moodboard ${boardId} was already rated`);
@@ -244,13 +253,8 @@ export async function rateMoodboard(
     where: { id: board.session.clientId },
     select: { firstName: true },
   });
-  const template =
-    rating === "LOVE"
-      ? SystemTemplate.FEEDBACK_MOODBOARD_LOVE
-      : SystemTemplate.FEEDBACK_MOODBOARD_NOT_MY_STYLE;
-  await sendSystemMessage(sessionId, template, {
-    clientFirstName: client?.firstName ?? "The client",
-  });
+  // Loveable contract: the moodboard card flips in place to show the rating.
+  // No "loved the moodboard" stage bubble.
   await notifyStylist(sessionId, {
     event: "moodboard.feedback",
     title: "Moodboard feedback",

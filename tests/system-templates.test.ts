@@ -15,37 +15,6 @@ test("WELCOME interpolates client, plan, and stylist", () => {
   assert.match(text, /Mini session with Taylor/);
 });
 
-test("SESSION_ACTIVATED uses stylist name", () => {
-  const text = renderSystemTemplate(SystemTemplate.SESSION_ACTIVATED, {
-    stylistFirstName: "Taylor",
-  });
-  assert.equal(
-    text,
-    "Your session is now active. Taylor is ready to start styling!",
-  );
-});
-
-test("MOODBOARD_DELIVERED uses stylist name", () => {
-  const text = renderSystemTemplate(SystemTemplate.MOODBOARD_DELIVERED, {
-    stylistFirstName: "Taylor",
-  });
-  assert.match(text, /Taylor shared a moodboard/);
-});
-
-test("STYLEBOARD_DELIVERED uses stylist name", () => {
-  const text = renderSystemTemplate(SystemTemplate.STYLEBOARD_DELIVERED, {
-    stylistFirstName: "Taylor",
-  });
-  assert.match(text, /Taylor created a styleboard/);
-});
-
-test("RESTYLE_REQUESTED uses client name", () => {
-  const text = renderSystemTemplate(SystemTemplate.RESTYLE_REQUESTED, {
-    clientFirstName: "Matt",
-  });
-  assert.match(text, /Matt requested a restyle/);
-});
-
 test("END_SESSION_REQUESTED uses requester name", () => {
   const text = renderSystemTemplate(SystemTemplate.END_SESSION_REQUESTED, {
     requesterFirstName: "Matt",
