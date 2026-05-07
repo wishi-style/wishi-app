@@ -248,13 +248,16 @@ export function StyleboardCard({
         <div className="mb-2 flex items-center justify-between">
           <h3 className="font-heading text-2xl">{title}</h3>
           <div className="flex items-center gap-3">
+            {/* Share dialog is launch-prep C1; the icon is rendered for
+                Loveable parity but the affordance itself is disabled until
+                the share flow ships, so it is not in tab order and does not
+                fire onClick. */}
             <button
               type="button"
-              onClick={() => {
-                /* Share defers to launch C1 follow-up. */
-              }}
-              className="rounded-full p-1.5 transition-colors hover:bg-muted"
-              aria-label="Share style board"
+              disabled
+              tabIndex={-1}
+              aria-hidden="true"
+              className="rounded-full p-1.5 opacity-40"
             >
               <Share2 className="h-4 w-4 text-muted-foreground" />
             </button>

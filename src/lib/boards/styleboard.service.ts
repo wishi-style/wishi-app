@@ -382,11 +382,16 @@ export interface RateStyleboardResult {
 
 /**
  * Client rates a styleboard.
- *  - LOVE: resolves pending feedback, writes Love system message.
+ *  - LOVE: resolves pending feedback. The chosen pill flips in place.
  *  - REVISE: increments bonusBoardsGranted, creates a child restyle board
- *    (draft, not sent), stores per-item feedback, opens PENDING_RESTYLE,
- *    fires RESTYLE_REQUESTED. Stylist's queue then picks up the new board.
- *  - NOT_MY_STYLE: resolves feedback, writes NMS system message.
+ *    (draft, not sent), stores per-item feedback, opens PENDING_RESTYLE.
+ *    Stylist's queue picks up the new board.
+ *  - NOT_MY_STYLE: resolves feedback.
+ *
+ * In every branch, dispatches a non-rendered BOARD_UPDATE realtime event so
+ * both sides' open cards refetch and reflect the rating without a stage
+ * bubble. The card flipping IS the in-chat signal. Out-of-chat
+ * notifications (push/email) still fire via the dispatcher.
  *
  * On the first-ever rate in a session (moodboard OR styleboard), if the
  * linked subscription is TRIALING, end the trial immediately to capture

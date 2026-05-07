@@ -74,9 +74,11 @@ export async function removeMoodboardPhoto(photoId: string): Promise<void> {
 
 /**
  * Send a moodboard to the client. Marks sentAt, writes a MOODBOARD chat
- * message, fires the MOODBOARD_DELIVERED system template, rolls pending
- * actions (resolve PENDING_MOODBOARD, open PENDING_CLIENT_FEEDBACK),
- * and increments the session counter.
+ * message (the inline card itself IS the in-chat delivery signal — no
+ * stage bubble is dispatched), rolls pending actions (resolve
+ * PENDING_MOODBOARD, open PENDING_CLIENT_FEEDBACK), increments the
+ * session counter, and fans out a push/email notification via the
+ * out-of-chat dispatcher.
  */
 export async function sendMoodboard(
   boardId: string,
@@ -191,8 +193,9 @@ export type MoodboardRating = Extract<BoardRating, "LOVE" | "NOT_MY_STYLE">;
 /**
  * Client rates a moodboard. Moodboards support LOVE and NOT_MY_STYLE only
  * (no Revise). Resolves the PENDING_CLIENT_FEEDBACK action for this board
- * and fires the matching SYSTEM_AUTOMATED acknowledgement. On LOVE, opens
- * PENDING_STYLEBOARD so the stylist is queued to start the first look.
+ * and dispatches a non-rendered BOARD_UPDATE realtime event so both sides'
+ * open cards refetch in place — no SYSTEM_AUTOMATED stage bubble. On LOVE,
+ * opens PENDING_STYLEBOARD so the stylist is queued to start the first look.
  */
 export async function rateMoodboard(
   boardId: string,

@@ -33,14 +33,23 @@ export interface MoodBoardWizardProps {
   ) => void | Promise<void>;
 }
 
-export function MoodBoardWizard({
-  open,
+export function MoodBoardWizard(props: MoodBoardWizardProps) {
+  // Mount/unmount the inner component on `open` so internal state always
+  // resets to the latest `initialFeedback` / `initialNotes` props on each
+  // open. Returning null inline (without unmounting) would otherwise pin
+  // first-mount state and ignore prop updates between opens — the case
+  // that breaks "View My Feedback" after a fresh server fetch.
+  if (!props.open) return null;
+  return <MoodBoardWizardBody {...props} />;
+}
+
+function MoodBoardWizardBody({
   images,
   initialFeedback,
   initialNotes,
   onClose,
   onComplete,
-}: MoodBoardWizardProps) {
+}: Omit<MoodBoardWizardProps, "open">) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [feedback, setFeedback] = useState<Record<number, string[]>>(
     initialFeedback ?? {},
@@ -51,7 +60,6 @@ export function MoodBoardWizard({
   const [showMore, setShowMore] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  if (!open) return null;
   const total = images.length;
   if (total === 0) return null;
   const selected = feedback[currentIndex] || [];

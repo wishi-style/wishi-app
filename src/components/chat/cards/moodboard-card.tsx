@@ -57,10 +57,11 @@ function derivePersistedFeedback(
 
 /**
  * Maps the Loveable per-image wizard payload onto the Wishi feedback API.
- * `rating` is derived: any image marked positive ("Would wear" / "Love the
- * vibe") with no explicit negative gives LOVE; otherwise NOT_MY_STYLE. The
- * full per-image structure is preserved on Board.feedbackDetail so we can
- * grow the UI without losing fidelity.
+ * `rating` is derived by majority vote across images: each image with at
+ * least one chip selected is classified positive ("Would wear" / "Love the
+ * vibe") or negative; LOVE wins on ties. The full per-image structure is
+ * preserved on Board.feedbackDetail so we can grow the UI (and the rating
+ * heuristic) without losing fidelity.
  */
 function summariseFeedback(
   feedback: Record<number, string[]>,

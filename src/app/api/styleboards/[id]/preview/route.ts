@@ -31,6 +31,17 @@ interface PreviewProduct {
   inventoryProductId: string | null;
 }
 
+// Format an integer cent amount as a localized currency string. Falls back
+// to USD when the upstream product has no currency. Cent precision is
+// preserved (Math.round on whole dollars dropped 19.99 → $20).
+function formatPrice(amountInCents: number, currency: string | null | undefined): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: currency || "USD",
+    minimumFractionDigits: amountInCents % 100 === 0 ? 0 : 2,
+  }).format(amountInCents / 100);
+}
+
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -66,6 +77,10 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  // Inventory lookups fan out in parallel and are bounded by `take: 12`,
+  // and `getProduct` has a 5-minute in-process cache so repeat opens of
+  // the same card don't refetch. A true batch endpoint on the upstream
+  // tastegraph service is the right long-term fix; tracked separately.
   const resolved = await Promise.all(
     board.items.map(async (item): Promise<PreviewProduct | null> => {
       switch (item.source) {
@@ -74,10 +89,11 @@ export async function GET(
           const p = await getProduct(item.inventoryProductId).catch(() => null);
           if (!p) return null;
           const minCents = Math.round(p.min_price * 100);
+          const maxCents = Math.round(p.max_price * 100);
           const priceStr =
-            p.min_price === p.max_price
-              ? `$${Math.round(p.min_price)}`
-              : `$${Math.round(p.min_price)} – $${Math.round(p.max_price)}`;
+            minCents === maxCents
+              ? formatPrice(minCents, p.currency)
+              : `${formatPrice(minCents, p.currency)} – ${formatPrice(maxCents, p.currency)}`;
           return {
             id: item.id,
             brand: p.brand_name ?? "Unknown",
@@ -119,7 +135,7 @@ export async function GET(
             image: item.webItemImageUrl ?? null,
             price:
               typeof item.webItemPriceInCents === "number"
-                ? `$${Math.round(item.webItemPriceInCents / 100)}`
+                ? formatPrice(item.webItemPriceInCents, "USD")
                 : "",
             priceInCents: item.webItemPriceInCents ?? null,
             soldOut: false,
