@@ -122,21 +122,15 @@ function messagePreview(session: SessionData): string {
 
 function actionHref(status: CardStatus, session: SessionData): string {
   switch (status) {
-    case "new_board": {
-      // Route to the board viewer so the label ("Review Moodboard" /
-      // "Review Styleboard") matches the destination. The viewer pages
-      // render the board AND surface rate/restyle actions.
-      const board = session.boards[0];
-      if (!board) return `/sessions/${session.id}/chat`;
-      const path = board.type === "MOODBOARD" ? "moodboards" : "styleboards";
-      return `/sessions/${session.id}/${path}/${board.id}`;
-    }
+    case "new_board":
     case "in_progress":
     case "booked":
-      // Skip the /sessions/[id] redirect hop and link straight to the chat
-      // when a Twilio channel exists. For BOOKED sessions waiting on
-      // activation, the chat page now handles the half-state via use-chat
-      // self-heal — fall through to the same destination.
+      // Always route to the chat page. The chat surface renders the
+      // moodboard / styleboard / restyle inline as a card with rating +
+      // RestyleWizard pills, which is what the "Review …" CTA wants. There
+      // is no standalone /sessions/[id]/{moodboards,styleboards}/[boardId]
+      // viewer in the client tree — only /chat, /end-session, and
+      // /style-quiz live under (client-fullbleed)/sessions/[id]/.
       return `/sessions/${session.id}/chat`;
     case "awaiting_reply":
       return `/sessions/${session.id}/end-session`;
