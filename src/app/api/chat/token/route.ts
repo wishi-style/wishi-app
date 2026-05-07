@@ -23,20 +23,21 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  // If sessionId provided, verify the user is a participant
+  // If sessionId provided, verify the user is a participant. We intentionally
+  // do NOT block on missing `twilioChannelSid` — `useChat` already degrades
+  // gracefully (DB-bootstrap fallback) and `getConversationSid` self-heals
+  // on send. A token grants access to the Conversations Service, not a
+  // specific conversation, so handing it out is safe.
   if (sessionId) {
     const session = await prisma.session.findUnique({
       where: { id: sessionId },
-      select: { clientId: true, stylistId: true, twilioChannelSid: true },
+      select: { clientId: true, stylistId: true },
     });
     if (!session) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
     if (session.clientId !== user.id && session.stylistId !== user.id) {
       return NextResponse.json({ error: "Not a participant" }, { status: 403 });
-    }
-    if (!session.twilioChannelSid) {
-      return NextResponse.json({ error: "Chat not yet available" }, { status: 400 });
     }
   }
 

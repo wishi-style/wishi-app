@@ -99,12 +99,16 @@ export async function POST(
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
-  if (!auth.session.twilioChannelSid) {
+  if (!auth.session.stylistId) {
     return NextResponse.json(
-      { error: "No chat channel for this session" },
+      { error: "Session not yet matched to a stylist" },
       { status: 400 },
     );
   }
+  // NOTE: we intentionally do NOT block on `twilioChannelSid` being null —
+  // `sendTextMessage`/`sendSingleItemMessage` route through `getConversationSid`
+  // which self-heals via `createChatConversation` on demand. Blocking here
+  // would prevent the chat from recovering from a half-provisioned state.
   const payload = (await req.json().catch(() => ({}))) as {
     kind?: "TEXT" | "SINGLE_ITEM";
     body?: string;
