@@ -15,7 +15,7 @@ interface SessionData {
     stylistProfile: { id: string } | null;
   } | null;
   messages: { text: string | null; createdAt: Date; kind: string }[];
-  boards: { id: string; type: string }[];
+  boards: { id: string; type: string; isRevision?: boolean }[];
 }
 
 type CardStatus =
@@ -59,14 +59,22 @@ function deriveStatus(session: SessionData): CardStatus {
   return "closed";
 }
 
-function actionLabel(status: CardStatus, stylistFirstName: string): string {
+function actionLabel(
+  status: CardStatus,
+  session: SessionData,
+  stylistFirstName: string,
+): string {
   switch (status) {
-    case "new_board":
-      return "Review Style Board";
+    case "new_board": {
+      const board = session.boards[0];
+      if (board?.type === "MOODBOARD") return "Review Moodboard";
+      if (board?.isRevision) return "Review Revised Look";
+      return "Review Styleboard";
+    }
     case "awaiting_reply":
       return "Approve End";
     case "in_progress":
-      return "View Session";
+      return "Open Chat";
     case "booked":
       return "Continue";
     case "completed":
@@ -114,16 +122,22 @@ function messagePreview(session: SessionData): string {
 
 function actionHref(status: CardStatus, session: SessionData): string {
   switch (status) {
-    case "new_board":
+    case "new_board": {
+      // Route to the board viewer so the label ("Review Moodboard" /
+      // "Review Styleboard") matches the destination. The viewer pages
+      // render the board AND surface rate/restyle actions.
+      const board = session.boards[0];
+      if (!board) return `/sessions/${session.id}/chat`;
+      const path = board.type === "MOODBOARD" ? "moodboards" : "styleboards";
+      return `/sessions/${session.id}/${path}/${board.id}`;
+    }
     case "in_progress":
     case "booked":
-      // §3.4: skip the /sessions/[id] redirect hop and link straight to the
-      // chat (StylingRoom) when there's a real Twilio channel. For BOOKED
-      // sessions before a channel is provisioned the detail page is the
-      // right fallback.
-      return session.twilioChannelSid
-        ? `/sessions/${session.id}/chat`
-        : `/sessions/${session.id}`;
+      // Skip the /sessions/[id] redirect hop and link straight to the chat
+      // when a Twilio channel exists. For BOOKED sessions waiting on
+      // activation, the chat page now handles the half-state via use-chat
+      // self-heal — fall through to the same destination.
+      return `/sessions/${session.id}/chat`;
     case "awaiting_reply":
       return `/sessions/${session.id}/end-session`;
     case "completed":
@@ -224,7 +238,7 @@ export function SessionCard({ session }: { session: SessionData }) {
             : "border border-input text-foreground hover:bg-accent hover:text-accent-foreground"
         }`}
       >
-        {actionLabel(status, firstName)}
+        {actionLabel(status, session, firstName)}
       </Link>
     </div>
   );

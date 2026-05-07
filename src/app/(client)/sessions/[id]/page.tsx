@@ -142,15 +142,17 @@ export default async function SessionDetailPage({ params }: Props) {
               Complete Style Quiz
             </Link>
           )}
-          {session.twilioChannelSid &&
-            ["ACTIVE", "PENDING_END", "PENDING_END_APPROVAL", "END_DECLINED"].includes(session.status) && (
-              <Link
-                href={`/sessions/${session.id}/chat`}
-                className="rounded-full bg-teal-600 px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
-              >
-                Chat with Stylist
-              </Link>
-            )}
+          {/* Chat with Stylist: render for any non-cancelled status. The chat
+              page handles its own status-based read-only / send affordances,
+              and `useChat` self-heals a missing twilioChannelSid. */}
+          {!["CANCELLED", "REASSIGNED"].includes(session.status) && (
+            <Link
+              href={`/sessions/${session.id}/chat`}
+              className="rounded-full bg-teal-600 px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
+            >
+              {session.status === "BOOKED" ? "Continue to Session" : "Chat with Stylist"}
+            </Link>
+          )}
         </div>
       </div>
     </main>

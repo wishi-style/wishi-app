@@ -180,4 +180,23 @@ export async function handleTipPaymentSucceeded(pi: Stripe.PaymentIntent): Promi
     }
     throw error;
   }
+
+  // Notify stylist that a tip landed.
+  try {
+    const { notifyStylist } = await import("@/lib/notifications/dispatcher");
+    const client = await prisma.user.findUnique({
+      where: { id: session.clientId },
+      select: { firstName: true },
+    });
+    const dollars = (pi.amount / 100).toFixed(0);
+    await notifyStylist(sessionId, {
+      event: "tip.received",
+      title: `You got a $${dollars} tip`,
+      body: `${client?.firstName ?? "Your client"} left you a tip.`,
+      url: `/stylist/dashboard?session=${sessionId}`,
+      emailProperties: { tipInCents: pi.amount, sessionId },
+    });
+  } catch (err) {
+    console.warn("[tip] notification failed", { sessionId, err });
+  }
 }

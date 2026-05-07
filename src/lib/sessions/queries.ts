@@ -19,12 +19,13 @@ export async function getSessionsByClient(userId: string) {
         select: { text: true, createdAt: true, kind: true },
       },
       // Any sent board the client hasn't rated yet flags the session as
-      // "new_board" priority — left-accent bar + "Review Style Board" CTA.
+      // "new_board" priority — left-accent bar + a Review CTA labeled per
+      // board type (Moodboard / Styleboard / Revised Look).
       boards: {
         where: { sentAt: { not: null }, rating: null },
         orderBy: { sentAt: "desc" },
         take: 1,
-        select: { id: true, type: true },
+        select: { id: true, type: true, isRevision: true },
       },
     },
     orderBy: { createdAt: "desc" },

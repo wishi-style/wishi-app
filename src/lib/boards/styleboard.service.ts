@@ -4,6 +4,8 @@ import { sendSystemMessage, sendBoardMessage } from "@/lib/chat/send-message";
 import { SystemTemplate } from "@/lib/chat/system-templates";
 import { notifyClient, notifyStylist } from "@/lib/notifications/dispatcher";
 import { endTrialEarly } from "@/lib/payments/subscription-trial";
+import { detectPendingEnd } from "@/lib/sessions/transitions";
+import { BoardSendError } from "./moodboard.service";
 import type {
   Board,
   BoardItem,
@@ -193,18 +195,47 @@ export async function sendStyleboard(
     where: { id: boardId },
     include: {
       items: true,
-      session: { select: { id: true, stylistId: true, clientId: true } },
+      session: {
+        select: {
+          id: true,
+          stylistId: true,
+          clientId: true,
+          status: true,
+          styleboardsSent: true,
+          styleboardsAllowed: true,
+          bonusBoardsGranted: true,
+        },
+      },
     },
   });
   if (board.type !== "STYLEBOARD") {
-    throw new Error(`Board ${boardId} is not a styleboard`);
+    throw new BoardSendError("NOT_STYLEBOARD", `Board ${boardId} is not a styleboard`, 400);
   }
   if (!board.sessionId || !board.session) {
-    throw new Error(`Styleboard ${boardId} has no session`);
+    throw new BoardSendError("NO_SESSION", `Styleboard ${boardId} has no session`, 400);
   }
   if (board.sentAt) return board;
   if (board.items.length < 3) {
-    throw new Error("Styleboards require at least 3 items");
+    throw new BoardSendError("TOO_FEW_ITEMS", "Styleboards require at least 3 items", 400);
+  }
+  if (board.session.status !== "ACTIVE") {
+    throw new BoardSendError(
+      "SESSION_NOT_ACTIVE",
+      `Cannot send a styleboard on a ${board.session.status} session`,
+      409,
+    );
+  }
+  // Revisions don't count against the styleboards allowance — they consume
+  // a bonus slot opened by `rateStyleboard(REVISE)`. Plain styleboards do.
+  if (!board.isRevision) {
+    const totalAllowed = board.session.styleboardsAllowed + board.session.bonusBoardsGranted;
+    if (board.session.styleboardsSent >= totalAllowed) {
+      throw new BoardSendError(
+        "STYLEBOARD_LIMIT",
+        `This plan allows ${totalAllowed} styleboard(s); ${board.session.styleboardsSent} already sent`,
+        409,
+      );
+    }
   }
 
   const sessionId = board.sessionId;
@@ -289,6 +320,11 @@ export async function sendStyleboard(
   if (!isRevision) {
     await maybeDispatchLuxMilestone(sessionId);
   }
+
+  // Auto-progress to PENDING_END when this was the last deliverable.
+  await detectPendingEnd(sessionId).catch((err) => {
+    console.warn("[styleboard] detectPendingEnd failed", { sessionId, err });
+  });
 
   return updated;
 }

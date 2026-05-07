@@ -23,7 +23,11 @@ test("checkout retries still backfill the payment and rerun auto-match", () => {
   });
 });
 
-test("checkout retries do not auto-match when a stylist was explicitly selected", () => {
+test("checkout retries fire the activation pipeline even when a stylist was explicitly selected", () => {
+  // matchStylistForSession is now the single activation entry point — it
+  // handles auto-match and explicit-stylist activation, opens
+  // PENDING_MOODBOARD, sends SESSION_ACTIVATED, creates the chat
+  // conversation. Recovery should fire it for any BOOKED session.
   const plan = buildCheckoutRecoveryPlan({
     existingSession: {
       status: "BOOKED",
@@ -36,7 +40,7 @@ test("checkout retries do not auto-match when a stylist was explicitly selected"
   assert.deepEqual(plan, {
     shouldCreateSession: false,
     shouldCreatePayment: true,
-    shouldAutoMatch: false,
+    shouldAutoMatch: true,
   });
 });
 
@@ -55,20 +59,39 @@ test("subscription and renewal retries reuse an existing unmatched booked sessio
   });
 });
 
-test("only unmatched booked sessions are eligible for retry matching", () => {
+test("only BOOKED sessions are eligible for the activation pipeline", () => {
+  // Non-BOOKED statuses are not candidates — the activation pipeline is
+  // BOOKED → ACTIVE specifically.
   assert.equal(
     shouldAutoMatchRecoveredSession({
       explicitStylistUserId: null,
       session: { status: "ACTIVE", stylistId: null },
     }),
-    false
+    false,
   );
-
   assert.equal(
     shouldAutoMatchRecoveredSession({
       explicitStylistUserId: null,
+      session: { status: "COMPLETED", stylistId: "stylist_123" },
+    }),
+    false,
+  );
+
+  // BOOKED with explicit stylist is now in scope — matchStylistForSession
+  // handles both auto-match and explicit-stylist activation.
+  assert.equal(
+    shouldAutoMatchRecoveredSession({
+      explicitStylistUserId: "stylist_123",
       session: { status: "BOOKED", stylistId: "stylist_123" },
     }),
-    false
+    true,
+  );
+  // BOOKED with no stylist also fires (auto-match branch).
+  assert.equal(
+    shouldAutoMatchRecoveredSession({
+      explicitStylistUserId: null,
+      session: { status: "BOOKED", stylistId: null },
+    }),
+    true,
   );
 });

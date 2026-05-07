@@ -59,5 +59,10 @@ export function shouldAutoMatchRecoveredSession({
   explicitStylistUserId?: string | null;
   session: RecoverableSession;
 }) {
-  return !explicitStylistUserId && !session.stylistId && session.status === "BOOKED";
+  // `matchStylistForSession` is now the single activation entry point and
+  // handles both auto-match (no stylistId) and explicit-stylist activation
+  // (stylistId set at booking time). Fire it for every BOOKED session — the
+  // service decides whether to rank or just activate.
+  void explicitStylistUserId;
+  return session.status === "BOOKED";
 }

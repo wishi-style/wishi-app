@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import type { Gender } from "@/generated/prisma/client";
 import { createChatConversation } from "@/lib/chat/create-conversation";
+import { sendSystemMessage } from "@/lib/chat/send-message";
+import { SystemTemplate } from "@/lib/chat/system-templates";
+import { openAction } from "@/lib/pending-actions";
+import { dispatchNotification, notifyClient, notifyStylist } from "@/lib/notifications/dispatcher";
+import { stripe } from "@/lib/stripe";
 import { canReassignSession } from "./admin-guards";
 
 /**
@@ -97,9 +102,17 @@ export async function rankStylistsForClient(
 }
 
 /**
- * Auto-matcher: assigns the best-fit stylist to a BOOKED session and
- * creates the chat conversation. Wraps rankStylistsForClient + Session
- * + SessionMatchHistory writes. Returns null when no eligible stylists.
+ * Single activation pipeline for newly-paid sessions. Handles both:
+ *   - Auto-match (no stylistId at creation) — runs ranker, picks top stylist.
+ *   - Explicit-stylist booking (stylistId set at creation) — skips ranker,
+ *     uses the pre-selected stylist.
+ *
+ * Atomically: assigns stylist (if needed), flips BOOKED → ACTIVE, opens
+ * PENDING_MOODBOARD, writes SessionMatchHistory. Then creates the Twilio
+ * conversation (best-effort — `sendTwilioMessage` self-heals later) and
+ * sends SESSION_ACTIVATED + booking notifications.
+ *
+ * Returns null when the session is not BOOKED or no eligible stylist.
  */
 export async function matchStylistForSession(sessionId: string) {
   const session = await prisma.session.findUniqueOrThrow({
@@ -107,45 +120,48 @@ export async function matchStylistForSession(sessionId: string) {
     select: {
       id: true,
       clientId: true,
+      stylistId: true,
       status: true,
+      planType: true,
     },
   });
 
   if (session.status !== "BOOKED") return null;
 
-  const ranked = await rankStylistsForClient(session.clientId);
-  if (ranked.length === 0) {
-    console.warn(`[match] No eligible stylists for session ${sessionId}`);
-    return null;
+  let assignedStylistId = session.stylistId;
+  if (!assignedStylistId) {
+    const ranked = await rankStylistsForClient(session.clientId);
+    if (ranked.length === 0) {
+      console.warn(`[match] No eligible stylists for session ${sessionId}`);
+      return null;
+    }
+    assignedStylistId = ranked[0].userId;
   }
 
-  const bestMatch = ranked[0];
-
-  await prisma.$transaction([
-    prisma.session.update({
-      where: { id: sessionId },
+  await prisma.$transaction(async (tx) => {
+    await tx.session.update({
+      where: { id: sessionId, status: "BOOKED" },
       data: {
-        stylistId: bestMatch.userId,
+        stylistId: assignedStylistId,
         status: "ACTIVE",
         startedAt: new Date(),
       },
-    }),
-    prisma.sessionMatchHistory.create({
+    });
+    await tx.sessionMatchHistory.create({
       data: {
         sessionId,
         clientId: session.clientId,
-        stylistId: bestMatch.userId,
+        stylistId: assignedStylistId!,
       },
-    }),
-  ]);
+    });
+    await openAction(sessionId, "PENDING_MOODBOARD", { tx });
+  });
 
+  // Twilio conversation — best-effort. `getConversationSid` self-heals on
+  // first send if this fails.
   try {
     await createChatConversation(sessionId);
   } catch (err) {
-    // Don't 5xx the auto-match flow if Twilio is flaky — the session is
-    // legitimately matched and the participant clicks now self-heal the
-    // conversation via getConversationSid in lib/chat/send-message.ts. Log
-    // with full context so CloudWatch can alarm on a sustained Twilio issue.
     console.error(
       JSON.stringify({
         event: "create_chat_conversation_failed",
@@ -156,7 +172,35 @@ export async function matchStylistForSession(sessionId: string) {
     );
   }
 
-  return bestMatch;
+  // SESSION_ACTIVATED system message (welcome already sent by createChatConversation).
+  try {
+    const [client, stylist] = await Promise.all([
+      prisma.user.findUnique({ where: { id: session.clientId }, select: { firstName: true } }),
+      prisma.user.findUnique({ where: { id: assignedStylistId! }, select: { firstName: true } }),
+    ]);
+    await sendSystemMessage(sessionId, SystemTemplate.SESSION_ACTIVATED, {
+      clientFirstName: client?.firstName ?? "there",
+      stylistFirstName: stylist?.firstName ?? "your stylist",
+    });
+
+    // Notify both sides that the session is live.
+    await notifyClient(sessionId, {
+      event: "session.activated",
+      title: "Your stylist is ready",
+      body: `${stylist?.firstName ?? "Your stylist"} is paired with you. Open the chat to say hi.`,
+      url: `/sessions/${sessionId}/chat`,
+    });
+    await notifyStylist(sessionId, {
+      event: "session.booked",
+      title: "New booking",
+      body: `${client?.firstName ?? "A client"} just booked a session with you.`,
+      url: `/stylist/dashboard?session=${sessionId}`,
+    });
+  } catch (err) {
+    console.error("[match] post-activation messaging failed", { sessionId, err });
+  }
+
+  return { sessionId, stylistUserId: assignedStylistId };
 }
 
 /**
@@ -212,23 +256,106 @@ export async function reassignStylist({
 }
 
 /**
- * Admin override: cancel an active session. Reason is captured in AuditLog
- * at the call site (not on the session row) to avoid a schema change.
+ * Admin override: cancel an active session. Cascades the cleanup that the
+ * session lifecycle would otherwise do at COMPLETED:
+ *   - Resolves all open PendingActions to prevent orphan reminders.
+ *   - Refunds the session's Stripe payment (one-time bookings; subscriptions
+ *     are handled separately via subscription cancellation).
+ *   - Notifies both client and stylist.
+ *
+ * Twilio conversation is left intact so participants can still see history.
+ * AuditLog row is captured at the call site.
  */
-export async function adminCancelSession({ sessionId }: { sessionId: string }) {
+export async function adminCancelSession({
+  sessionId,
+  reason,
+}: {
+  sessionId: string;
+  reason?: string;
+}) {
   const session = await prisma.session.findUniqueOrThrow({
     where: { id: sessionId },
-    select: { status: true },
+    select: {
+      status: true,
+      clientId: true,
+      stylistId: true,
+      stripePaymentIntentId: true,
+      isMembership: true,
+    },
   });
 
   if (session.status === "COMPLETED" || session.status === "CANCELLED") {
     throw new Error(`Session already in status ${session.status}`);
   }
 
-  await prisma.session.update({
-    where: { id: sessionId },
-    data: { status: "CANCELLED", cancelledAt: new Date() },
+  await prisma.$transaction(async (tx) => {
+    await tx.session.update({
+      where: { id: sessionId },
+      data: { status: "CANCELLED", cancelledAt: new Date() },
+    });
+    // Close any open PendingActions so neither side keeps seeing them on the
+    // dashboard or in expiry notifications.
+    await tx.sessionPendingAction.updateMany({
+      where: { sessionId, status: "OPEN" },
+      data: { status: "EXPIRED" },
+    });
   });
+
+  // One-time bookings: issue a Stripe refund. Subscription cancellations are
+  // handled by the dedicated `subscription.deleted` webhook flow.
+  if (!session.isMembership && session.stripePaymentIntentId) {
+    try {
+      await stripe.refunds.create(
+        {
+          payment_intent: session.stripePaymentIntentId,
+          reason: "requested_by_customer",
+          metadata: {
+            sessionId,
+            kind: "admin_cancel",
+            ...(reason ? { reason } : {}),
+          },
+        },
+        {
+          idempotencyKey: `admin-cancel-${sessionId}`,
+        },
+      );
+      await prisma.payment.updateMany({
+        where: { sessionId, type: "SESSION", status: "SUCCEEDED" },
+        data: { status: "REFUNDED" },
+      });
+    } catch (err) {
+      console.error("[admin] cancel-session refund failed", { sessionId, err });
+    }
+  }
+
+  // Notify both parties.
+  try {
+    const [client, stylist] = await Promise.all([
+      prisma.user.findUnique({ where: { id: session.clientId }, select: { firstName: true } }),
+      session.stylistId
+        ? prisma.user.findUnique({ where: { id: session.stylistId }, select: { firstName: true } })
+        : null,
+    ]);
+    await dispatchNotification({
+      event: "session.cancelled",
+      userId: session.clientId,
+      title: "Session cancelled",
+      body: "Your session was cancelled. A refund is on its way if applicable.",
+      url: `/sessions`,
+    });
+    if (session.stylistId) {
+      await dispatchNotification({
+        event: "session.cancelled",
+        userId: session.stylistId,
+        title: "Session cancelled",
+        body: `${client?.firstName ?? "Your client"}'s session was cancelled.`,
+        url: `/stylist/dashboard`,
+      });
+    }
+    void stylist; // keep readable destructure
+  } catch (err) {
+    console.error("[admin] cancel-session notify failed", { sessionId, err });
+  }
 
   return { sessionId };
 }
