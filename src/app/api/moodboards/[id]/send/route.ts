@@ -31,6 +31,15 @@ export async function POST(
     const sent = await sendMoodboard(id, { note });
     return NextResponse.json(sent);
   } catch (e) {
+    console.error(
+      JSON.stringify({
+        event: "moodboard_send_failed",
+        boardId: id,
+        userId: user.id,
+        err: e instanceof Error ? e.message : String(e),
+        stack: e instanceof Error ? e.stack : undefined,
+      }),
+    );
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Failed to send" },
       { status: 400 },

@@ -142,9 +142,17 @@ export async function matchStylistForSession(sessionId: string) {
   try {
     await createChatConversation(sessionId);
   } catch (err) {
+    // Don't 5xx the auto-match flow if Twilio is flaky — the session is
+    // legitimately matched and the participant clicks now self-heal the
+    // conversation via getConversationSid in lib/chat/send-message.ts. Log
+    // with full context so CloudWatch can alarm on a sustained Twilio issue.
     console.error(
-      `[match] Failed to create chat conversation for session ${sessionId}:`,
-      err,
+      JSON.stringify({
+        event: "create_chat_conversation_failed",
+        sessionId,
+        err: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      }),
     );
   }
 
