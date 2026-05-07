@@ -83,7 +83,12 @@ export function MoodboardBuilderShell({
           body: JSON.stringify({ note }),
         });
         if (!res.ok) {
-          toast.error("Couldn't send moodboard");
+          const body = await res.json().catch(() => ({}));
+          toast.error(
+            body?.error
+              ? `Couldn't send moodboard: ${body.error}`
+              : "Couldn't send moodboard",
+          );
           return;
         }
         back();
