@@ -17,8 +17,17 @@ export async function handleMessageAdded(event: TwilioMessageEvent) {
   });
 
   if (!session) {
+    // Conversation orphaned — typically from a partial-failure
+    // createChatConversation that posted the welcome message but never
+    // committed twilioChannelSid back to the Session row. Log enough to
+    // chase the orphan in Twilio if it persists.
     console.warn(
-      `[twilio-webhook] No session found for conversation ${event.ConversationSid}`,
+      JSON.stringify({
+        event: "twilio_webhook_orphaned_conversation",
+        conversationSid: event.ConversationSid,
+        messageSid: event.MessageSid,
+        author: event.Author,
+      }),
     );
     return;
   }
