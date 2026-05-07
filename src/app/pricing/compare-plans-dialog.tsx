@@ -56,7 +56,7 @@ export function ComparePlansDialog({ triggerLabel = "Compare plans" }: Props) {
         {triggerLabel}
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle className="font-display text-2xl">Compare plans</DialogTitle>
         </DialogHeader>

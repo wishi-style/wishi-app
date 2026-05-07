@@ -85,7 +85,7 @@ export function UpgradePlanDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-8 gap-0 text-center max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-md p-8 gap-0 text-center max-h-[90vh] overflow-y-auto">
         <h2 className="font-display text-2xl mb-1">Upgrade your plan</h2>
         <p className="text-muted-foreground text-sm mb-6">
           You&apos;re currently on {currentLabel}. Upgrade for more looks and perks.

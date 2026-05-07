@@ -2033,7 +2033,9 @@ export function StyleboardBuilder({
             ? {
                 id: pdpItem.id,
                 image: pdpItem.image,
-                brand: `${pdpItem.brand} — ${pdpItem.name}`,
+                brand: pdpItem.brand,
+                name: pdpItem.name,
+                retailer: pdpItem.retailer,
                 price: pdpItem.price ?? "—",
               }
             : null
