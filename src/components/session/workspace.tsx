@@ -423,7 +423,7 @@ export function SessionWorkspace({
                 {styleboards.map((b, idx) => (
                   <Link
                     key={b.id}
-                    href={`/sessions/${sessionId}/styleboards/${b.id}`}
+                    href={`/sessions/${sessionId}/chat`}
                     className="rounded-lg border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md"
                   >
                     <h4 className="font-display text-lg leading-tight">

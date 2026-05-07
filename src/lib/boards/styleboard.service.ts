@@ -1,7 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { openAction, resolveAction } from "@/lib/pending-actions";
-import { sendSystemMessage, sendBoardMessage } from "@/lib/chat/send-message";
-import { SystemTemplate } from "@/lib/chat/system-templates";
+import {
+  sendBoardMessage,
+  sendBoardUpdateEvent,
+} from "@/lib/chat/send-message";
 import { notifyClient, notifyStylist } from "@/lib/notifications/dispatcher";
 import { endTrialEarly } from "@/lib/payments/subscription-trial";
 import { detectPendingEnd } from "@/lib/sessions/transitions";
@@ -301,16 +303,13 @@ export async function sendStyleboard(
       body: "",
     });
   }
-  await sendSystemMessage(
-    sessionId,
-    isRevision ? SystemTemplate.RESTYLE_DELIVERED : SystemTemplate.STYLEBOARD_DELIVERED,
-    { stylistFirstName: stylist?.firstName ?? "Your stylist" },
-  );
+  // Loveable contract: the styleboard card appearing in chat IS the delivery
+  // signal. No "created a styleboard for you" stage bubble.
   await notifyClient(sessionId, {
     event: isRevision ? "restyle.sent" : "styleboard.sent",
     title: isRevision ? "Revised look" : "New styleboard",
     body: `${stylist?.firstName ?? "Your stylist"} sent you a new ${isRevision ? "revised look" : "styleboard"}.`,
-    url: `/sessions/${sessionId}/styleboards/${boardId}`,
+    url: `/sessions/${sessionId}/chat`,
   });
 
   // Lux milestone payout: fires when styleboardsSent reaches the plan's
@@ -370,6 +369,10 @@ export interface RateStyleboardInput {
   rating: BoardRating;
   feedbackText?: string;
   itemFeedback?: ItemFeedback[];
+  // Loveable RestyleWizard structured payload (per-item chips + notes).
+  // Stored on Board.feedbackDetail for full fidelity. Optional — inline pills
+  // (LOVE / NOT_MY_STYLE) submit without it.
+  feedbackDetail?: unknown;
 }
 
 export interface RateStyleboardResult {
@@ -379,11 +382,16 @@ export interface RateStyleboardResult {
 
 /**
  * Client rates a styleboard.
- *  - LOVE: resolves pending feedback, writes Love system message.
+ *  - LOVE: resolves pending feedback. The chosen pill flips in place.
  *  - REVISE: increments bonusBoardsGranted, creates a child restyle board
- *    (draft, not sent), stores per-item feedback, opens PENDING_RESTYLE,
- *    fires RESTYLE_REQUESTED. Stylist's queue then picks up the new board.
- *  - NOT_MY_STYLE: resolves feedback, writes NMS system message.
+ *    (draft, not sent), stores per-item feedback, opens PENDING_RESTYLE.
+ *    Stylist's queue picks up the new board.
+ *  - NOT_MY_STYLE: resolves feedback.
+ *
+ * In every branch, dispatches a non-rendered BOARD_UPDATE realtime event so
+ * both sides' open cards refetch and reflect the rating without a stage
+ * bubble. The card flipping IS the in-chat signal. Out-of-chat
+ * notifications (push/email) still fire via the dispatcher.
  *
  * On the first-ever rate in a session (moodboard OR styleboard), if the
  * linked subscription is TRIALING, end the trial immediately to capture
@@ -427,6 +435,10 @@ export async function rateStyleboard(
       data: {
         rating: input.rating,
         feedbackText: input.feedbackText ?? null,
+        feedbackDetail:
+          input.feedbackDetail === undefined
+            ? undefined
+            : (input.feedbackDetail as Prisma.InputJsonValue),
         ratedAt: new Date(),
       },
     });
@@ -500,10 +512,28 @@ export async function rateStyleboard(
   });
   const clientFirstName = client?.firstName ?? "The client";
 
-  if (input.rating === "LOVE") {
-    await sendSystemMessage(sessionId, SystemTemplate.FEEDBACK_STYLEBOARD_LOVE, {
-      clientFirstName,
+  // Realtime channel for the stylist's open card to refetch its summary.
+  // Non-rendered chat event; replaces the FEEDBACK_*_LOVE / RESTYLE_REQUESTED
+  // stage bubbles we used to dispatch.
+  await sendBoardUpdateEvent(sessionId, boardId).catch((err) => {
+    console.warn("[styleboard] BOARD_UPDATE dispatch failed", { sessionId, boardId, err });
+  });
+  // If a child restyle board was created on REVISE, dispatch one for it too
+  // so the stylist's queue picks it up in real time.
+  if (result.restyleBoard) {
+    await sendBoardUpdateEvent(sessionId, result.restyleBoard.id).catch((err) => {
+      console.warn("[styleboard] BOARD_UPDATE (restyle) dispatch failed", {
+        sessionId,
+        restyleBoardId: result.restyleBoard?.id,
+        err,
+      });
     });
+  }
+
+  // Loveable contract: the styleboard card flips in place to show the rating.
+  // No "loved this look" / "requested a restyle" stage bubbles. Out-of-chat
+  // notifications still fire so the stylist gets paged off-session.
+  if (input.rating === "LOVE") {
     await notifyStylist(sessionId, {
       event: "styleboard.reviewed",
       title: "Styleboard loved",
@@ -511,9 +541,6 @@ export async function rateStyleboard(
       url: `/stylist/dashboard?session=${sessionId}`,
     });
   } else if (input.rating === "REVISE") {
-    await sendSystemMessage(sessionId, SystemTemplate.RESTYLE_REQUESTED, {
-      clientFirstName,
-    });
     await notifyStylist(sessionId, {
       event: "styleboard.reviewed",
       title: "Revise requested",
@@ -521,11 +548,6 @@ export async function rateStyleboard(
       url: `/stylist/dashboard?session=${sessionId}`,
     });
   } else {
-    await sendSystemMessage(
-      sessionId,
-      SystemTemplate.FEEDBACK_STYLEBOARD_NOT_MY_STYLE,
-      { clientFirstName },
-    );
     await notifyStylist(sessionId, {
       event: "styleboard.reviewed",
       title: "Styleboard feedback",

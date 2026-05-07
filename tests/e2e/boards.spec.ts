@@ -209,18 +209,20 @@ test.describe("Phase 4: boards", () => {
       );
       expect(sendRes.status()).toBe(200);
 
-      // Give the webhook a moment to persist
+      // Give the webhook a moment to persist. Per Loveable parity contract
+      // there is no MOODBOARD_DELIVERED stage bubble — the inline card
+      // appearing IS the in-chat signal.
       await expect
         .poll(async () => (await getMessages(ctx.session.id)).length, {
           timeout: 15_000,
         })
-        .toBeGreaterThanOrEqual(2); // MOODBOARD + SYSTEM_AUTOMATED
+        .toBeGreaterThanOrEqual(1);
 
       const msgs = await getMessages(ctx.session.id);
       expect(msgs.some((m) => m.kind === "MOODBOARD" && m.board_id === board.id)).toBe(true);
       expect(
         msgs.some((m) => m.system_template === "MOODBOARD_DELIVERED"),
-      ).toBe(true);
+      ).toBe(false);
 
       // Client signs in and rates LOVE
       const clientCtx = await browser.newContext();
@@ -236,12 +238,14 @@ test.describe("Phase 4: boards", () => {
       );
       expect(rateRes.status()).toBe(200);
 
-      // Assertions
+      // Assertions. Per Loveable parity contract, a rating dispatches a
+      // BOARD_UPDATE realtime event (no system_template, no body) — not a
+      // FEEDBACK_MOODBOARD_LOVE stage bubble. The card flips in place.
       await expect
         .poll(async () => (await getMessages(ctx.session.id)).length, {
           timeout: 15_000,
         })
-        .toBeGreaterThanOrEqual(3);
+        .toBeGreaterThanOrEqual(2);
 
       const boards = await getBoards(ctx.session.id);
       expect(boards).toHaveLength(1);
@@ -260,6 +264,13 @@ test.describe("Phase 4: boards", () => {
       const allMsgs = await getMessages(ctx.session.id);
       expect(
         allMsgs.some((m) => m.system_template === "FEEDBACK_MOODBOARD_LOVE"),
+      ).toBe(false);
+      // The realtime card-update signal is dispatched as a BOARD_UPDATE
+      // message kind, never rendered, used by both sides' cards to refetch.
+      expect(
+        allMsgs.some(
+          (m) => m.kind === "BOARD_UPDATE" && m.board_id === board.id,
+        ),
       ).toBe(true);
 
       await stylistCtx.close();
@@ -375,13 +386,19 @@ test.describe("Phase 4: boards", () => {
       expect(restyle?.status).toBe("OPEN");
       expect(restyle?.board_id).toBe(child!.id);
 
-      // System messages include RESTYLE_REQUESTED
+      // Per Loveable parity contract, a Revise rating no longer dispatches
+      // a RESTYLE_REQUESTED stage bubble — the card flips and a fresh child
+      // RESTYLE message is sent when the stylist responds. Verify the
+      // realtime BOARD_UPDATE signal landed instead.
       await expect
         .poll(
-          async () => (await getMessages(ctx.session.id)).map((m) => m.system_template),
+          async () =>
+            (await getMessages(ctx.session.id)).filter(
+              (m) => m.kind === "BOARD_UPDATE" && m.board_id === board.id,
+            ).length,
           { timeout: 10_000 },
         )
-        .toContain("RESTYLE_REQUESTED");
+        .toBeGreaterThan(0);
 
       await stylistCtx.close();
       await clientCtx.close();

@@ -98,6 +98,7 @@ export function MessageList({
                   isOwn={isOwn}
                   sessionId={sessionId}
                   viewerRole={viewerRole}
+                  chatMessages={messages}
                 />
                 {!isSystem && (
                   <span

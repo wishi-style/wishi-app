@@ -1,10 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { openAction, resolveAction } from "@/lib/pending-actions";
-import { sendSystemMessage, sendBoardMessage } from "@/lib/chat/send-message";
-import { SystemTemplate } from "@/lib/chat/system-templates";
+import {
+  sendBoardMessage,
+  sendBoardUpdateEvent,
+} from "@/lib/chat/send-message";
 import { notifyClient, notifyStylist } from "@/lib/notifications/dispatcher";
 import { detectPendingEnd } from "@/lib/sessions/transitions";
 import type { Board, BoardPhoto, BoardRating } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 
 export class BoardSendError extends Error {
   readonly code: string;
@@ -71,9 +74,11 @@ export async function removeMoodboardPhoto(photoId: string): Promise<void> {
 
 /**
  * Send a moodboard to the client. Marks sentAt, writes a MOODBOARD chat
- * message, fires the MOODBOARD_DELIVERED system template, rolls pending
- * actions (resolve PENDING_MOODBOARD, open PENDING_CLIENT_FEEDBACK),
- * and increments the session counter.
+ * message (the inline card itself IS the in-chat delivery signal — no
+ * stage bubble is dispatched), rolls pending actions (resolve
+ * PENDING_MOODBOARD, open PENDING_CLIENT_FEEDBACK), increments the
+ * session counter, and fans out a push/email notification via the
+ * out-of-chat dispatcher.
  */
 export async function sendMoodboard(
   boardId: string,
@@ -165,14 +170,13 @@ export async function sendMoodboard(
       body: "",
     });
   }
-  await sendSystemMessage(sessionId, SystemTemplate.MOODBOARD_DELIVERED, {
-    stylistFirstName: stylist?.firstName ?? "Your stylist",
-  });
+  // Loveable contract: the moodboard card appearing in chat IS the delivery
+  // signal. No "shared a moodboard with you" stage bubble.
   await notifyClient(sessionId, {
     event: "moodboard.sent",
     title: "New moodboard",
     body: `${stylist?.firstName ?? "Your stylist"} shared a moodboard for you.`,
-    url: `/sessions/${sessionId}/moodboards/${boardId}`,
+    url: `/sessions/${sessionId}/chat`,
   });
 
   // Auto-progress to PENDING_END if all deliverables are now in. Idempotent
@@ -189,13 +193,15 @@ export type MoodboardRating = Extract<BoardRating, "LOVE" | "NOT_MY_STYLE">;
 /**
  * Client rates a moodboard. Moodboards support LOVE and NOT_MY_STYLE only
  * (no Revise). Resolves the PENDING_CLIENT_FEEDBACK action for this board
- * and fires the matching SYSTEM_AUTOMATED acknowledgement. On LOVE, opens
- * PENDING_STYLEBOARD so the stylist is queued to start the first look.
+ * and dispatches a non-rendered BOARD_UPDATE realtime event so both sides'
+ * open cards refetch in place — no SYSTEM_AUTOMATED stage bubble. On LOVE,
+ * opens PENDING_STYLEBOARD so the stylist is queued to start the first look.
  */
 export async function rateMoodboard(
   boardId: string,
   rating: MoodboardRating,
   feedbackText?: string,
+  feedbackDetail?: unknown,
 ): Promise<Board> {
   const board = await prisma.board.findUniqueOrThrow({
     where: { id: boardId },
@@ -225,7 +231,15 @@ export async function rateMoodboard(
   const updated = await prisma.$transaction(async (tx) => {
     const { count } = await tx.board.updateMany({
       where: { id: boardId, rating: null, sentAt: { not: null } },
-      data: { rating, feedbackText: feedbackText ?? null, ratedAt: new Date() },
+      data: {
+        rating,
+        feedbackText: feedbackText ?? null,
+        feedbackDetail:
+          feedbackDetail === undefined
+            ? undefined
+            : (feedbackDetail as Prisma.InputJsonValue),
+        ratedAt: new Date(),
+      },
     });
     if (count === 0) {
       throw new Error(`Moodboard ${boardId} was already rated`);
@@ -244,12 +258,12 @@ export async function rateMoodboard(
     where: { id: board.session.clientId },
     select: { firstName: true },
   });
-  const template =
-    rating === "LOVE"
-      ? SystemTemplate.FEEDBACK_MOODBOARD_LOVE
-      : SystemTemplate.FEEDBACK_MOODBOARD_NOT_MY_STYLE;
-  await sendSystemMessage(sessionId, template, {
-    clientFirstName: client?.firstName ?? "The client",
+  // Loveable contract: the moodboard card flips in place to show the rating.
+  // No "loved the moodboard" stage bubble. We do dispatch a non-rendered
+  // BOARD_UPDATE Twilio event so the stylist's open card refetches its
+  // summary and shows the rating + feedback in real-time.
+  await sendBoardUpdateEvent(sessionId, boardId).catch((err) => {
+    console.warn("[moodboard] BOARD_UPDATE dispatch failed", { sessionId, boardId, err });
   });
   await notifyStylist(sessionId, {
     event: "moodboard.feedback",

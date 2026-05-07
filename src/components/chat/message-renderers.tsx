@@ -1,12 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckIcon, Heart, RefreshCw, ThumbsDown } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { CheckIcon } from "lucide-react";
 import type { ChatMessage } from "./use-chat";
-import { boardMessageHref } from "./board-href";
+import { MoodboardCard } from "./cards/moodboard-card";
+import { StyleboardCard } from "./cards/styleboard-card";
 
 export type ViewerRole = "CLIENT" | "STYLIST";
 
@@ -15,6 +14,12 @@ interface MessageBubbleProps {
   isOwn: boolean;
   sessionId: string;
   viewerRole: ViewerRole;
+  /**
+   * The full chat-stream messages array. Cards subscribe to this to detect
+   * realtime BOARD_UPDATE events for their boardId and refetch their summary.
+   * Optional so server-rendered fallbacks can omit it.
+   */
+  chatMessages?: ChatMessage[];
 }
 
 export function MessageBubble({
@@ -22,6 +27,7 @@ export function MessageBubble({
   isOwn,
   sessionId,
   viewerRole,
+  chatMessages,
 }: MessageBubbleProps) {
   const kind = (message.attributes.kind as string) ?? "TEXT";
   const boardId = (message.attributes.boardId as string) ?? null;
@@ -33,20 +39,22 @@ export function MessageBubble({
       return <PhotoMessage message={message} isOwn={isOwn} />;
     case "MOODBOARD":
       return (
-        <MoodBoardMessage
+        <MoodboardCard
           boardId={boardId}
-          href={boardMessageHref({ kind, sessionId, boardId, viewerRole })}
+          viewerRole={viewerRole}
+          chatMessages={chatMessages}
         />
       );
     case "STYLEBOARD":
     case "RESTYLE":
       return (
-        <StyleBoardMessage
+        <StyleboardCard
           boardId={boardId}
           isRestyle={kind === "RESTYLE"}
           body={message.body}
-          href={boardMessageHref({ kind, sessionId, boardId, viewerRole })}
+          sessionId={sessionId}
           viewerRole={viewerRole}
+          chatMessages={chatMessages}
         />
       );
     case "SINGLE_ITEM":
@@ -62,6 +70,9 @@ export function MessageBubble({
       return <EndSessionCard sessionId={sessionId} viewerRole={viewerRole} />;
     case "SYSTEM_AUTOMATED":
       return <SystemMessage message={message} />;
+    case "BOARD_UPDATE":
+      // Realtime-only signal; cards subscribe and refetch. Never rendered.
+      return null;
     default:
       return <TextMessage message={message} isOwn={isOwn} />;
   }
@@ -107,269 +118,6 @@ function PhotoMessage({ message, isOwn }: { message: ChatMessage; isOwn: boolean
       )}
       {message.body && (
         <p className="px-4 pb-3 pt-2 text-sm leading-relaxed">{message.body}</p>
-      )}
-    </div>
-  );
-}
-
-interface MoodBoardSummary {
-  id: string;
-  description?: string | null;
-  photos?: Array<{ id: string; url: string | null }>;
-}
-
-function MoodBoardMessage({
-  boardId,
-  href,
-}: {
-  boardId: string | null;
-  href: string | null;
-}) {
-  const [board, setBoard] = useState<MoodBoardSummary | null>(null);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    if (!boardId) return;
-    let cancelled = false;
-    fetch(`/api/moodboards/${boardId}`, { cache: "no-store" })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data: MoodBoardSummary) => {
-        if (!cancelled) setBoard(data);
-      })
-      .catch(() => {
-        if (!cancelled) setError(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [boardId]);
-
-  const photos = (board?.photos ?? [])
-    .map((p) => p.url)
-    .filter((u): u is string => Boolean(u))
-    .slice(0, 6);
-
-  return (
-    <div
-      className={`max-w-2xl ${otherBubble} overflow-hidden rounded-[22px] p-4 md:p-5`}
-    >
-      <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-        Moodboard
-      </p>
-      {board?.description && (
-        <p className="mt-2 text-sm leading-relaxed">{board.description}</p>
-      )}
-      {error ? (
-        <p className="mt-3 text-xs text-muted-foreground">
-          Couldn’t load preview.{" "}
-          {href && (
-            <Link href={href} className="underline">
-              Open
-            </Link>
-          )}
-        </p>
-      ) : photos.length === 0 ? (
-        <div className="mt-3 grid h-40 place-items-center rounded-md bg-muted text-xs text-muted-foreground">
-          {board ? "No photos yet" : "Loading…"}
-        </div>
-      ) : (
-        <div className="mt-3 grid grid-cols-3 gap-1.5">
-          {photos.map((url, i) => (
-            <div
-              key={i}
-              className="aspect-square overflow-hidden rounded-md bg-muted"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={url}
-                alt=""
-                className="h-full w-full object-cover"
-                loading="lazy"
-              />
-            </div>
-          ))}
-        </div>
-      )}
-      {href && (
-        <Link
-          href={href}
-          className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background hover:opacity-90 transition-opacity"
-        >
-          Review Moodboard
-        </Link>
-      )}
-    </div>
-  );
-}
-
-interface StyleBoardSummary {
-  id: string;
-  description?: string | null;
-  rating?: string | null;
-  items?: Array<{ id: string; orderIndex: number }>;
-  photos?: Array<{ id: string; url: string | null; orderIndex: number }>;
-}
-
-type Rating = "LOVE" | "REVISE" | "NOT_MY_STYLE";
-
-function StyleBoardMessage({
-  boardId,
-  isRestyle,
-  body,
-  href,
-  viewerRole,
-}: {
-  boardId: string | null;
-  isRestyle: boolean;
-  body: string | null;
-  href: string | null;
-  viewerRole: ViewerRole;
-}) {
-  const [board, setBoard] = useState<StyleBoardSummary | null>(null);
-  const [thumbs, setThumbs] = useState<string[]>([]);
-  const [submitting, setSubmitting] = useState<Rating | null>(null);
-  const [feedbackError, setFeedbackError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!boardId) return;
-    let cancelled = false;
-    Promise.all([
-      fetch(`/api/styleboards/${boardId}`, { cache: "no-store" }).then((r) =>
-        r.ok ? r.json() : null,
-      ),
-      fetch(`/api/styleboards/${boardId}/preview`, { cache: "no-store" }).then(
-        (r) => (r.ok ? r.json() : null),
-      ),
-    ])
-      .then(([data, preview]) => {
-        if (cancelled) return;
-        if (data) setBoard(data as StyleBoardSummary);
-        if (preview && Array.isArray((preview as { thumbnails?: unknown }).thumbnails)) {
-          setThumbs(
-            ((preview as { thumbnails: unknown[] }).thumbnails as string[]).filter(
-              (u) => typeof u === "string" && u.length > 0,
-            ),
-          );
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [boardId]);
-
-  async function submitRating(rating: Rating) {
-    if (!boardId || submitting) return;
-    setSubmitting(rating);
-    setFeedbackError(null);
-    const previous = board;
-    // Optimistic — flip the chip + hide the buttons immediately.
-    setBoard((b) => (b ? { ...b, rating } : b));
-    try {
-      const res = await fetch(`/api/styleboards/${boardId}/feedback`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ rating }),
-      });
-      if (!res.ok) {
-        const json = (await res.json().catch(() => ({}))) as { error?: string };
-        setBoard(previous);
-        setFeedbackError(json.error ?? "Could not save feedback");
-      }
-    } catch {
-      setBoard(previous);
-      setFeedbackError("Could not save feedback");
-    } finally {
-      setSubmitting(null);
-    }
-  }
-
-  const label = isRestyle ? "Restyle" : "Styleboard";
-  const reviewLabel = viewerRole === "CLIENT" ? "Review look" : "View look";
-  const canRate =
-    viewerRole === "CLIENT" && board != null && !board.rating;
-  const ratingPills: Array<{ key: Rating; label: string; icon: typeof Heart }> = [
-    { key: "LOVE", label: "Love", icon: Heart },
-    { key: "REVISE", label: "Revise", icon: RefreshCw },
-    { key: "NOT_MY_STYLE", label: "Not my style", icon: ThumbsDown },
-  ];
-
-  return (
-    <div
-      className={`max-w-2xl ${otherBubble} overflow-hidden rounded-[22px] p-4 md:p-5`}
-    >
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-          {label}
-        </p>
-        {board?.rating && (
-          <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
-            {board.rating.replaceAll("_", " ").toLowerCase()}
-          </span>
-        )}
-      </div>
-      {body && (
-        <p className="mt-2 text-base leading-7 whitespace-pre-line">{body}</p>
-      )}
-      {board?.description && !body && (
-        <p className="mt-2 text-base leading-7">{board.description}</p>
-      )}
-      <div className="mt-3 aspect-square overflow-hidden rounded-md bg-muted">
-        {thumbs.length > 0 ? (
-          <div className="columns-2 gap-1.5 h-full p-0.5">
-            {thumbs.map((url, i) => (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                key={i}
-                src={url}
-                alt={`Look piece ${i + 1}`}
-                className="mb-1.5 w-full rounded-sm object-cover"
-                loading="lazy"
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="grid h-full place-items-center text-xs text-muted-foreground">
-            {board ? "No items yet" : "Loading preview…"}
-          </div>
-        )}
-      </div>
-      {href && (
-        <Link
-          href={href}
-          className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background hover:opacity-90 transition-opacity"
-        >
-          {reviewLabel}
-        </Link>
-      )}
-      {canRate && (
-        <div
-          className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4"
-          role="group"
-          aria-label="Rate this style board"
-        >
-          {ratingPills.map(({ key, label: pillLabel, icon: Icon }) => (
-            <button
-              key={key}
-              type="button"
-              disabled={submitting !== null}
-              onClick={() => submitRating(key)}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-foreground",
-                submitting === key && "opacity-60",
-              )}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {pillLabel}
-            </button>
-          ))}
-        </div>
-      )}
-      {feedbackError && (
-        <p className="mt-2 text-xs text-destructive">{feedbackError}</p>
       )}
     </div>
   );

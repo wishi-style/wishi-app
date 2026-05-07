@@ -241,6 +241,10 @@ enum MessageKind {
   SINGLE_ITEM
   END_SESSION_REQUEST
   SYSTEM_AUTOMATED
+  // Realtime-only signal: re-fetch the referenced board's state. Carries
+  // boardId in attributes; never rendered in chat. Replaces the FEEDBACK_*
+  // stage bubbles we used to dispatch — same realtime delivery, zero noise.
+  BOARD_UPDATE
 }
 
 // === Boards ===
@@ -1301,6 +1305,10 @@ model Board {
   sentAt              DateTime?    @map("sent_at")
   rating              BoardRating?
   feedbackText        String?      @map("feedback_text") @db.Text
+  // MoodBoardWizard / RestyleWizard collect per-image / per-item structured
+  // feedback (chips + notes). Persisted as JSON so we can grow the wizard
+  // payload without expanding BoardRating or adding per-image tables.
+  feedbackDetail      Json?        @map("feedback_detail")
   ratedAt             DateTime?    @map("rated_at")
   createdAt           DateTime     @default(now()) @map("created_at")
   updatedAt           DateTime     @updatedAt @map("updated_at")
