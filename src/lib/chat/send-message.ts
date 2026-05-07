@@ -136,6 +136,12 @@ async function mirrorTwilioMessageToDb(input: {
         err: err instanceof Error ? err.message : String(err),
       }),
     );
+    // Re-throw non-idempotency errors so the caller can surface them. Twilio
+    // already accepted the post, so realtime delivery worked, but the chat's
+    // DB-bootstrap path is now missing this message until the webhook lands.
+    // Surfacing the failure beats a silent drop — the caller route handler
+    // logs structured context that we can chase in CloudWatch.
+    throw err;
   }
 }
 

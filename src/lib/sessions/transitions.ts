@@ -28,43 +28,17 @@ async function loadSession(sessionId: string): Promise<Session> {
 }
 
 /**
- * BOOKED → ACTIVE. Opens the first PENDING_MOODBOARD action and fires the
- * SESSION_ACTIVATED system message in chat.
- */
-export async function activateSession(sessionId: string): Promise<Session> {
-  const session = await loadSession(sessionId);
-  if (session.status !== "BOOKED") {
-    throw new SessionTransitionError(sessionId, session.status, "activate");
-  }
-
-  const updated = await prisma.$transaction(async (tx) => {
-    const s = await tx.session.update({
-      where: { id: sessionId },
-      data: { status: "ACTIVE", startedAt: new Date() },
-    });
-    await openAction(sessionId, "PENDING_MOODBOARD", { tx });
-    return s;
-  });
-
-  const [client, stylist] = await Promise.all([
-    prisma.user.findUnique({ where: { id: updated.clientId }, select: { firstName: true } }),
-    updated.stylistId
-      ? prisma.user.findUnique({ where: { id: updated.stylistId }, select: { firstName: true } })
-      : null,
-  ]);
-
-  await sendSystemMessage(sessionId, SystemTemplate.SESSION_ACTIVATED, {
-    clientFirstName: client?.firstName ?? "there",
-    stylistFirstName: stylist?.firstName ?? "your stylist",
-  });
-
-  return updated;
-}
-
-/**
  * Derived state: if all required boards are delivered, mark PENDING_END.
  * "Required" = moodboard + the plan's allotted styleboards + any bonus
  * boards granted (revisions don't count against the allowance).
+ *
+ * Wired into `sendStyleboard` and `rateMoodboard` / `rateStyleboard` so the
+ * session auto-progresses without the stylist needing to manually request
+ * end. Idempotent: skips if status isn't ACTIVE or readiness check fails.
+ *
+ * Note: BOOKED → ACTIVE activation lives in `matchStylistForSession`
+ * (services/match.service.ts) — it's the single activation entry point and
+ * handles both auto-match and explicit-stylist bookings.
  */
 export async function detectPendingEnd(sessionId: string): Promise<Session> {
   const session = await loadSession(sessionId);
@@ -139,6 +113,21 @@ export async function approveEnd(sessionId: string): Promise<Session> {
   });
 
   await sendSystemMessage(sessionId, SystemTemplate.END_SESSION_APPROVED, {});
+
+  // Notify stylist their end-request was approved (asymmetric counterpart to
+  // requestEnd's client notification).
+  if (updated.stylistId) {
+    const client = await prisma.user.findUnique({
+      where: { id: updated.clientId },
+      select: { firstName: true },
+    });
+    await notifyStylist(sessionId, {
+      event: "session.end_approved",
+      title: "Session completed",
+      body: `${client?.firstName ?? "Your client"} approved the wrap-up. Session is complete.`,
+      url: `/stylist/dashboard?session=${sessionId}`,
+    });
+  }
 
   // Dispatch the completion payout. Mini/Major fires SESSION_COMPLETED,
   // Lux fires LUX_FINAL (LUX_THIRD_LOOK already fired from sendStyleboard).

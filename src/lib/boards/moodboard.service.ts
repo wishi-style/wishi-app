@@ -3,7 +3,19 @@ import { openAction, resolveAction } from "@/lib/pending-actions";
 import { sendSystemMessage, sendBoardMessage } from "@/lib/chat/send-message";
 import { SystemTemplate } from "@/lib/chat/system-templates";
 import { notifyClient, notifyStylist } from "@/lib/notifications/dispatcher";
+import { detectPendingEnd } from "@/lib/sessions/transitions";
 import type { Board, BoardPhoto, BoardRating } from "@/generated/prisma/client";
+
+export class BoardSendError extends Error {
+  readonly code: string;
+  readonly status: number;
+  constructor(code: string, message: string, status = 409) {
+    super(message);
+    this.name = "BoardSendError";
+    this.code = code;
+    this.status = status;
+  }
+}
 
 export async function createMoodboard(
   sessionId: string,
@@ -77,19 +89,35 @@ export async function sendMoodboard(
           clientId: true,
           stylistId: true,
           status: true,
+          moodboardsSent: true,
+          moodboardsAllowed: true,
         },
       },
     },
   });
   if (board.type !== "MOODBOARD") {
-    throw new Error(`Board ${boardId} is not a moodboard`);
+    throw new BoardSendError("NOT_MOODBOARD", `Board ${boardId} is not a moodboard`, 400);
   }
   if (!board.sessionId || !board.session) {
-    throw new Error(`Moodboard ${boardId} has no session`);
+    throw new BoardSendError("NO_SESSION", `Moodboard ${boardId} has no session`, 400);
   }
   if (board.sentAt) return board;
   if (board.photos.length === 0) {
-    throw new Error("Cannot send an empty moodboard");
+    throw new BoardSendError("EMPTY", "Cannot send an empty moodboard", 400);
+  }
+  if (board.session.status !== "ACTIVE") {
+    throw new BoardSendError(
+      "SESSION_NOT_ACTIVE",
+      `Cannot send a moodboard on a ${board.session.status} session`,
+      409,
+    );
+  }
+  if (board.session.moodboardsSent >= board.session.moodboardsAllowed) {
+    throw new BoardSendError(
+      "MOODBOARD_LIMIT",
+      `This plan allows ${board.session.moodboardsAllowed} moodboard(s); ${board.session.moodboardsSent} already sent`,
+      409,
+    );
   }
 
   const sessionId = board.sessionId;
@@ -145,6 +173,12 @@ export async function sendMoodboard(
     title: "New moodboard",
     body: `${stylist?.firstName ?? "Your stylist"} shared a moodboard for you.`,
     url: `/sessions/${sessionId}/moodboards/${boardId}`,
+  });
+
+  // Auto-progress to PENDING_END if all deliverables are now in. Idempotent
+  // and a no-op when more boards remain.
+  await detectPendingEnd(sessionId).catch((err) => {
+    console.warn("[moodboard] detectPendingEnd failed", { sessionId, err });
   });
 
   return updated;

@@ -41,7 +41,7 @@ export async function runPendingActionExpiry(): Promise<ExpirySummary> {
         event: "session.overdue",
         title: "An action on your session is overdue",
         body: `The deadline passed on ${prettyType(action.type)}.`,
-        url: `${resolveAppUrl({ envAppUrl: process.env.APP_URL })}/stylist/sessions/${action.sessionId}`,
+        url: `${resolveAppUrl({ envAppUrl: process.env.APP_URL })}/stylist/dashboard?session=${action.sessionId}`,
       });
       notified += 1;
     } catch (err) {

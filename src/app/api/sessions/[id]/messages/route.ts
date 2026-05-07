@@ -17,6 +17,7 @@ async function authorize(sessionId: string, userId: string) {
       clientId: true,
       stylistId: true,
       twilioChannelSid: true,
+      status: true,
     },
   });
   if (!session) return { error: "Not found" as const, status: 404 };
@@ -25,6 +26,13 @@ async function authorize(sessionId: string, userId: string) {
   }
   return { session };
 }
+
+const SENDABLE_STATUSES = new Set([
+  "ACTIVE",
+  "PENDING_END",
+  "PENDING_END_APPROVAL",
+  "END_DECLINED",
+]);
 
 export async function GET(
   req: Request,
@@ -103,6 +111,12 @@ export async function POST(
     return NextResponse.json(
       { error: "Session not yet matched to a stylist" },
       { status: 400 },
+    );
+  }
+  if (!SENDABLE_STATUSES.has(auth.session.status)) {
+    return NextResponse.json(
+      { error: `Cannot send messages on a ${auth.session.status} session` },
+      { status: 409 },
     );
   }
   // NOTE: we intentionally do NOT block on `twilioChannelSid` being null —

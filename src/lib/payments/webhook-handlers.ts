@@ -270,6 +270,11 @@ export async function handleSubscriptionUpdated(subscription: Stripe.Subscriptio
 
   const localStatus = statusMap[subscription.status] ?? "ACTIVE";
 
+  const localSub = await prisma.subscription.findUnique({
+    where: { stripeSubscriptionId: subscription.id },
+    select: { id: true, status: true },
+  });
+
   await prisma.subscription.updateMany({
     where: { stripeSubscriptionId: subscription.id },
     data: {
@@ -284,6 +289,28 @@ export async function handleSubscriptionUpdated(subscription: Stripe.Subscriptio
         subscription.status === "canceled" ? new Date() : undefined,
     },
   });
+
+  // Auto-unfreeze: when a subscription recovers from PAST_DUE → ACTIVE/TRIALING,
+  // any sessions we froze in `handleInvoicePaymentFailed` should resume so the
+  // stylist can continue working without admin intervention.
+  if (
+    localSub &&
+    localSub.status === "PAST_DUE" &&
+    (localStatus === "ACTIVE" || localStatus === "TRIALING")
+  ) {
+    await prisma.session.updateMany({
+      where: {
+        subscriptionId: localSub.id,
+        status: "FROZEN",
+        frozenReason: "subscription_payment_failed",
+      },
+      data: {
+        status: "ACTIVE",
+        frozenAt: null,
+        frozenReason: null,
+      },
+    });
+  }
 }
 
 export async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
@@ -300,16 +327,34 @@ export async function handleSubscriptionDeleted(subscription: Stripe.Subscriptio
     },
   });
 
-  // Cancel any linked BOOKED sessions
+  // Cascade cancellation to every non-terminal session linked to this
+  // subscription — BOOKED, ACTIVE renewal sessions, FROZEN, and the
+  // PENDING_END* states. Without this, an already-active renewal session
+  // continues running after the subscription dies.
+  const cascadeStatuses = [
+    "BOOKED",
+    "ACTIVE",
+    "FROZEN",
+    "PENDING_END",
+    "PENDING_END_APPROVAL",
+    "END_DECLINED",
+  ] as const;
   await prisma.session.updateMany({
     where: {
       subscriptionId: localSub.id,
-      status: "BOOKED",
+      status: { in: [...cascadeStatuses] },
     },
     data: {
       status: "CANCELLED",
       cancelledAt: new Date(),
     },
+  });
+  await prisma.sessionPendingAction.updateMany({
+    where: {
+      session: { subscriptionId: localSub.id },
+      status: "OPEN",
+    },
+    data: { status: "EXPIRED" },
   });
 }
 

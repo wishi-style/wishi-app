@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { sendMoodboard } from "@/lib/boards/moodboard.service";
+import { sendMoodboard, BoardSendError } from "@/lib/boards/moodboard.service";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +31,12 @@ export async function POST(
     const sent = await sendMoodboard(id, { note });
     return NextResponse.json(sent);
   } catch (e) {
+    if (e instanceof BoardSendError) {
+      return NextResponse.json(
+        { error: e.message, code: e.code },
+        { status: e.status },
+      );
+    }
     console.error(
       JSON.stringify({
         event: "moodboard_send_failed",

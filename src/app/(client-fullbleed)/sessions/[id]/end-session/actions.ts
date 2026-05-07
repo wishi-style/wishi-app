@@ -104,6 +104,28 @@ export async function submitEndSessionFeedback(
     },
   });
 
+  // Notify stylist that a rating landed.
+  try {
+    const { notifyStylist } = await import("@/lib/notifications/dispatcher");
+    const client = await prisma.user.findUnique({
+      where: { id: session.clientId },
+      select: { firstName: true },
+    });
+    await notifyStylist(session.id, {
+      event: "rating.posted",
+      title: `${input.rating}-star rating`,
+      body: `${client?.firstName ?? "Your client"} rated your session.`,
+      url: `/stylist/dashboard?session=${session.id}`,
+      emailProperties: {
+        rating: input.rating,
+        hasReview: !!input.reviewText?.trim(),
+        sessionId: session.id,
+      },
+    });
+  } catch (err) {
+    console.warn("[end-session] rating notification failed", err);
+  }
+
   // Transition to COMPLETED (idempotent — approveEnd guards on status) which
   // also dispatches the completion payout. Safe to call even with a pending
   // tip PaymentIntent; the tip webhook will land later and bank the tip.
