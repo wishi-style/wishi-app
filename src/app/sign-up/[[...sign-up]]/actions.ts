@@ -28,8 +28,13 @@ export async function signUpForE2E(formData: FormData) {
     throw new Error("E2E sign-up is restricted to @e2e.wishi.test emails");
   }
 
-  const existing = await prisma.user.findUnique({
-    where: { email },
+  // `findFirst` (not `findUnique`) — `email` is no longer strictly unique on
+  // the User model. The partial unique on `(email) WHERE deleted_at IS NULL`
+  // guarantees at most one *active* row per email; soft-deleted rows are
+  // intentionally ignored here so a re-signup with a previously deleted
+  // address creates a fresh row instead of inheriting the dead one.
+  const existing = await prisma.user.findFirst({
+    where: { email, deletedAt: null },
     select: { clerkId: true, role: true, isAdmin: true },
   });
   if (existing?.clerkId) {
