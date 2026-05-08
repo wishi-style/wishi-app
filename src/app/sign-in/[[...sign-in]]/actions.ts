@@ -18,8 +18,13 @@ export async function signInForE2E(formData: FormData) {
     throw new Error("E2E sign-in is restricted to @e2e.wishi.test emails");
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email },
+  // `findFirst` (not `findUnique`) — `email` is no longer strictly unique on
+  // the User model. The DB-level partial unique on `(email) WHERE deleted_at
+  // IS NULL` guarantees at most one *active* row per email, so this query
+  // still returns one result for live e2e users while soft-deleted rows
+  // can't shadow them.
+  const user = await prisma.user.findFirst({
+    where: { email, deletedAt: null },
     select: { clerkId: true, role: true, isAdmin: true },
   });
   if (!user?.clerkId) {

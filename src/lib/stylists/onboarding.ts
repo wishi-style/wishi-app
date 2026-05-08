@@ -14,6 +14,7 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { DomainError } from "@/lib/errors/domain-error";
+import { syncStylistOnboardingForUser } from "@/lib/auth/reconcile-clerk-user";
 import type { StylistProfile, User } from "@/generated/prisma/client";
 
 export const TOTAL_STEPS = 12;
@@ -328,9 +329,11 @@ export async function advance(userId: string): Promise<{
     },
   });
 
-  await syncOnboardingMetadata(userId, updated.onboardingStatus).catch((err) =>
-    console.warn("[onboarding] Clerk metadata sync failed", err)
-  );
+  // Push the new onboardingStatus into Clerk publicMetadata so the edge
+  // proxy gate stays aligned with the DB without a per-request DB hit.
+  // Same opportunistic-sync contract as the other admin/stripe sites:
+  // failures are logged inside the helper, not rethrown here.
+  await syncStylistOnboardingForUser(userId);
 
   return {
     onboardingStep: updated.onboardingStep,
@@ -352,21 +355,4 @@ export async function resume(userId: string): Promise<{
     status: profile.onboardingStatus,
     isInHouse: profile.stylistType === "IN_HOUSE",
   };
-}
-
-// Sync onboarding status to Clerk publicMetadata so the edge proxy can read
-// it without a DB call.
-async function syncOnboardingMetadata(userId: string, status: string): Promise<void> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { clerkId: true },
-  });
-  if (!user?.clerkId) return;
-  // Avoid a hard Clerk SDK dependency in this module — the import stays
-  // lazy so unit tests can run without Clerk env vars.
-  const { clerkClient } = await import("@clerk/nextjs/server");
-  const client = await clerkClient();
-  await client.users.updateUserMetadata(user.clerkId, {
-    publicMetadata: { onboardingStatus: status },
-  });
 }
