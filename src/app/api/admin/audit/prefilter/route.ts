@@ -36,7 +36,7 @@ function bucketProducts(products: ProductSearchDoc[]) {
  * /(stylist)/stylist/sessions/[id]/styleboards/new/page.tsx so we can audit
  * "what would actually render for this client" without driving the UI.
  *
- * Usage: GET /api/admin/audit/prefilter?email=matthewcar@wishi.me
+ * Usage: GET /api/admin/audit/prefilter?email=user@example.com
  *        (or ?clientId=<userId>)
  */
 export async function GET(req: Request) {
@@ -51,8 +51,10 @@ export async function GET(req: Request) {
     );
   }
 
-  const client = await prisma.user.findFirst({
-    where: clientId ? { id: clientId } : { email: email!.toLowerCase() },
+  const client = await prisma.user.findUnique({
+    where: clientId
+      ? { id: clientId }
+      : { email: email!.toLowerCase() },
     select: {
       id: true,
       email: true,
@@ -127,7 +129,7 @@ export async function GET(req: Request) {
     liked_colors: likedColors,
     disliked_colors: dislikedColors,
     disliked_fabrics: dislikedFabrics,
-    disliked_patterns_NOT_FILTERED_BY_PR: dislikedPatterns,
+    disliked_patterns: dislikedPatterns,
     body_size_count: client.bodyProfile?.sizes.length ?? 0,
     budgets: client.budgetByCategory.map((b) => ({
       category: b.category,

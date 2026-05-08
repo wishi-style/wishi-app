@@ -1,7 +1,10 @@
 /**
- * Read-only audit of Matt's account in staging Postgres.
- * Prints stats + gender filter dry-run only (no PII echo).
+ * Read-only audit of a client account in staging Postgres.
+ * Prints profile summary + filter pipeline dry-run only.
  * Requires DATABASE_URL pointing at staging (read-only).
+ *
+ * Usage: AUDIT_EMAIL=user@example.com npx tsx scripts/audit-matt-prefilter.ts
+ *    or: npx tsx scripts/audit-matt-prefilter.ts user@example.com
  */
 import { prisma } from "@/lib/prisma";
 import { searchProducts } from "@/lib/inventory/inventory-client";
@@ -12,8 +15,13 @@ import {
 } from "@/lib/inventory/client-prefilter";
 
 async function main() {
-  const matt = await prisma.user.findFirst({
-    where: { email: "matthewcar@wishi.me" },
+  const email = process.argv[2] ?? process.env.AUDIT_EMAIL;
+  if (!email) {
+    console.error("Pass an email as the first arg or set AUDIT_EMAIL.");
+    process.exit(1);
+  }
+  const matt = await prisma.user.findUnique({
+    where: { email: email.toLowerCase() },
     select: {
       id: true,
       gender: true,
@@ -93,7 +101,10 @@ async function main() {
   console.log(JSON.stringify(bucket(finalForMatt), null, 2));
   console.log("Products dropped by dislike post-filter:", droppedByDislikes);
 
-  // Audit pattern-text match against canonical_name for the patterns we DON'T filter
+  // Pattern-text audit: surface canonical_name / canonical_description hits
+  // alongside the structured filter so we can spot weak product copy where
+  // the synonym map might still leak (e.g. a "Buffalo Plaid" lurking under
+  // an unparsed listings[].pattern field).
   const patternHits = filtered.results.filter((p) =>
     dislikedPatterns.some((pat) => {
       const word = pat.replace(/_/g, " ");

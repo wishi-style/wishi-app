@@ -1,9 +1,17 @@
 /**
  * Concrete proof that the prefilter functions actually do something against
- * the live tastegraph catalog. No DB access needed — uses Matt's preferences
- * verbatim from the stylist ClientDetailPanel screenshots, runs the live
+ * the live tastegraph catalog. No DB access needed — uses a placeholder set
+ * of preferences (or a JSON-encoded `PREFS` env var) and runs the live
  * `searchProducts()` plus `filterOutClientDislikes()` + `rankByClientLikes()`,
- * and prints the exact rows that get dropped or promoted.
+ * printing the exact rows that get dropped or promoted.
+ *
+ * To audit a specific client: copy their prefs out of `/api/admin/audit/prefilter?email=...`
+ * (the `liked_colors` / `disliked_colors` / `disliked_fabrics` / `disliked_patterns`
+ * fields, plus `avoid_brands` / `preferred_brands` from StyleProfile) and pass them
+ * via the PREFS env var:
+ *
+ *   PREFS='{"avoidBrands":[], "preferredBrands":[], "likedColors":["black"], ...}' \
+ *     npx tsx scripts/prove-filter-works.ts
  */
 import { searchProducts } from "@/lib/inventory/inventory-client";
 import {
@@ -13,21 +21,33 @@ import {
 } from "@/lib/inventory/client-prefilter";
 import type { ProductSearchDoc } from "@/lib/inventory/types";
 
-// Matt's own client preferences, transcribed verbatim from the stylist
-// ClientDetailPanel screenshots (matthewcar@wishi.me on staging).
-const MATT_PREFS = {
-  avoidBrands: [] as string[],
-  preferredBrands: [] as string[],
+type Prefs = {
+  avoidBrands: string[];
+  preferredBrands: string[];
+  likedColors: string[];
+  dislikedColors: string[];
+  dislikedFabrics: string[];
+  dislikedPatterns: string[];
+};
+
+// Placeholder preference set covering each filter axis — produces visible
+// drops + ranking shifts so the script self-documents the filter contract.
+const DEFAULT_PREFS: Prefs = {
+  avoidBrands: [],
+  preferredBrands: [],
   likedColors: ["black", "white", "grey"],
   dislikedColors: ["pink", "neon", "purple"],
   dislikedFabrics: ["polyester"],
   dislikedPatterns: ["animal_print", "plaid", "polka_dots", "geometric", "floral"],
 };
 
-// Matt's User.gender appears blank on the panel. We don't know whether
-// MatchQuizResult.genderToStyle is set without a DB hit, so prove the filter
-// twice: with no gender (the "Matt could still be in this bucket" case) and
-// with gender=MALE (the "if his match quiz is set to men's" case).
+const MATT_PREFS: Prefs = process.env.PREFS
+  ? (JSON.parse(process.env.PREFS) as Prefs)
+  : DEFAULT_PREFS;
+
+// Run twice: once with no gender (proves the post-filter on its own) and
+// once with gender=men (proves the full pipeline). Both assert the
+// invariant that no surviving product matches any dislike.
 function summarize(arr: ProductSearchDoc[], label: string) {
   const genders: Record<string, number> = {};
   arr.forEach((p) => {
@@ -128,8 +148,8 @@ async function runScenario(label: string, gender: string | undefined) {
     console.log(`     reason: ${r.reason}`);
   });
 
-  // Rank pass — for Matt's data, preferredBrands is empty, so rank only
-  // shifts liked-color (black/white/grey) products to the top.
+  // Rank pass surfaces preferredBrands first, then liked-colour matches.
+  // Empty arrays in either field are no-ops by design (see helper).
   const ranked = rankByClientLikes(after, {
     preferredBrands: MATT_PREFS.preferredBrands,
     likedColors: MATT_PREFS.likedColors,
