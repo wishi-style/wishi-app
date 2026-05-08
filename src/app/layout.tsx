@@ -3,6 +3,7 @@ import { DM_Sans, Bodoni_Moda } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { ImpersonationBannerMount } from "@/components/admin/impersonation-banner-mount";
 import { Toaster } from "@/components/ui/sonner";
+import { wishiClerkLocalization } from "@/lib/auth/clerk-appearance";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -97,6 +98,7 @@ export default async function RootLayout({
           signUpUrl="/sign-up"
           signInFallbackRedirectUrl="/post-signin"
           signUpFallbackRedirectUrl="/post-signin"
+          localization={wishiClerkLocalization}
         >
           <ImpersonationBannerMount />
           {children}
