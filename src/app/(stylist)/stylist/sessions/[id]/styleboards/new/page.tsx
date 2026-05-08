@@ -121,6 +121,7 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
     styleProfile,
     colorPrefs,
     fabricPrefs,
+    patternPrefs,
   ] = await Promise.all([
     listClosetItems({ userId: session.clientId }),
     listInspirationPhotos({ take: 60 }),
@@ -154,6 +155,10 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
       where: { userId: session.clientId, isDisliked: true },
       select: { fabric: true },
     }),
+    prisma.patternPreference.findMany({
+      where: { userId: session.clientId, isDisliked: true },
+      select: { pattern: true },
+    }),
   ]);
 
   // Resolve the gender to filter the tastegraph catalog by. MatchQuizResult
@@ -169,6 +174,7 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
   const dislikedColors = colorPrefs.filter((c) => !c.isLiked).map((c) => c.color);
   const likedColors = colorPrefs.filter((c) => c.isLiked).map((c) => c.color);
   const dislikedFabrics = fabricPrefs.map((f) => f.fabric);
+  const dislikedPatterns = patternPrefs.map((p) => p.pattern);
   const avoidBrands = styleProfile?.avoidBrands ?? [];
   const preferredBrands = styleProfile?.preferredBrands ?? [];
 
@@ -220,6 +226,7 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
       avoidBrands,
       dislikedColors,
       dislikedFabrics,
+      dislikedPatterns,
     }),
     { preferredBrands, likedColors },
   );

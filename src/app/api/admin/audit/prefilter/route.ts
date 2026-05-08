@@ -145,6 +145,7 @@ export async function GET(req: Request) {
     avoidBrands,
     dislikedColors,
     dislikedFabrics,
+    dislikedPatterns,
   });
   const finalForClient = rankByClientLikes(afterDislikes, {
     preferredBrands,
@@ -154,16 +155,6 @@ export async function GET(req: Request) {
   const droppedByDislikes =
     genderFiltered.results.length - afterDislikes.length;
 
-  const patternHits = genderFiltered.results.filter((p) =>
-    dislikedPatterns.some((pat) => {
-      const word = pat.replace(/_/g, " ").toLowerCase();
-      return (
-        (p.canonical_name ?? "").toLowerCase().includes(word) ||
-        (p.canonical_description ?? "").toLowerCase().includes(word)
-      );
-    }),
-  );
-
   return NextResponse.json({
     profile,
     pipeline: {
@@ -171,15 +162,6 @@ export async function GET(req: Request) {
       after_gender_filter: bucketProducts(genderFiltered.results),
       after_post_filter_and_rank: bucketProducts(finalForClient),
       products_dropped_by_post_filter: droppedByDislikes,
-      pattern_text_matches_PR_misses: {
-        count: patternHits.length,
-        sample: patternHits.slice(0, 5).map((p) => ({
-          gender: p.gender,
-          brand_name: p.brand_name,
-          category_slug: p.category_slug,
-          canonical_name: p.canonical_name,
-        })),
-      },
       first_10_after_pipeline: finalForClient.slice(0, 10).map((p) => ({
         gender: p.gender,
         brand_name: p.brand_name,

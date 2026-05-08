@@ -53,7 +53,7 @@ async function main() {
     disliked_color_count: dislikedColors.length,
     liked_color_count: likedColors.length,
     disliked_fabric_count: dislikedFabrics.length,
-    disliked_pattern_count_NOT_FILTERED_BY_PR: dislikedPatterns.length,
+    disliked_pattern_count: dislikedPatterns.length,
     body_size_count: matt.bodyProfile?.sizes.length ?? 0,
     budget_categories_set: matt.budgetByCategory.length,
     disliked_colors: dislikedColors,
@@ -80,17 +80,17 @@ async function main() {
   }
 
   const finalForMatt = rankByClientLikes(
-    filterOutClientDislikes(filtered.results, { avoidBrands, dislikedColors, dislikedFabrics }),
+    filterOutClientDislikes(filtered.results, { avoidBrands, dislikedColors, dislikedFabrics, dislikedPatterns }),
     { preferredBrands, likedColors },
   );
   const droppedByDislikes = filtered.results.length - finalForMatt.length;
 
   console.log("\nUNFILTERED (current production behavior for Matt's session):");
-  console.log(JSON.stringify(bucket(unfiltered.results as any), null, 2));
+  console.log(JSON.stringify(bucket(unfiltered.results), null, 2));
   console.log("\nGENDER-FILTERED (after PR ships, before post-filter):");
-  console.log(JSON.stringify(bucket(filtered.results as any), null, 2));
+  console.log(JSON.stringify(bucket(filtered.results), null, 2));
   console.log("\nFINAL after post-filter + rank (what Matt would actually see):");
-  console.log(JSON.stringify(bucket(finalForMatt as any), null, 2));
+  console.log(JSON.stringify(bucket(finalForMatt), null, 2));
   console.log("Products dropped by dislike post-filter:", droppedByDislikes);
 
   // Audit pattern-text match against canonical_name for the patterns we DON'T filter
