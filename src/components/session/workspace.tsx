@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowLeftIcon, PlusIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowLeftIcon, CheckIcon, PlusIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +30,11 @@ export interface WorkspaceItem {
   imageUrl: string | null;
   label: string | null;
   brand: string | null;
+  /**
+   * Set for INVENTORY board items + SINGLE_ITEM messages so curated tiles
+   * can deep-link to /products/[id] and surface Add-to-Cart inline.
+   */
+  inventoryProductId: string | null;
 }
 
 export interface WorkspaceCartItem {
@@ -467,32 +473,12 @@ export function SessionWorkspace({
             ) : (
               <div className="grid grid-cols-2 gap-5 md:grid-cols-4">
                 {curated.map((it) => (
-                  <div
+                  <CuratedTile
                     key={it.id}
-                    className="flex flex-col rounded-lg border border-border bg-card p-4"
-                  >
-                    <div className="mb-3 aspect-[3/4] overflow-hidden rounded-md bg-muted">
-                      {it.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={it.imageUrl}
-                          alt={it.label ?? ""}
-                          className="h-full w-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center p-2 text-center text-xs text-muted-foreground">
-                          {it.label ?? "Item"}
-                        </div>
-                      )}
-                    </div>
-                    <p className="truncate text-center text-sm font-medium text-foreground">
-                      {it.brand ?? " "}
-                    </p>
-                    <p className="mt-0.5 truncate text-center text-xs text-muted-foreground">
-                      {it.label ?? ""}
-                    </p>
-                  </div>
+                    item={it}
+                    sessionId={sessionId}
+                    canAddToCart={viewerRole === "CLIENT"}
+                  />
                 ))}
               </div>
             )}
@@ -577,6 +563,117 @@ export function SessionWorkspace({
         open={buyOpen}
         onOpenChange={setBuyOpen}
       />
+    </div>
+  );
+}
+
+/**
+ * One curated tile. INVENTORY tiles deep-link to the in-app PDP and surface
+ * an inline Add-to-Cart button (CLIENT-only). Closet / inspiration / web-add
+ * sources stay non-clickable — they don't have a product detail page.
+ */
+function CuratedTile({
+  item,
+  sessionId,
+  canAddToCart,
+}: {
+  item: WorkspaceItem;
+  sessionId: string;
+  canAddToCart: boolean;
+}) {
+  const [added, setAdded] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [pending, startTransition] = React.useTransition();
+  const router = useRouter();
+
+  const handleAdd = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!item.inventoryProductId) return;
+    setError(null);
+    startTransition(async () => {
+      try {
+        const res = await fetch("/api/cart", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            inventoryProductId: item.inventoryProductId,
+            sessionId,
+            quantity: 1,
+          }),
+        });
+        if (res.ok) {
+          setAdded(true);
+          router.refresh();
+          return;
+        }
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(json.error ?? "Could not add to cart");
+      } catch {
+        setError("Could not add to cart");
+      }
+    });
+  };
+
+  const tileBody = (
+    <>
+      <div className="mb-3 aspect-[3/4] overflow-hidden rounded-md bg-muted">
+        {item.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={item.imageUrl}
+            alt={item.label ?? ""}
+            className="h-full w-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center p-2 text-center text-xs text-muted-foreground">
+            {item.label ?? "Item"}
+          </div>
+        )}
+      </div>
+      <p className="truncate text-center text-sm font-medium text-foreground">
+        {item.brand ?? " "}
+      </p>
+      <p className="mt-0.5 truncate text-center text-xs text-muted-foreground">
+        {item.label ?? ""}
+      </p>
+    </>
+  );
+
+  const wrapperClass =
+    "flex flex-col rounded-lg border border-border bg-card p-4";
+  const showAddCta = canAddToCart && item.inventoryProductId && !added;
+
+  return (
+    <div className={wrapperClass}>
+      {item.inventoryProductId ? (
+        <Link
+          href={`/products/${item.inventoryProductId}?sessionId=${sessionId}`}
+          className="flex flex-col"
+        >
+          {tileBody}
+        </Link>
+      ) : (
+        tileBody
+      )}
+      {added && (
+        <div className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-foreground/10 py-1.5 text-xs font-medium text-foreground">
+          <CheckIcon className="h-3 w-3" />
+          Added
+        </div>
+      )}
+      {showAddCta && (
+        <button
+          type="button"
+          onClick={handleAdd}
+          disabled={pending}
+          className="mt-3 w-full rounded-lg border border-border py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-foreground hover:text-background disabled:opacity-50"
+        >
+          {pending ? "Adding…" : "Add to Cart"}
+        </button>
+      )}
+      {error && <p className="mt-2 text-center text-xs text-destructive">{error}</p>}
     </div>
   );
 }
