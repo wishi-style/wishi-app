@@ -50,7 +50,7 @@ export function BuyLooksDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm p-8 gap-0 text-center">
+      <DialogContent className="sm:max-w-sm p-8 gap-0 text-center">
         <h2 className="font-display text-2xl mb-1">Buy More Looks</h2>
         <p className="font-body text-muted-foreground text-base mb-10">
           How many would you like?

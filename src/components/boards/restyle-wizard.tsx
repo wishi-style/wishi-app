@@ -161,7 +161,7 @@ export function RestyleWizard({
 
   return (
     <Dialog open={open} onOpenChange={(v) => (v ? onOpenChange(v) : handleClose())}>
-      <DialogContent className="max-w-lg p-0 gap-0 overflow-hidden">
+      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden">
         {step === "select" && (
           <div className="flex flex-col h-[70vh]">
             {/* Header */}

@@ -155,7 +155,7 @@ export function ProductDetailDialog({ open, onOpenChange, product, onAddToCart, 
           "p-0 gap-0 overflow-hidden",
           isMobile
             ? "fixed inset-0 w-full h-full max-w-none max-h-none rounded-none translate-x-0 translate-y-0 top-0 left-0 border-0"
-            : "max-w-3xl"
+            : "sm:max-w-3xl"
         )}
       >
         {isMobile ? (
@@ -179,8 +179,10 @@ export function ProductDetailDialog({ open, onOpenChange, product, onAddToCart, 
 
             <div className="p-5 flex flex-col gap-5">
               <div>
-                <p className="font-body text-sm text-muted-foreground mb-1">{product.brand}</p>
-                <h2 className="font-display text-xl mb-1">{product.brand}</h2>
+                <p className="font-body text-sm text-muted-foreground mb-1">
+                  {product.retailer ? `${product.retailer} × ${product.brand}` : product.brand}
+                </p>
+                <h2 className="font-display text-xl mb-1">{product.name ?? product.brand}</h2>
                 <p className="font-display text-lg">{product.soldOut ? "Sold out" : product.price}</p>
               </div>
 
@@ -272,8 +274,10 @@ export function ProductDetailDialog({ open, onOpenChange, product, onAddToCart, 
             </div>
 
             <div className="w-1/2 overflow-y-auto p-8 flex flex-col">
-              <p className="font-body text-sm text-muted-foreground mb-1">{product.brand}</p>
-              <h2 className="font-display text-2xl mb-2">{product.brand}</h2>
+              <p className="font-body text-sm text-muted-foreground mb-1">
+                {product.retailer ? `${product.retailer} × ${product.brand}` : product.brand}
+              </p>
+              <h2 className="font-display text-2xl mb-2">{product.name ?? product.brand}</h2>
               <p className="font-display text-xl mb-5">{product.soldOut ? "Sold out" : product.price}</p>
 
               {isStylist ? (
