@@ -139,8 +139,6 @@ test("stylist look creator product modal: wide layout, no title duplication", as
 
     const dialog = page.locator('[data-slot="dialog-content"]');
     await expect(dialog).toBeVisible();
-    await page.waitForTimeout(300);
-    await dialog.screenshot({ path: "test-results/pdp-modal-after.png" });
 
     // Width pin: max-w-3xl (768px) must apply on desktop. Pre-fix this
     // was capped at sm:max-w-sm (384px). Allow a generous floor of 600px
@@ -155,17 +153,12 @@ test("stylist look creator product modal: wide layout, no title duplication", as
     await expect(heading).toHaveText("Gunn Straight Fit Jeans");
     await expect(heading).not.toContainText("—");
 
-    // Caption pin: small caption is brand-only (or "Retailer × Brand" when
-    // staging provides a retailer). Pre-fix it rendered the concatenated
-    // `${brand} — ${name}` string. Crucially: caption !== heading.
-    const captionText = await dialog
-      .locator('h2 ~ *, h2')
-      .first()
-      .evaluate((el) => {
-        const parent = el.parentElement!;
-        const firstP = parent.querySelector("p");
-        return firstP?.textContent ?? "";
-      });
+    // Caption pin: the <p> immediately preceding the <h2> is brand-only
+    // (or "Retailer × Brand" when staging provides a retailer). Pre-fix it
+    // rendered the concatenated `${brand} — ${name}` string in BOTH slots.
+    const captionText = await heading.evaluate(
+      (h2) => h2.previousElementSibling?.textContent ?? "",
+    );
     expect(captionText.toLowerCase()).toContain("rodd & gunn");
     expect(captionText).not.toContain("Gunn Straight Fit Jeans");
     expect(captionText).not.toContain("—");
