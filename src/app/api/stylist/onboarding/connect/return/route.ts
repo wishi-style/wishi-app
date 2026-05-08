@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 import { accountIsPayoutReady, retrieveAccount } from "@/lib/stripe-connect";
+import { syncStylistOnboardingForUser } from "@/lib/auth/reconcile-clerk-user";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,14 @@ export async function GET() {
         ...(advance ? { onboardingStatus: "STRIPE_CONNECTED" } : {}),
       },
     });
+
+    if (advance) {
+      // Keep Clerk publicMetadata in step with the new STRIPE_CONNECTED
+      // status. Without this the proxy still sees whatever the wizard
+      // wrote on step 11; the next wizard advance() would catch up, but
+      // sync now so dashboards + the proxy reflect reality immediately.
+      await syncStylistOnboardingForUser(user.id);
+    }
 
     return NextResponse.json({
       status: ready ? "ready" : "pending",

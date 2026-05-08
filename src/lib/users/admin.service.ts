@@ -1,6 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit/log";
-import { syncClerkClaimsForUser } from "@/lib/auth/reconcile-clerk-user";
+import {
+  syncClerkClaimsForUser,
+  syncStylistOnboardingForUser,
+} from "@/lib/auth/reconcile-clerk-user";
 import type { StylistType, UserRole } from "@/generated/prisma/client";
 
 export type AdminUserRow = {
@@ -80,8 +83,11 @@ export async function promoteToStylist({
 
   // Push the new role into Clerk so the next JWT rotation picks it up.
   // Without this, the freshly-promoted stylist hits forbidden() on every
-  // /stylist/* page until something else writes Clerk metadata.
+  // /stylist/* page until something else writes Clerk metadata. Also push
+  // the fresh `onboardingStatus = NOT_STARTED` so the proxy gate has the
+  // right starting value before the wizard's first save() catches up.
   await syncClerkClaimsForUser(userId);
+  await syncStylistOnboardingForUser(userId);
 
   await writeAudit({
     actorUserId,
