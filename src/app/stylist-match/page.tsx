@@ -4,6 +4,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { StarIcon } from "lucide-react";
 import { getServerAuth } from "@/lib/auth/server-auth";
+import { clearGuestToken, readGuestToken } from "@/lib/auth/guest-token";
+import { claimGuestQuizResult } from "@/lib/quiz/claim-guest-quiz";
 import { prisma } from "@/lib/prisma";
 import { rankStylistsForClient } from "@/lib/services/match.service";
 import { SiteHeader } from "@/components/primitives/site-header";
@@ -46,11 +48,31 @@ export default async function StylistMatchPage() {
   // Quiz completion is the precondition for landing here. styleDirection
   // length is also the denominator for the match-percent vanity bar — keep
   // both in one read.
-  const quiz = await prisma.matchQuizResult.findFirst({
+  let quiz = await prisma.matchQuizResult.findFirst({
     where: { userId: user.id },
     select: { id: true, styleDirection: true },
     orderBy: { completedAt: "desc" },
   });
+
+  // Race recovery: the user.created webhook (which calls claimGuestQuizResult
+  // via unsafe_metadata.guestToken) can land *after* Clerk's
+  // forceRedirectUrl=/stylist-match navigation. The wishi_guest_token cookie
+  // (set by submitMatchQuiz) is on the same browser session, so we can claim
+  // inline whenever the webhook hasn't beat us here yet. claimGuestQuizResult
+  // is idempotent (updateMany filtered on `userId IS NULL`), so a webhook
+  // running concurrently is safe — the second writer just no-ops.
+  if (!quiz) {
+    const guestToken = await readGuestToken();
+    if (guestToken) {
+      await claimGuestQuizResult(user.id, guestToken);
+      await clearGuestToken();
+      quiz = await prisma.matchQuizResult.findFirst({
+        where: { userId: user.id },
+        select: { id: true, styleDirection: true },
+        orderBy: { completedAt: "desc" },
+      });
+    }
+  }
   if (!quiz) {
     redirect("/match-quiz");
   }
