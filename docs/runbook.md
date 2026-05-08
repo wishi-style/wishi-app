@@ -9,8 +9,9 @@ before touching anything.
 
 | Thing | Expected |
 |---|---|
-| Staging ALB | `http://wishi-staging-alb-823228000.us-east-1.elb.amazonaws.com` |
-| Health | `/api/health` → `{ ok: true, db: "up" }` |
+| Staging public URL (HTTPS) | `https://d2mt49xs07o9rr.cloudfront.net` (CloudFront `E3OU5UE6ODNFHN`, default `*.cloudfront.net` cert) |
+| Staging origin ALB | `http://wishi-staging-alb-823228000.us-east-1.elb.amazonaws.com` (HTTP listener kept open for webhook delivery; don't share with browsers) |
+| Health | `https://d2mt49xs07o9rr.cloudfront.net/api/health` → `{ ok: true, db: "up" }` |
 | ECS web service | `wishi-staging-web`, desired count matches tfvars |
 | ECS worker task def | `wishi-staging-worker` registered, no running tasks outside scheduled windows |
 | RDS | `wishi-staging-db`, available, <50% CPU in steady state |

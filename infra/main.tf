@@ -169,19 +169,45 @@ module "workers" {
 }
 
 # -----------------------------------------------------------------------------
+# CDN (CloudFront in front of the ALB)
+#
+# Terminates HTTPS at the edge using the default *.cloudfront.net certificate
+# so envs without an ACM cert on the ALB still serve a working HTTPS origin.
+# The viewer protocol policy is redirect-to-https, the cache policy is
+# CachingDisabled (Next.js owns its own cache), and the origin request policy
+# is AllViewer so cookies / Authorization / query strings reach the origin
+# intact. Disabled by default; staging toggles it on while the wishi.me Route
+# 53 zone migration is still pending.
+# -----------------------------------------------------------------------------
+
+module "cdn" {
+  count  = var.cdn_enabled ? 1 : 0
+  source = "./modules/cdn"
+
+  project             = var.project
+  env                 = var.env
+  origin_alb_dns_name = module.service.alb_dns_name
+  price_class         = var.cloudfront_price_class
+  aliases             = var.cdn_aliases
+  certificate_arn     = var.cdn_certificate_arn
+}
+
+# -----------------------------------------------------------------------------
 # Scheduler (EventBridge API-destination workers for Phase 6: waitlist-notify,
 # payout-reconcile). These hit the web app over HTTPS with a shared secret —
 # distinct from the ECS-task-based Phase 5 workers module above.
 #
-# Gated on an https:// app_url. Staging currently has an http:// ALB DNS
-# because wishi.me is still on the legacy AWS account; until that moves and
-# we get an ACM cert wired, the scheduler skips on staging. During UAT,
-# fire the workers manually via POST /api/admin/workers/[name]/run instead.
-# TODO: remove this gate once staging.wishi.me HTTPS is live.
+# Explicit opt-in via `scheduler_enabled`. The `aws_scheduler_schedule` →
+# api-destination wiring inside this module surfaces a `Provided Arn is not
+# in correct format` validation error on first apply that needs untangling
+# separately; until that's fixed in the module, leave the flag off so
+# enabling HTTPS doesn't drag the scheduler bug along with it. Staging fires
+# Phase 5 worker schedules manually via POST /api/admin/workers/[name]/run
+# in the meantime.
 # -----------------------------------------------------------------------------
 
 module "scheduler" {
-  count  = startswith(var.app_url, "https://") ? 1 : 0
+  count  = var.scheduler_enabled ? 1 : 0
   source = "./modules/scheduler"
 
   project           = var.project

@@ -358,6 +358,20 @@ resource "aws_ecs_service" "web" {
     rollback = true
   }
 
+  # CD (.github/workflows/cd-{staging,production}.yml) registers new task
+  # definition revisions on every deploy and points the service at them.
+  # Without this lifecycle block, every `terraform apply` would attempt to
+  # roll the service back to whatever revision terraform last registered —
+  # silently downgrading the running app. Terraform owns task-def shape (cpu,
+  # memory, env, secrets); CD owns the revision pointer. After a tfvars
+  # change that should reach the running service (e.g. APP_URL), trigger a
+  # deploy via the CD workflow so CD picks up the latest task-def family
+  # revision (which terraform just registered) and overlays the new image
+  # SHA.
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
+
   depends_on = [aws_lb_listener.http]
 }
 
