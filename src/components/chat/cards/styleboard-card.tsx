@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   CheckIcon,
@@ -85,6 +86,7 @@ export function StyleboardCard({
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [restyleOpen, setRestyleOpen] = useState(false);
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+  const [cartError, setCartError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const router = useRouter();
 
@@ -201,19 +203,27 @@ export function StyleboardCard({
 
   const addToCart = (productInventoryId: string | null, itemId: string) => {
     if (!productInventoryId || viewerRole !== "CLIENT") return;
+    setCartError(null);
     startTransition(async () => {
-      const res = await fetch("/api/cart", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          inventoryProductId: productInventoryId,
-          sessionId,
-          quantity: 1,
-        }),
-      });
-      if (res.ok) {
-        setAddedIds((prev) => new Set(prev).add(itemId));
-        router.refresh();
+      try {
+        const res = await fetch("/api/cart", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            inventoryProductId: productInventoryId,
+            sessionId,
+            quantity: 1,
+          }),
+        });
+        if (res.ok) {
+          setAddedIds((prev) => new Set(prev).add(itemId));
+          router.refresh();
+          return;
+        }
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        setCartError(json.error ?? "Could not add to cart");
+      } catch {
+        setCartError("Could not add to cart");
       }
     });
   };
@@ -297,16 +307,8 @@ export function StyleboardCard({
               <div className="grid auto-rows-min grid-cols-3 gap-3 pr-2">
                 {(preview?.products ?? []).map((product) => {
                   const isAdded = addedIds.has(product.id);
-                  return (
-                    <div
-                      key={product.id}
-                      className={cn(
-                        "group/product relative flex flex-col rounded-lg border bg-card p-3 pb-4 transition-all duration-200",
-                        product.soldOut
-                          ? "cursor-default border-border opacity-60"
-                          : "border-border hover:border-foreground/30 hover:shadow-md",
-                      )}
-                    >
+                  const tileBody = (
+                    <>
                       {!product.soldOut && isAdded && (
                         <div className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-foreground text-background">
                           <CheckIcon className="h-3 w-3" />
@@ -329,6 +331,26 @@ export function StyleboardCard({
                       <p className="text-center text-sm text-foreground/70">
                         {product.soldOut ? "Sold out" : product.price}
                       </p>
+                    </>
+                  );
+                  const tileClass = cn(
+                    "group/product relative flex flex-col rounded-lg border bg-card p-3 pb-4 transition-all duration-200",
+                    product.soldOut
+                      ? "cursor-default border-border opacity-60"
+                      : "border-border hover:border-foreground/30 hover:shadow-md",
+                  );
+                  return (
+                    <div key={product.id} className={tileClass}>
+                      {product.inventoryProductId ? (
+                        <Link
+                          href={`/products/${product.inventoryProductId}?sessionId=${sessionId}`}
+                          className="flex flex-1 flex-col"
+                        >
+                          {tileBody}
+                        </Link>
+                      ) : (
+                        tileBody
+                      )}
                       {viewerRole === "CLIENT" &&
                         !product.soldOut &&
                         product.inventoryProductId &&
@@ -385,6 +407,9 @@ export function StyleboardCard({
         </div>
         {feedbackError && (
           <p className="mt-2 text-xs text-destructive">{feedbackError}</p>
+        )}
+        {cartError && (
+          <p className="mt-2 text-xs text-destructive">{cartError}</p>
         )}
 
         {/* Stylist sees the rating + per-item feedback inline once the client
