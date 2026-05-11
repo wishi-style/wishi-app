@@ -89,12 +89,21 @@ export function splitToChips(value: string | null | undefined): string[] {
     .filter(Boolean);
 }
 
-// Map StyleProfile.comfortZoneLevel (Int 1-10, "1 = Keep it safe, 10 = Push
-// my boundaries" per the quiz helper) to Loveable's phrase vocabulary.
-export function comfortZoneLabel(level: number | null | undefined): string {
-  if (level == null) return "";
-  if (level <= 3) return "Stay close";
-  if (level <= 7) return "A little outside";
+// Loveable's phrase vocabulary for the comfort-zone field. Accepts either:
+//   • the new StyleProfile.comfortZone enum (the verbatim Loveable port writes
+//     this — 3 buckets);
+//   • the legacy StyleProfile.comfortZoneLevel Int 1-10 (DB-driven quiz era,
+//     retained for back-compat reads). Same buckets either way.
+export function comfortZoneLabel(
+  zone: "STAY_CLOSE" | "FEW_NEW_ITEMS" | "NEW_STYLE" | null | undefined,
+  legacyLevel?: number | null,
+): string {
+  if (zone === "STAY_CLOSE") return "Stay close";
+  if (zone === "FEW_NEW_ITEMS") return "A little outside";
+  if (zone === "NEW_STYLE") return "Push my boundaries";
+  if (legacyLevel == null) return "";
+  if (legacyLevel <= 3) return "Stay close";
+  if (legacyLevel <= 7) return "A little outside";
   return "Push my boundaries";
 }
 
@@ -293,7 +302,10 @@ export async function resolveClientProfileView(
     highlightAreas: bodyProfile?.highlightAreas ?? [],
     style: styleProfile?.stylePreferences ?? [],
     styleIcons: styleProfile?.styleIcons ?? [],
-    comfortZone: comfortZoneLabel(styleProfile?.comfortZoneLevel),
+    comfortZone: comfortZoneLabel(
+      styleProfile?.comfortZone ?? null,
+      styleProfile?.comfortZoneLevel ?? null,
+    ),
     typicallyWears: styleProfile?.typicallyWears ?? "",
     sizes,
     budgets: budgetMap,
@@ -319,7 +331,11 @@ export async function resolveClientProfileView(
       name: b.title ?? (b.type === "MOODBOARD" ? "Moodboard" : "Styleboard"),
       type: b.type === "MOODBOARD" ? ("mood" as const) : ("style" as const),
     })),
-    photos: photos.map((p) => p.url),
+    // Body photo from the Loveable style-quiz is prepended so it surfaces
+    // first in the stylist's view; user-managed UserPhoto rows follow.
+    photos: bodyProfile?.bodyPhotoUrl
+      ? [bodyProfile.bodyPhotoUrl, ...photos.map((p) => p.url)]
+      : photos.map((p) => p.url),
     notes: privateNote?.body ?? "",
   };
 }

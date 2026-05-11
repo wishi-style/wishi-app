@@ -5,7 +5,9 @@ import type { QuizType } from "@/generated/prisma/client";
 
 export const dynamic = "force-dynamic";
 
-const VALID_TYPES: QuizType[] = ["MATCH", "STYLE_PREFERENCE"];
+// STYLE_PREFERENCE is owned by the verbatim Loveable component at
+// /style-quiz; admin edits are MATCH-only.
+const VALID_TYPES: QuizType[] = ["MATCH"];
 
 export async function PUT(
   req: Request,

@@ -9,7 +9,10 @@ import { QuizEditor } from "./editor";
 
 export const dynamic = "force-dynamic";
 
-const VALID_TYPES: QuizType[] = ["MATCH", "STYLE_PREFERENCE"];
+// STYLE_PREFERENCE is no longer managed via the admin quiz-builder — `/style-quiz`
+// is now a verbatim port of Loveable's hardcoded 26-step questionnaire. The
+// builder retains MATCH only.
+const VALID_TYPES: QuizType[] = ["MATCH"];
 
 export default async function AdminQuizBuilderDetail({
   params,

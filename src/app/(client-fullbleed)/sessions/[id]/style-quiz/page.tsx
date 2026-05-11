@@ -1,9 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { getQuizWithQuestions } from "@/lib/quiz/engine";
 import { hasCompletedStyleQuiz } from "@/lib/quiz/style-quiz-status";
 import { redirect, notFound } from "next/navigation";
-import { StyleQuizClient } from "./style-quiz-client";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
+import StyleQuizLoveable from "@/app/style-quiz/style-quiz-loveable";
 
 export const dynamic = "force-dynamic";
 
@@ -11,47 +10,30 @@ interface Props {
   params: Promise<{ id: string }>;
 }
 
+/**
+ * Session-scoped style-quiz gate. Same Loveable component as the
+ * standalone /style-quiz, just submits via the session ctx so the redirect
+ * lands in the chat room instead of /stylists.
+ */
 export default async function StyleQuizPage({ params }: Props) {
   const { id: sessionId } = await params;
   const user = await getCurrentAuthUser();
   if (!user) redirect("/sign-in");
 
-  // Verify session ownership
   const session = await prisma.session.findUnique({
     where: { id: sessionId },
     select: { clientId: true },
   });
   if (!session || session.clientId !== user.id) notFound();
 
-  // Skip when already completed — the chat-page gate sends users here when
-  // the quiz isn't done, so this guard returns them to the room when it is.
   if (await hasCompletedStyleQuiz(user.id)) {
     redirect(`/sessions/${sessionId}/chat`);
   }
 
-  const quiz = await getQuizWithQuestions("STYLE_PREFERENCE");
-  if (!quiz || quiz.questions.length === 0) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="text-sm text-muted-foreground">
-          Style quiz is not available yet.
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <main className="min-h-screen bg-background">
-      <header className="border-b border-border">
-        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-5">
-          <h1 className="font-display text-xl tracking-tight">
-            Your Style Profile
-          </h1>
-        </div>
-      </header>
-      <div className="mx-auto max-w-2xl px-4 py-8">
-        <StyleQuizClient sessionId={sessionId} questions={quiz.questions} />
-      </div>
-    </main>
+    <StyleQuizLoveable
+      ctx={{ kind: "session", sessionId }}
+      userEmail={user.email}
+    />
   );
 }

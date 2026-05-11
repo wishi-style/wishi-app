@@ -146,10 +146,61 @@ enum PromoCodeCreditType {
 // === Preferences ===
 
 enum FitPreference {
+  TIGHT
+  FITTED
+  STRAIGHT
+  LOOSE
+  OVERSIZED
+  // Legacy values retained for existing rows; new writes use the five Loveable values.
   SLIM
   REGULAR
   RELAXED
-  OVERSIZED
+}
+
+enum HeightCategory {
+  TALL
+  AVERAGE
+  PETITE
+}
+
+enum ComfortZone {
+  STAY_CLOSE
+  FEW_NEW_ITEMS
+  NEW_STYLE
+}
+
+enum TendToWear {
+  MOSTLY_DRESSES
+  MOSTLY_PANTS
+  MIX
+}
+
+enum ShoppingReason {
+  SPECIAL_EVENT
+  WORKWEAR_UPDATE
+  HOLIDAY
+  STYLE_REFRESH
+  PARTICULAR_PIECE
+}
+
+enum WorkEnvironment {
+  CORPORATE
+  DENIM_FRIENDLY
+  ANYTHING_GOES
+  OTHER
+}
+
+enum HearAboutSource {
+  INSTAGRAM
+  REFERRED_BY_STYLIST
+  FRIEND_FAMILY
+  INTERNET_SEARCH
+  ARTICLE_MEDIA
+  PINTEREST
+  FACEBOOK
+  NEWSLETTER
+  REPEAT_CUSTOMER
+  OTHER
 }
 
 enum HeelPreference {
@@ -467,25 +518,33 @@ model MatchQuizResult {
 }
 
 model StyleProfile {
-  id               String    @id @default(cuid())
-  userId           String    @unique @map("user_id")
-  stylePreferences String[]  @map("style_preferences")
-  styleIcons       String[]  @map("style_icons")
-  comfortZoneLevel Int?      @map("comfort_zone_level")
-  dressCode        String?   @map("dress_code")
-  occupation       String?
-  typicallyWears   String?   @map("typically_wears")
-  needsDescription String?   @map("needs_description") @db.Text
-  piecesNeeded     String[]  @map("pieces_needed")
-  preferredBrands  String[]  @map("preferred_brands")
-  avoidBrands      String[]  @map("avoid_brands")
-  occasions        String[]
-  notes            String?   @db.Text
-  shoppingValues   String[]  @map("shopping_values")
-  quizAnswers      Json?     @map("quiz_answers")
-  quizCompletedAt  DateTime? @map("quiz_completed_at")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+  id                   String           @id @default(cuid())
+  userId               String           @unique @map("user_id")
+  stylePreferences     String[]         @map("style_preferences")
+  styleIcons           String[]         @map("style_icons")
+  comfortZoneLevel     Int?             @map("comfort_zone_level")
+  comfortZone          ComfortZone?     @map("comfort_zone")
+  dressCode            String?          @map("dress_code")
+  occupation           String?
+  typicallyWears       String?          @map("typically_wears")
+  needsDescription     String?          @map("needs_description") @db.Text
+  piecesNeeded         String[]         @map("pieces_needed")
+  preferredBrands      String[]         @map("preferred_brands")
+  avoidBrands          String[]         @map("avoid_brands")
+  occasions            String[]
+  notes                String?          @db.Text
+  shoppingValues       String[]         @map("shopping_values")
+  shoppingReason       ShoppingReason?  @map("shopping_reason")
+  workEnvironment      WorkEnvironment? @map("work_environment")
+  workEnvironmentOther String?          @map("work_environment_other")
+  wearLocation         String?          @map("wear_location")
+  tendToWear           TendToWear?      @map("tend_to_wear")
+  hearAboutSource      HearAboutSource? @map("hear_about_source")
+  hearAboutSourceOther String?          @map("hear_about_source_other")
+  quizAnswers          Json?            @map("quiz_answers")
+  quizCompletedAt      DateTime?        @map("quiz_completed_at")
+  createdAt            DateTime         @default(now()) @map("created_at")
+  updatedAt            DateTime         @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -495,16 +554,19 @@ model StyleProfile {
 model BodyProfile {
   id               String         @id @default(cuid())
   userId           String         @unique @map("user_id")
-  bodyType         String?        @map("body_type")
-  bodyIssues       String?        @map("body_issues") @db.Text
-  highlightAreas   String[]       @map("highlight_areas")
-  necklinesAvoid   String[]       @map("necklines_avoid")
-  bodyAreasMindful String[]       @map("body_areas_mindful")
+  bodyType         String?         @map("body_type")
+  bodyIssues       String?         @map("body_issues") @db.Text
+  highlightAreas   String[]        @map("highlight_areas")
+  necklinesAvoid   String[]        @map("necklines_avoid")
+  bodyAreasMindful String[]        @map("body_areas_mindful")
+  bodyAreasNotes   String?         @map("body_areas_notes") @db.Text
   height           String?
-  topFit           FitPreference? @map("top_fit")
-  bottomFit        FitPreference? @map("bottom_fit")
-  createdAt        DateTime       @default(now()) @map("created_at")
-  updatedAt        DateTime       @updatedAt @map("updated_at")
+  heightCategory   HeightCategory? @map("height_category")
+  bodyPhotoUrl     String?         @map("body_photo_url")
+  topFit           FitPreference?  @map("top_fit")
+  bottomFit        FitPreference?  @map("bottom_fit")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
 
   user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   sizes BodySize[]
@@ -522,7 +584,7 @@ model BodySize {
 
   bodyProfile BodyProfile @relation(fields: [bodyProfileId], references: [id], onDelete: Cascade)
 
-  @@unique([bodyProfileId, category])
+  @@unique([bodyProfileId, category, size])
   @@map("body_sizes")
 }
 

@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
 import type { QuizType, Prisma } from "@/generated/prisma/client";
-import { routeFieldWrite } from "./field-router";
 
 export async function getQuizWithQuestions(type: QuizType) {
   return prisma.quiz.findUnique({
@@ -42,13 +41,3 @@ export async function persistMatchQuizAnswers(
   });
 }
 
-export async function persistStyleQuizAnswers(
-  userId: string,
-  answers: Record<string, unknown>
-) {
-  for (const [fieldKey, value] of Object.entries(answers)) {
-    if (value !== undefined && value !== null && value !== "") {
-      await routeFieldWrite(userId, fieldKey, value);
-    }
-  }
-}
