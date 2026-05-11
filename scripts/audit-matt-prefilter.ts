@@ -20,8 +20,11 @@ async function main() {
     console.error("Pass an email as the first arg or set AUDIT_EMAIL.");
     process.exit(1);
   }
-  const matt = await prisma.user.findUnique({
-    where: { email: email.toLowerCase() },
+  // User.email is NOT @unique in Prisma — uniqueness is enforced via a partial
+  // index restricted to deleted_at IS NULL. Look up by email with findFirst
+  // (see CLAUDE.md "User.email is not strictly unique").
+  const matt = await prisma.user.findFirst({
+    where: { email: email.toLowerCase(), deletedAt: null },
     select: {
       id: true,
       gender: true,

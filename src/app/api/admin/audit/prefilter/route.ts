@@ -11,6 +11,38 @@ import type { ProductSearchDoc } from "@/lib/inventory/types";
 
 export const dynamic = "force-dynamic";
 
+const USER_SELECT = {
+  id: true,
+  email: true,
+  gender: true,
+  role: true,
+  styleProfile: {
+    select: {
+      avoidBrands: true,
+      preferredBrands: true,
+      stylePreferences: true,
+    },
+  },
+  bodyProfile: {
+    select: { sizes: { select: { category: true, size: true } } },
+  },
+  matchQuizResults: {
+    orderBy: { completedAt: "desc" },
+    take: 1,
+    select: {
+      genderToStyle: true,
+      styleDirection: true,
+      completedAt: true,
+    },
+  },
+  colorPreferences: { select: { color: true, isLiked: true } },
+  fabricPreferences: { select: { fabric: true, isDisliked: true } },
+  patternPreferences: { select: { pattern: true, isDisliked: true } },
+  budgetByCategory: {
+    select: { category: true, minInCents: true, maxInCents: true },
+  },
+} as const;
+
 function bucketProducts(products: ProductSearchDoc[]) {
   const genders: Record<string, number> = {};
   const slugs: Record<string, number> = {};
@@ -51,43 +83,18 @@ export async function GET(req: Request) {
     );
   }
 
-  const client = await prisma.user.findUnique({
-    where: clientId
-      ? { id: clientId }
-      : { email: email!.toLowerCase() },
-    select: {
-      id: true,
-      email: true,
-      gender: true,
-      role: true,
-      styleProfile: {
-        select: {
-          avoidBrands: true,
-          preferredBrands: true,
-          stylePreferences: true,
-        },
-      },
-      bodyProfile: {
-        select: { sizes: { select: { category: true, size: true } } },
-      },
-      matchQuizResults: {
-        orderBy: { completedAt: "desc" },
-        take: 1,
-        select: {
-          genderToStyle: true,
-          styleDirection: true,
-          completedAt: true,
-        },
-      },
-      colorPreferences: { select: { color: true, isLiked: true } },
-      fabricPreferences: { select: { fabric: true, isDisliked: true } },
-      patternPreferences: { select: { pattern: true, isDisliked: true } },
-      budgetByCategory: {
-        select: { category: true, minInCents: true, maxInCents: true },
-      },
-    },
-  });
-
+  // User.email is NOT @unique in Prisma — uniqueness is enforced via a partial
+  // index restricted to deleted_at IS NULL. Look up by email with findFirst
+  // (see CLAUDE.md "User.email is not strictly unique").
+  const client = clientId
+    ? await prisma.user.findUnique({
+        where: { id: clientId },
+        select: USER_SELECT,
+      })
+    : await prisma.user.findFirst({
+        where: { email: email!.toLowerCase(), deletedAt: null },
+        select: USER_SELECT,
+      });
   if (!client) {
     return NextResponse.json({ error: "client not found" }, { status: 404 });
   }
