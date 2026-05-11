@@ -64,6 +64,7 @@ test("getFilters returns empty shape on non-200", async () => {
     brands: [],
     categories: [],
     colors: [],
+    subColorsByFamily: {},
     sizes: [],
     primaryFabrics: [],
     merchants: [],

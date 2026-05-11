@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -49,6 +49,7 @@ import { removeBackground } from "@/lib/removeBackground";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ClientDetailPanel from "@/components/stylist/client-detail-panel";
 import { ProductDetailDialog } from "@/components/products/product-detail-dialog";
+import { SuitPairDialog } from "./suit-pair-dialog";
 import type { ProductItem } from "@/components/boards/styleboard";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
@@ -58,6 +59,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { loyaltyConfig } from "@/data/client-profiles";
 import { toast } from "sonner";
+import { useShopInventory } from "./use-shop-inventory";
+import type { CategoryBucket } from "@/lib/inventory/adapt-product-doc";
+import type { SmartDefaultKind } from "@/lib/inventory/shop-inventory.defaults";
 
 type SourceTab = "shop" | "closet" | "inspiration" | "previous" | "store";
 type Category = "all" | "tops" | "bottoms" | "outerwear" | "accessories" | "shoes";
@@ -196,7 +200,12 @@ interface StyleboardBuilderProps {
   clientSizesByCategory: Record<string, string>;
   clientBudgetsByCategory: Record<string, [number, number]>;
   directSaleProductIds: string[];
-  shopItems: InventoryItem[];
+  /** Page 1 of the shop catalog. The Shop tab uses `useShopInventory` to
+   *  re-fetch on filter/search/load-more; everything else (closet, cart,
+   *  inspiration, store, previous) stays static. */
+  initialShopResponse: import("@/lib/inventory/shop-inventory.service").ShopInventoryResponse;
+  shopFacets: import("@/lib/inventory/types").FilterValuesResponse;
+  clientContextSummary: import("@/lib/inventory/client-context").ClientStylingContextSummary | null;
   closetItems: InventoryItem[];
   cartItems: InventoryItem[];
   purchasedItems: InventoryItem[];
@@ -212,7 +221,9 @@ export function StyleboardBuilder({
   sessionId,
   clientId,
   clientName,
-  shopItems,
+  initialShopResponse,
+  shopFacets,
+  clientContextSummary,
   closetItems,
   cartItems,
   purchasedItems,
@@ -226,6 +237,23 @@ export function StyleboardBuilder({
   const [tab, setTab] = useState<SourceTab>("shop");
   const [category, setCategory] = useState<Category>("all");
   const [selectedSubcategories, setSelectedSubcategories] = useState<Set<string>>(new Set());
+
+  // -------------------------------------------------------------------------
+  // Shop workspace data hook. Owns server-side filter/search/pagination for
+  // the Shop tab and routes the power-mode invocations (looks-like canvas,
+  // similar to product, suit pair, find pieces for this look) to the right
+  // API. Non-shop tabs still use the static prop arrays below.
+  // -------------------------------------------------------------------------
+  const shop = useShopInventory({
+    sessionId,
+    initial: initialShopResponse,
+    facets: shopFacets,
+    context: clientContextSummary,
+    category: category as CategoryBucket,
+  });
+
+  // Category is a controlled prop on `useShopInventory` (passed via `opts`
+  // above). The hook handles per-bucket smart-default reset internally.
 
   const toggleSubcategory = (s: string) => {
     setSelectedSubcategories((prev) => {
@@ -318,6 +346,31 @@ export function StyleboardBuilder({
     return () => clearTimeout(t);
   }, [budget, budgetOpen]);
 
+  // Mirror the chrome's Shop-tab filter state into the data hook. Each
+  // mutation maps a UI-local Set/state into the canonical filter shape the
+  // shop-inventory service expects. The hook debounces query changes; all
+  // others fire immediately.
+  const [shopSearchMode, setShopSearchMode] = useState<"smart" | "keyword">("smart");
+  const [shopSort, setShopSort] = useState<
+    "relevance" | "newest" | "price_asc" | "price_desc" | "in_stock_first"
+  >("relevance");
+  const [selectedFabricTiers, setSelectedFabricTiers] = useState<Set<string>>(
+    new Set(),
+  );
+  const [selectedFabrics, setSelectedFabrics] = useState<Set<string>>(new Set());
+  const [selectedSubColors, setSelectedSubColors] = useState<Set<string>>(
+    new Set(),
+  );
+  const [excludeLeatherUi, setExcludeLeatherUi] = useState<boolean | undefined>(
+    undefined,
+  );
+  const [inStockOnlyUi, setInStockOnlyUi] = useState<boolean | undefined>(
+    undefined,
+  );
+
+  // (Filter-sync useEffect lives below — after `merchantIdByName` is
+  // declared — so the closure can reference the merchant-name → id map.)
+
   const toggleAvailability = (a: Availability) => {
     setSelectedAvailability((prev) => {
       const next = new Set(prev);
@@ -344,6 +397,17 @@ export function StyleboardBuilder({
   };
   const [pdpItem, setPdpItem] = useState<InventoryItem | null>(null);
 
+  // Shop workspace UI refs + power-mode dialogs
+  const shopSearchInputRef = useRef<HTMLInputElement>(null);
+  const [suitPairOpen, setSuitPairOpen] = useState(false);
+  const [lookPieces, setLookPieces] = useState<
+    {
+      bucket: Exclude<CategoryBucket, "all">;
+      items: InventoryItem[];
+    }[]
+  >([]);
+  const [lookPiecesLoading, setLookPiecesLoading] = useState(false);
+
   // Save dialog state
   const [saveOpen, setSaveOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -358,11 +422,95 @@ export function StyleboardBuilder({
     highlights: "",
   });
 
-  const shopRetailers = useMemo(() => {
-    const set = new Set<string>();
-    shopItems.forEach((it) => it.retailer && set.add(it.retailer));
-    return Array.from(set).sort();
-  }, [shopItems]);
+  // Retailer chip list is now the canonical merchant facet from the
+  // inventory service rather than a derived-from-current-page set. The
+  // sidebar maps the user-facing name back to merchant_id when applying
+  // the filter via `shop.setFilters({ merchantIds: [...] })`.
+  const shopRetailers = useMemo(
+    () => shopFacets.merchants.map((m) => m.name).sort((a, b) => a.localeCompare(b)),
+    [shopFacets.merchants],
+  );
+  const merchantIdByName = useMemo(() => {
+    const m = new Map<string, string>();
+    shopFacets.merchants.forEach((row) => m.set(row.name, row.id));
+    return m;
+  }, [shopFacets.merchants]);
+
+  // Filter-sync effect — observes the chrome's Shop-tab filter state and
+  // pushes the canonical shape down to the data hook. Lives here (not
+  // earlier) so the closure can reference `merchantIdByName` which is
+  // built from facets. Query is debounced inside the hook (250ms);
+  // checkbox / slider / sort changes fire immediately.
+  const selectedRetailersKey = useMemo(
+    () => [...selectedRetailers].sort().join("|"),
+    [selectedRetailers],
+  );
+  const selectedColorsKey = useMemo(
+    () => [...selectedColors].sort().join("|"),
+    [selectedColors],
+  );
+  const selectedSizesKey = useMemo(
+    () => [...selectedSizes].sort().join("|"),
+    [selectedSizes],
+  );
+  const selectedFabricTiersKey = useMemo(
+    () => [...selectedFabricTiers].sort().join("|"),
+    [selectedFabricTiers],
+  );
+  const selectedFabricsKey = useMemo(
+    () => [...selectedFabrics].sort().join("|"),
+    [selectedFabrics],
+  );
+  const selectedSubColorsKey = useMemo(
+    () => [...selectedSubColors].sort().join("|"),
+    [selectedSubColors],
+  );
+
+  useEffect(() => {
+    if (tab !== "shop") return;
+    const merchantIds = Array.from(selectedRetailers)
+      .map((name) => merchantIdByName.get(name))
+      .filter((v): v is string => Boolean(v));
+    const colors = Array.from(selectedColors);
+    const sizes = Array.from(selectedSizes);
+    const fabricTiers = Array.from(selectedFabricTiers);
+    const primaryFabrics = Array.from(selectedFabrics);
+    const subColors = Array.from(selectedSubColors);
+    const minPrice = budget[0] > 0 ? budget[0] : undefined;
+    const maxPrice = budget[1] < 5000 ? budget[1] : undefined;
+
+    shop.setFilters({
+      query: search.trim() || undefined,
+      mode: shopSearchMode,
+      merchantIds: merchantIds.length > 0 ? merchantIds : undefined,
+      colors: colors.length > 0 ? colors : undefined,
+      sizes: sizes.length > 0 ? sizes : undefined,
+      primaryFabrics: primaryFabrics.length > 0 ? primaryFabrics : undefined,
+      fabricTiers: fabricTiers.length > 0 ? fabricTiers : undefined,
+      subColors: subColors.length > 0 ? subColors : undefined,
+      excludeLeather: excludeLeatherUi,
+      inStockOnly: inStockOnlyUi,
+      minPrice,
+      maxPrice,
+      sort: shopSort,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    tab,
+    search,
+    shopSearchMode,
+    shopSort,
+    selectedRetailersKey,
+    selectedColorsKey,
+    selectedSizesKey,
+    selectedFabricTiersKey,
+    selectedFabricsKey,
+    selectedSubColorsKey,
+    excludeLeatherUi,
+    inStockOnlyUi,
+    budget[0],
+    budget[1],
+  ]);
 
   const toggleRetailer = (retailer: string) => {
     setSelectedRetailers((prev) => {
@@ -419,9 +567,16 @@ export function StyleboardBuilder({
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  const sourceItems = useMemo(() => {
+  const sourceItems = useMemo<InventoryItem[]>(() => {
     switch (tab) {
-      case "shop": return shopItems;
+      // Shop tab is driven by the server-side data hook now — filters and
+      // search are pushed to tastegraph, not applied client-side over a
+      // static page. We cast through unknown because AdaptedInventoryItem
+      // is a structural superset of the chrome's InventoryItem (extra
+      // optional fields like fabricTier / priceValue / listingId that the
+      // rest of the chrome ignores).
+      case "shop":
+        return shop.items as unknown as InventoryItem[];
       case "store": return storeItems;
       case "closet":
         return closetSubTab === "cart" ? cartItems : closetSubTab === "purchased" ? purchasedItems : closetItems;
@@ -429,15 +584,17 @@ export function StyleboardBuilder({
       case "previous":
         return previousSubTab === "style" ? previousStyleBoardItems : previousMoodBoardItems;
     }
-  }, [tab, closetSubTab, previousSubTab, shopItems, storeItems, cartItems, purchasedItems, closetItems, inspirationItems, previousStyleBoardItems, previousMoodBoardItems]);
+  }, [tab, closetSubTab, previousSubTab, shop.items, storeItems, cartItems, purchasedItems, closetItems, inspirationItems, previousStyleBoardItems, previousMoodBoardItems]);
 
   const filtered = useMemo(() => {
     return sourceItems.filter((it) => {
+      // Shop tab: retailer/availability/color/size/search/budget are all
+      // pushed to the inventory service. Favorites + sub-category are still
+      // local because the service has no first-class field for either. The
+      // chrome's free-text `search` substring matcher also stays as a
+      // local fallback so the user can dial in within the already-loaded
+      // page without re-hitting the network.
       if (tab === "shop" && favoritesOnly && !favorites.has(it.id)) return false;
-      if (tab === "shop" && selectedRetailers.size > 0 && (!it.retailer || !selectedRetailers.has(it.retailer))) return false;
-      if (tab === "shop" && selectedAvailability.size > 0 && (!it.availability || !selectedAvailability.has(it.availability))) return false;
-      if (tab === "shop" && selectedColors.size > 0 && (!it.colors || !it.colors.some((c) => selectedColors.has(c)))) return false;
-      if (tab === "shop" && selectedSizes.size > 0 && (!it.sizes || !it.sizes.some((s) => selectedSizes.has(s)))) return false;
       if (tab === "inspiration" && selectedInspoStyles.size > 0 && (!it.styles || !it.styles.some((s) => selectedInspoStyles.has(s)))) return false;
       if (tab === "inspiration" && selectedInspoBodyTypes.size > 0 && (!it.bodyTypes || !it.bodyTypes.some((b) => selectedInspoBodyTypes.has(b)))) return false;
       if (tab === "closet" && closetSelectedColors.size > 0 && (!it.colors || !it.colors.some((c) => closetSelectedColors.has(c)))) return false;
@@ -445,6 +602,8 @@ export function StyleboardBuilder({
       if (tab === "closet" && closetSelectedSeasons.size > 0 && (!it.season || !closetSelectedSeasons.has(it.season))) return false;
       if (category !== "all" && it.category !== category) return false;
       if (tab === "shop" && selectedSubcategories.size > 0 && (!it.subcategory || !selectedSubcategories.has(it.subcategory))) return false;
+      // Non-shop tabs keep the local-substring search; shop tab also keeps
+      // it so typing while a server fetch is in-flight feels responsive.
       if (search && !`${it.brand} ${it.name}`.toLowerCase().includes(search.toLowerCase())) return false;
       if (tab === "shop" && it.price) {
         const value = Number(it.price.replace(/[^0-9.]/g, ""));
@@ -637,6 +796,125 @@ export function StyleboardBuilder({
   const removeFromCanvas = (uid: string) => {
     setCanvas((prev) => prev.filter((c) => c.uid !== uid));
   };
+
+  // ---------------------------------------------------------------------------
+  // Power-mode triggers (looks-like canvas, find pieces for this look). Both
+  // route through the inventory service's FashionSigLIP direction-embedding
+  // space — the average vector of the canvas items becomes the moodboard
+  // query. INVENTORY-source canvas items only; closet/inspiration items
+  // don't have inventory-service listing embeddings.
+  // ---------------------------------------------------------------------------
+  const canvasInventoryProductIds = useMemo(
+    () =>
+      canvas
+        .filter((c) => c.source === "INVENTORY")
+        .map((c) => c.refId)
+        .filter(Boolean),
+    [canvas],
+  );
+
+  const triggerLooksLikeCanvas = useCallback(async () => {
+    if (canvasInventoryProductIds.length === 0) {
+      toast("Add an inventory item to the canvas first");
+      return;
+    }
+    // Resolve canvas product ids → listing ids on the client by reading
+    // current shop.items if available; otherwise the server resolves.
+    const productById = new Map<string, { listingId?: string }>();
+    for (const it of shop.items) {
+      if (it.id) productById.set(it.id, { listingId: it.listingId });
+    }
+    const listingIds = canvasInventoryProductIds
+      .map((pid) => productById.get(pid)?.listingId)
+      .filter((v): v is string => Boolean(v));
+
+    if (listingIds.length === canvasInventoryProductIds.length) {
+      shop.searchLooksLikeCanvas(
+        listingIds,
+        `Looks like canvas (${listingIds.length} ${listingIds.length === 1 ? "item" : "items"})`,
+      );
+      return;
+    }
+
+    // Fall back to server-side resolution
+    try {
+      shop.searchLooksLikeCanvas(
+        canvasInventoryProductIds, // route accepts productIds OR listingIds
+        `Looks like canvas (${canvasInventoryProductIds.length} ${canvasInventoryProductIds.length === 1 ? "item" : "items"})`,
+      );
+    } catch (err) {
+      console.warn("[shop] looks-like trigger failed:", err);
+      toast.error("Couldn't run looks-like search");
+    }
+  }, [canvasInventoryProductIds, shop]);
+
+  const triggerFindPiecesForLook = useCallback(async () => {
+    if (canvasInventoryProductIds.length === 0) {
+      toast("Add an inventory item to the canvas first");
+      return;
+    }
+    setLookPiecesLoading(true);
+    try {
+      const res = await fetch(
+        `/api/stylist/sessions/${encodeURIComponent(sessionId)}/shop-inventory/look-pieces`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            canvasProductIds: canvasInventoryProductIds,
+            filledBuckets: Array.from(
+              new Set(
+                canvas
+                  .filter((c) => c.source === "INVENTORY")
+                  .map((c) => {
+                    const it = shop.items.find((s) => s.id === c.refId);
+                    return it?.category;
+                  })
+                  .filter(Boolean),
+              ),
+            ),
+          }),
+        },
+      );
+      if (!res.ok) throw new Error(`look-pieces failed (${res.status})`);
+      const json = (await res.json()) as {
+        buckets: { bucket: Exclude<CategoryBucket, "all">; items: InventoryItem[] }[];
+      };
+      setLookPieces(json.buckets);
+      if (json.buckets.every((b) => b.items.length === 0)) {
+        toast("No suggestions yet — try adding another canvas item");
+      }
+    } catch (err) {
+      console.warn("[shop] find-pieces trigger failed:", err);
+      toast.error("Couldn't load look pieces");
+    } finally {
+      setLookPiecesLoading(false);
+    }
+  }, [canvasInventoryProductIds, canvas, sessionId, shop.items]);
+
+  // Keyboard shortcut: `/` focuses the Shop search bar from anywhere
+  useEffect(() => {
+    if (tab !== "shop") return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === "/") {
+        e.preventDefault();
+        shopSearchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [tab]);
 
   const clearCanvas = () => {
     setCanvas([]);
@@ -1504,18 +1782,97 @@ export function StyleboardBuilder({
                   </span>
                 </button>
               )}
-              <div className="relative w-full max-w-xs">
+              <div className="relative w-full max-w-md flex items-center gap-1">
                 <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
-                  placeholder="Search inventory..."
+                  ref={shopSearchInputRef}
+                  placeholder={
+                    tab === "shop"
+                      ? "Search the catalog — try “navy linen blazer for fall”"
+                      : "Search inventory..."
+                  }
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="h-8 pl-8 font-body text-xs rounded-sm"
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setSearch("");
+                    }
+                  }}
+                  className="h-8 pl-8 font-body text-xs rounded-sm flex-1"
                 />
+                {tab === "shop" && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShopSearchMode((m) => (m === "smart" ? "keyword" : "smart"))
+                    }
+                    title={
+                      shopSearchMode === "smart"
+                        ? "Smart (semantic) search — click for keyword"
+                        : "Keyword (FTS) search — click for smart"
+                    }
+                    aria-pressed={shopSearchMode === "smart"}
+                    className={cn(
+                      "h-8 inline-flex items-center gap-1 px-2 rounded-sm border font-body text-[10px] uppercase tracking-wider whitespace-nowrap transition-colors",
+                      shopSearchMode === "smart"
+                        ? "bg-foreground text-background border-foreground"
+                        : "bg-background text-foreground border-border hover:bg-muted",
+                    )}
+                  >
+                    <SparklesIcon className="h-3 w-3" />
+                    {shopSearchMode === "smart" ? "Smart" : "Keyword"}
+                  </button>
+                )}
               </div>
               <span className="font-body text-sm text-muted-foreground whitespace-nowrap">
-                {filtered.length} {filtered.length === 1 ? "item" : "items"}
+                {tab === "shop"
+                  ? `${shop.items.length} of ${shop.total > 0 ? `≈${shop.visibleApprox}` : "0"} items`
+                  : `${filtered.length} ${filtered.length === 1 ? "item" : "items"}`}
               </span>
+              {tab === "shop" && (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => triggerLooksLikeCanvas()}
+                    disabled={canvas.length === 0}
+                    title={
+                      canvas.length === 0
+                        ? "Add an item to the canvas to enable"
+                        : "Find items that look like the items on the canvas"
+                    }
+                    className="h-8 font-body text-[11px] rounded-sm"
+                  >
+                    <SparklesIcon className="h-3 w-3 mr-1" />
+                    Looks like canvas
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSuitPairOpen(true)}
+                    className="h-8 font-body text-[11px] rounded-sm"
+                  >
+                    Suit pair
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => triggerFindPiecesForLook()}
+                    disabled={canvas.length === 0}
+                    title={
+                      canvas.length === 0
+                        ? "Add an item to the canvas to enable"
+                        : "Suggest pieces that complete this look"
+                    }
+                    className="h-8 font-body text-[11px] rounded-sm"
+                  >
+                    Find pieces for this look
+                  </Button>
+                </>
+              )}
             </div>
             <div className="flex items-center gap-1">
               <span className="font-body text-[11px] text-muted-foreground mr-1">View</span>
@@ -1585,6 +1942,53 @@ export function StyleboardBuilder({
                   </button>
                 );
               })}
+            </div>
+          )}
+          {tab === "shop" && shop.powerMode && (
+            <div className="flex items-center gap-2 px-5 py-2 border-b border-border bg-accent/30">
+              <SparklesIcon className="h-3.5 w-3.5 text-foreground" />
+              <span className="font-body text-xs text-foreground">
+                {shop.powerMode.label}
+              </span>
+              <button
+                type="button"
+                onClick={() => shop.clearPowerMode()}
+                className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-border bg-background font-body text-[11px] text-foreground hover:bg-muted"
+              >
+                <XIcon className="h-3 w-3" />
+                Back to browse
+              </button>
+            </div>
+          )}
+          {tab === "shop" && shop.appliedSmartDefaults.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap px-5 py-2 border-b border-border bg-cream/30">
+              <span className="font-display text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1 inline-flex items-center gap-1">
+                <SparklesIcon className="h-3 w-3" />
+                Tuned for {clientFirstName}
+              </span>
+              {shop.appliedSmartDefaults.map((d) => (
+                <span
+                  key={d.kind}
+                  className="inline-flex items-center gap-1 h-7 pl-2 pr-1 rounded-full border border-border bg-background text-foreground font-body text-[11px]"
+                >
+                  <span className="max-w-[200px] truncate">{d.reason}</span>
+                  <button
+                    type="button"
+                    onClick={() => shop.dismissSmartDefault(d.kind)}
+                    aria-label={`Dismiss ${d.kind} default`}
+                    className="h-5 w-5 inline-flex items-center justify-center rounded-full hover:bg-muted transition-colors"
+                  >
+                    <XIcon className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+              <button
+                type="button"
+                onClick={() => shop.restoreSmartDefaults()}
+                className="ml-1 font-body text-[11px] text-foreground hover:text-foreground/80 underline underline-offset-2"
+              >
+                Reset to {clientFirstName}&apos;s profile
+              </button>
             </div>
           )}
           {activeFilters.length > 0 && (
@@ -1717,10 +2121,123 @@ export function StyleboardBuilder({
               ))}
               {filtered.length === 0 && (
                 <div className="col-span-full p-12 text-center">
-                  <p className="font-body text-sm text-muted-foreground">No items match these filters</p>
+                  <p className="font-body text-sm text-muted-foreground">
+                    {tab === "shop"
+                      ? "No matches. Try clearing fabric, widening budget, or "
+                      : "No items match these filters"}
+                    {tab === "shop" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          clearAllFilters();
+                          shop.reset();
+                        }}
+                        className="underline underline-offset-2 hover:text-foreground"
+                      >
+                        reset to {clientFirstName}&apos;s profile
+                      </button>
+                    )}
+                  </p>
                 </div>
               )}
             </div>
+            {/* Load-more footer — Shop tab only. Hidden while in a power
+                mode (vector / direction); those return a single result set
+                that the stylist can step back from via "Back to browse". */}
+            {tab === "shop" && !shop.powerMode && shop.items.length > 0 && (
+              <div className="border-t border-border bg-muted/10 px-5 py-3 flex items-center justify-center">
+                {shop.canLoadMore ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => shop.loadMore()}
+                    disabled={shop.isLoadingMore}
+                    className="h-8 font-body text-xs rounded-sm"
+                  >
+                    {shop.isLoadingMore ? (
+                      <>
+                        <Loader2Icon className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        Loading…
+                      </>
+                    ) : (
+                      <>Load more · {Math.max(0, shop.total - shop.items.length)} left</>
+                    )}
+                  </Button>
+                ) : (
+                  <span className="font-body text-[11px] text-muted-foreground">
+                    End of catalog · {shop.items.length} of ≈{shop.visibleApprox} items
+                  </span>
+                )}
+              </div>
+            )}
+            {/* "Find pieces for this look" tray (Shop tab only). Each bucket
+                renders a horizontal carousel; tapping a card adds it to the
+                canvas like any other inventory item. */}
+            {tab === "shop" && (lookPiecesLoading || lookPieces.length > 0) && (
+              <div className="border-t border-border bg-background px-5 py-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-foreground inline-flex items-center gap-1.5">
+                    <SparklesIcon className="h-3 w-3" />
+                    Pieces for this look
+                  </h3>
+                  {lookPieces.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setLookPieces([])}
+                      className="font-body text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2"
+                    >
+                      Hide
+                    </button>
+                  )}
+                </div>
+                {lookPiecesLoading ? (
+                  <div className="font-body text-xs text-muted-foreground">
+                    Looking for complementary pieces…
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {lookPieces
+                      .filter((b) => b.items.length > 0)
+                      .map((bucket) => (
+                        <div key={bucket.bucket}>
+                          <p className="font-body text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">
+                            {bucket.bucket}
+                          </p>
+                          <div className="flex gap-2 overflow-x-auto pb-1">
+                            {bucket.items.map((it) => (
+                              <button
+                                key={it.id}
+                                type="button"
+                                onClick={() => addToCanvas(it)}
+                                className="shrink-0 w-32 group bg-card border border-border rounded-sm overflow-hidden hover:border-foreground transition-colors"
+                              >
+                                <div className="aspect-square overflow-hidden bg-muted">
+                                  <Image
+                                    src={it.image}
+                                    alt={it.name}
+                                    width={200}
+                                    height={200}
+                                    unoptimized
+                                    className="w-full h-full object-cover"
+                                    loading="lazy"
+                                  />
+                                </div>
+                                <div className="p-1.5">
+                                  <p className="font-body text-[10px] font-medium truncate">{it.brand}</p>
+                                  {it.price && (
+                                    <p className="font-body text-[10px] text-muted-foreground">{it.price}</p>
+                                  )}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
           </ScrollArea>
         </div>
 
@@ -2023,6 +2540,38 @@ export function StyleboardBuilder({
         onOpenChange={setClientInfoOpen}
         sessionId={sessionId || null}
         clientId={clientId}
+      />
+
+      <SuitPairDialog
+        open={suitPairOpen}
+        onOpenChange={setSuitPairOpen}
+        sessionId={sessionId}
+        onAddPair={(p) => {
+          // Add the blazer first, then the pants. Use a minimal InventoryItem
+          // shape — the canvas only needs id + image to render. The save-flow
+          // persists the inventoryProductId regardless.
+          const blazer: InventoryItem = {
+            id: p.blazer_product_id,
+            inventoryProductId: p.blazer_product_id,
+            image: p.blazer_image_url ?? "",
+            brand: p.brand_name,
+            name: p.blazer_name,
+            price: `$${Math.round(p.blazer_min_price)}`,
+            category: "outerwear",
+          };
+          const pants: InventoryItem = {
+            id: p.pants_product_id,
+            inventoryProductId: p.pants_product_id,
+            image: p.pants_image_url ?? "",
+            brand: p.brand_name,
+            name: p.pants_name,
+            price: `$${Math.round(p.pants_min_price)}`,
+            category: "bottoms",
+          };
+          addToCanvas(blazer);
+          addToCanvas(pants);
+          toast.success(`Added ${p.brand_name} suit pair to canvas`);
+        }}
       />
 
       <ProductDetailDialog
