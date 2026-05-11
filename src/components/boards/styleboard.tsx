@@ -11,6 +11,8 @@ export interface ProductItem {
   id: string;
   image: string;
   brand: string;
+  name?: string;
+  retailer?: string;
   price: string;
   soldOut?: boolean;
 }

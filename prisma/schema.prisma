@@ -273,7 +273,13 @@ model User {
   id               String       @id @default(cuid())
   clerkId          String?      @unique @map("clerk_id")
   authProvider     AuthProvider @default(EMAIL) @map("auth_provider")
-  email            String       @unique
+  // Uniqueness is enforced at the DB level via a partial unique index
+  // (`users_email_active_unique`) restricted to `deleted_at IS NULL`.
+  // Prisma can't model partial unique indexes — declaring `@unique` here
+  // would emit a strict UNIQUE on every push and silently re-introduce
+  // the soft-delete-blocks-resignup bug. Look up by email via
+  // `findFirst({ where: { email, deletedAt: null } })`, never `findUnique`.
+  email            String
   phone            String?
   firstName        String       @map("first_name")
   lastName         String       @map("last_name")

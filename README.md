@@ -110,7 +110,7 @@ terraform apply -var-file=staging.tfvars
 
 Pushes to `main` auto-deploy to staging via GitHub Actions. Production deploys are manual (workflow dispatch with required reviewer).
 
-**Staging URL:** `http://wishi-staging-alb-823228000.us-east-1.elb.amazonaws.com`
+**Staging URL:** `https://d2mt49xs07o9rr.cloudfront.net` (CloudFront, default `*.cloudfront.net` cert)
 
 Full deploy + rollback + incident-response procedures: [`docs/runbook.md`](./docs/runbook.md).
 

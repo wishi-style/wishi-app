@@ -64,6 +64,31 @@ export async function getWorkspaceData(sessionId: string, userId?: string) {
       })
     : null;
 
+  // Resolve every inventory product touched by this workspace (board items
+  // + single-item chat cards) up-front. Without this, Style-Boards thumbnails
+  // and Curated-Pieces tiles render the bare inventoryProductId UUID because
+  // we never reach the tastegraph service. `getProduct` is in-process cached,
+  // so duplicate IDs across boards + messages collapse to one upstream call.
+  const inventoryIds = new Set<string>();
+  for (const b of boards) {
+    for (const it of b.items) {
+      if (it.source === "INVENTORY" && it.inventoryProductId) {
+        inventoryIds.add(it.inventoryProductId);
+      }
+    }
+  }
+  for (const m of singleItemMessages) {
+    if (m.singleItemInventoryProductId) {
+      inventoryIds.add(m.singleItemInventoryProductId);
+    }
+  }
+  const productEntries = await Promise.all(
+    [...inventoryIds].map(
+      async (id) => [id, await getProduct(id).catch(() => null)] as const,
+    ),
+  );
+  const productById = new Map(productEntries);
+
   const boardSummaries: WorkspaceBoard[] = boards.map((b: (typeof boards)[number]) => {
     let thumbnailUrl: string | null = null;
     if (b.type === "MOODBOARD") {
@@ -75,6 +100,10 @@ export async function getWorkspaceData(sessionId: string, userId?: string) {
         else if (first.source === "INSPIRATION_PHOTO")
           thumbnailUrl = first.inspirationPhoto?.url ?? null;
         else if (first.source === "WEB_ADDED") thumbnailUrl = first.webItemImageUrl ?? null;
+        else if (first.source === "INVENTORY" && first.inventoryProductId) {
+          thumbnailUrl =
+            productById.get(first.inventoryProductId)?.primary_image_url ?? null;
+        }
       }
     }
     return {
@@ -94,6 +123,7 @@ export async function getWorkspaceData(sessionId: string, userId?: string) {
       let imageUrl: string | null = null;
       let label: string | null = null;
       let brand: string | null = null;
+      let inventoryProductId: string | null = null;
       if (it.source === "CLOSET") {
         imageUrl = it.closetItem?.url ?? null;
         label = it.closetItem?.name ?? null;
@@ -105,8 +135,12 @@ export async function getWorkspaceData(sessionId: string, userId?: string) {
         imageUrl = it.webItemImageUrl;
         label = it.webItemTitle ?? it.webItemUrl;
         brand = it.webItemBrand;
-      } else if (it.source === "INVENTORY") {
-        label = it.inventoryProductId;
+      } else if (it.source === "INVENTORY" && it.inventoryProductId) {
+        inventoryProductId = it.inventoryProductId;
+        const product = productById.get(it.inventoryProductId) ?? null;
+        imageUrl = product?.primary_image_url ?? null;
+        label = product?.canonical_name ?? it.inventoryProductId;
+        brand = product?.brand_name ?? null;
       }
       curated.push({
         id: it.id,
@@ -117,19 +151,25 @@ export async function getWorkspaceData(sessionId: string, userId?: string) {
         imageUrl,
         label,
         brand,
+        inventoryProductId,
       });
     }
   }
   for (const m of singleItemMessages) {
+    const inventoryProductId = m.singleItemInventoryProductId ?? null;
+    const product = inventoryProductId
+      ? productById.get(inventoryProductId) ?? null
+      : null;
     curated.push({
       id: `msg-${m.id}`,
       source: "SINGLE_ITEM",
       orderIndex: 0,
       boardId: "",
       boardSentAt: m.createdAt.toISOString(),
-      imageUrl: null,
-      label: m.singleItemInventoryProductId ?? m.singleItemWebUrl,
-      brand: null,
+      imageUrl: product?.primary_image_url ?? null,
+      label: product?.canonical_name ?? inventoryProductId ?? m.singleItemWebUrl,
+      brand: product?.brand_name ?? null,
+      inventoryProductId,
     });
   }
   curated.sort((a, b) => {

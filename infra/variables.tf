@@ -73,6 +73,24 @@ variable "cloudfront_price_class" {
   default = "PriceClass_100"
 }
 
+variable "cdn_enabled" {
+  type        = bool
+  default     = false
+  description = "Provision a CloudFront distribution in front of the ALB. Required to terminate HTTPS for envs that don't yet have an ACM cert on the ALB itself (staging today — wishi.me Route 53 zone is on the legacy AWS account)."
+}
+
+variable "cdn_aliases" {
+  type        = list(string)
+  default     = []
+  description = "Alternate domain names (CNAMEs) for the CloudFront distribution. Empty list uses the default *.cloudfront.net cert. Set together with cdn_certificate_arn once a real domain + ACM cert are wired."
+}
+
+variable "cdn_certificate_arn" {
+  type        = string
+  default     = ""
+  description = "ACM certificate ARN in us-east-1 for the cdn_aliases. Required when cdn_aliases is non-empty."
+}
+
 # Observability
 variable "log_retention_days" {
   type    = number
@@ -96,4 +114,10 @@ variable "alert_email_recipients" {
   type        = list(string)
   description = "Email addresses to subscribe to the per-env alerts SNS topic. Each address must confirm the SES subscription email after the first apply."
   default     = []
+}
+
+variable "scheduler_enabled" {
+  type        = bool
+  default     = false
+  description = "Enable the Phase 6 EventBridge Scheduler module (api-destination workers for waitlist-notify, payout-reconcile, loyalty-recalc). Off by default — the module emits a `Provided Arn is not in correct format` validation error on first apply that needs untangling before this flag can flip to true. Phase 5 workers (workers module) keep firing on their own schedules independent of this flag."
 }

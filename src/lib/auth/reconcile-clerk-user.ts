@@ -321,3 +321,49 @@ export async function syncClerkClaimsForUser(userId: string): Promise<void> {
     });
   }
 }
+
+/**
+ * Push the current DB `StylistProfile.onboardingStatus` into Clerk
+ * publicMetadata. Mirrors `syncClerkClaimsForUser` for the stylist-only
+ * onboardingStatus key the edge proxy reads in `src/proxy.ts` to gate
+ * `/stylist/*`.
+ *
+ * Call after any non-wizard mutation that flips `onboardingStatus`:
+ * admin eligibility approval, Stripe Connect return, and the Stripe
+ * `account.updated` payout webhook all bypass the wizard's own
+ * `advance()` and would otherwise leave Clerk stale until the next
+ * wizard step (which never comes, in the case of `ELIGIBLE`).
+ *
+ * Failures are logged but not rethrown — same opportunistic-sync
+ * contract as `syncClerkClaimsForUser`. No-op for users without a real
+ * Clerk ID (e2e fixtures use `e2e_*` / `demo-*` IDs) or without a
+ * stylist profile (CLIENT users don't carry onboardingStatus).
+ */
+export async function syncStylistOnboardingForUser(
+  userId: string,
+): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      clerkId: true,
+      stylistProfile: { select: { onboardingStatus: true } },
+    },
+  });
+  if (!user?.clerkId || !user.clerkId.startsWith("user_")) return;
+  if (!user.stylistProfile) return;
+
+  try {
+    const { clerkClient } = await import("@clerk/nextjs/server");
+    const client = await clerkClient();
+    await client.users.updateUserMetadata(user.clerkId, {
+      publicMetadata: {
+        onboardingStatus: user.stylistProfile.onboardingStatus,
+      },
+    });
+  } catch (err) {
+    console.error("syncStylistOnboardingForUser failed", {
+      userId,
+      err: err instanceof Error ? err.message : err,
+    });
+  }
+}

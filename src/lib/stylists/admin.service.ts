@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit/log";
+import { syncStylistOnboardingForUser } from "@/lib/auth/reconcile-clerk-user";
 import { notifyWaitlistForStylist } from "./waitlist-fanout";
 
 export async function getAdminStylistDetail(userId: string) {
@@ -52,6 +53,11 @@ export async function approveStylistMatchEligibility({
       onboardingStatus: "ELIGIBLE",
     },
   });
+
+  // Push the new ELIGIBLE status into Clerk so the dashboard read + the
+  // proxy gate stay aligned with the DB. ELIGIBLE is the terminal status —
+  // no later wizard step will re-sync it for us.
+  await syncStylistOnboardingForUser(stylistUserId);
 
   await writeAudit({
     actorUserId,

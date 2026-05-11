@@ -64,33 +64,28 @@ beforeEach(async () => {
 });
 
 integrationTest(
-  "addCartItem: rejects products not flagged as direct-sale",
+  "addCartItem: accepts any inventory product (universal cart)",
   async () => {
     const inventoryProductId = `of_${suiteSuffix}_not_merch`;
-    // No MerchandisedProduct row → isDirectSale returns false → guard rejects
-    await assert.rejects(
-      () =>
-        addCartItem({
-          userId: clientUserId,
-          inventoryProductId,
-          sessionId,
-          quantity: 1,
-        }),
-      /not marked direct-sale/,
-    );
+    // No MerchandisedProduct row — universal cart still accepts the add.
+    // Direct-sale flag continues to gate /checkout (see direct-sale tests).
+    await addCartItem({
+      userId: clientUserId,
+      inventoryProductId,
+      sessionId,
+      quantity: 1,
+    });
 
     const cart = await prisma.cartItem.findMany({ where: { userId: clientUserId } });
-    assert.equal(cart.length, 0);
+    assert.equal(cart.length, 1);
+    assert.equal(cart[0].inventoryProductId, inventoryProductId);
   },
 );
 
 integrationTest(
-  "addCartItem: accepts and upserts quantity for direct-sale products",
+  "addCartItem: upserts quantity on repeat adds",
   async () => {
     const inventoryProductId = `of_${suiteSuffix}_direct`;
-    await prisma.merchandisedProduct.create({
-      data: { inventoryProductId, isDirectSale: true },
-    });
 
     await addCartItem({ userId: clientUserId, inventoryProductId, sessionId });
     await addCartItem({

@@ -161,11 +161,11 @@ export function RestyleWizard({
 
   return (
     <Dialog open={open} onOpenChange={(v) => (v ? onOpenChange(v) : handleClose())}>
-      <DialogContent className="max-w-lg p-0 gap-0 overflow-hidden">
+      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden max-h-[calc(100dvh-2rem)]">
         {step === "select" && (
-          <div className="flex flex-col h-[70vh]">
+          <div className="flex flex-col h-[70vh] max-h-full">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
               <h3 className="font-display text-lg">Restyle Items</h3>
               <button
                 onClick={selectAll}
@@ -175,12 +175,12 @@ export function RestyleWizard({
               </button>
             </div>
 
-            <p className="px-6 pt-4 pb-2 text-sm font-body text-muted-foreground">
+            <p className="px-6 pt-4 pb-2 text-sm font-body text-muted-foreground shrink-0">
               Select the items you want to replace
             </p>
 
             {/* Product grid */}
-            <ScrollArea className="flex-1 px-6">
+            <ScrollArea className="flex-1 min-h-0 px-6">
               <div className="grid grid-cols-3 gap-3 pb-4">
                 {products.map((product) => {
                   const isSelected = selectedIds.has(product.id);
@@ -223,7 +223,7 @@ export function RestyleWizard({
             </ScrollArea>
 
             {/* Footer */}
-            <div className="px-6 py-4 border-t border-border">
+            <div className="px-6 py-4 border-t border-border shrink-0">
               <Button
                 onClick={goToFeedback}
                 disabled={selectedIds.size === 0}
@@ -236,9 +236,9 @@ export function RestyleWizard({
         )}
 
         {step === "feedback" && currentProduct && (
-          <div className="flex flex-col h-[70vh]">
+          <div className="flex flex-col h-[70vh] max-h-full">
             {/* Header */}
-            <div className="flex items-center gap-3 px-6 py-4 border-b border-border">
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-border shrink-0">
               <button
                 onClick={() => {
                   if (currentFeedbackIdx > 0) {
@@ -254,7 +254,7 @@ export function RestyleWizard({
               <h3 className="font-display text-lg">Add Feedback</h3>
             </div>
 
-            <ScrollArea className="flex-1 px-6">
+            <ScrollArea className="flex-1 min-h-0 px-6">
               {/* Progress */}
               <p className="text-sm font-body text-muted-foreground pt-4 pb-3 text-center">
                 {currentFeedbackIdx + 1} of {selectedProducts.length} Items
@@ -310,7 +310,7 @@ export function RestyleWizard({
             </ScrollArea>
 
             {/* Footer */}
-            <div className="px-6 py-4 border-t border-border space-y-2">
+            <div className="px-6 py-4 border-t border-border space-y-2 shrink-0">
               <Button
                 onClick={handleNext}
                 disabled={submitting}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckIcon } from "lucide-react";
 import type { ChatMessage } from "./use-chat";
@@ -150,6 +151,7 @@ function SingleItemCard({
   const webUrl = (message.attributes.singleItemWebUrl as string) ?? null;
   const [product, setProduct] = useState<ProductSummary | null>(null);
   const [added, setAdded] = useState(false);
+  const [cartError, setCartError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
@@ -169,19 +171,27 @@ function SingleItemCard({
 
   const addToCart = () => {
     if (!productId) return;
+    setCartError(null);
     startTransition(async () => {
-      const res = await fetch("/api/cart", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          inventoryProductId: productId,
-          sessionId,
-          quantity: 1,
-        }),
-      });
-      if (res.ok) {
-        setAdded(true);
-        router.refresh();
+      try {
+        const res = await fetch("/api/cart", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            inventoryProductId: productId,
+            sessionId,
+            quantity: 1,
+          }),
+        });
+        if (res.ok) {
+          setAdded(true);
+          router.refresh();
+          return;
+        }
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        setCartError(json.error ?? "Could not add to cart");
+      } catch {
+        setCartError("Could not add to cart");
       }
     });
   };
@@ -211,21 +221,33 @@ function SingleItemCard({
         </div>
       )}
       <div className="overflow-hidden rounded-lg border border-border bg-card">
-        {product?.primary_image_url ? (
-          <div className="aspect-square overflow-hidden">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={product.primary_image_url}
-              alt={product.canonical_name}
-              className="h-full w-full object-cover"
-              loading="lazy"
-            />
-          </div>
-        ) : (
-          <div className="grid aspect-square place-items-center bg-muted text-xs text-muted-foreground">
-            {product ? "No image" : "Loading…"}
-          </div>
-        )}
+        {(() => {
+          const imageBlock = product?.primary_image_url ? (
+            <div className="aspect-square overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={product.primary_image_url}
+                alt={product.canonical_name}
+                className="h-full w-full object-cover"
+                loading="lazy"
+              />
+            </div>
+          ) : (
+            <div className="grid aspect-square place-items-center bg-muted text-xs text-muted-foreground">
+              {product ? "No image" : "Loading…"}
+            </div>
+          );
+          return productId ? (
+            <Link
+              href={`/products/${productId}?sessionId=${sessionId}`}
+              className="block"
+            >
+              {imageBlock}
+            </Link>
+          ) : (
+            imageBlock
+          );
+        })()}
         <div className="p-3 text-center">
           <p className="truncate text-sm font-medium text-foreground">
             {product?.brand_name ?? "—"}
@@ -255,6 +277,9 @@ function SingleItemCard({
                 {pending ? "Adding…" : "Add to Cart"}
               </button>
             )
+          )}
+          {cartError && (
+            <p className="mt-2 text-xs text-destructive">{cartError}</p>
           )}
           {webUrl && !productId && (
             <a

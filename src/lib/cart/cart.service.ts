@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import { isDirectSale } from "@/lib/products/merchandised-product.service";
 import type { CartItem } from "@/generated/prisma/client";
 
 export interface AddCartItemInput {
@@ -12,10 +11,11 @@ export interface AddCartItemInput {
 /**
  * Cart items are session-scoped: every entry carries the session it was added
  * from so the StylingRoom Cart tab can filter to that session's products.
- * Adding a product not flagged `MerchandisedProduct.isDirectSale = true`
- * raises — direct-sale is the only path that hits our Stripe Checkout. The
- * `[userId, inventoryProductId, sessionId]` unique upgrades quantity rather
- * than creating duplicates.
+ * Universal cart — any inventory product the stylist surfaces is addable;
+ * fulfillment for non-merchandised SKUs is handled out-of-band by ops.
+ * The deferred order-system phase (see WISHI-LAUNCH-PREP B9) replaces that
+ * manual leg with sourcing automation. The `[userId, inventoryProductId,
+ * sessionId]` unique upgrades quantity rather than creating duplicates.
  */
 export async function addCartItem(
   input: AddCartItemInput,
@@ -23,12 +23,6 @@ export async function addCartItem(
   const qty = input.quantity ?? 1;
   if (!Number.isInteger(qty) || qty < 1) {
     throw new Error("quantity must be a positive integer");
-  }
-
-  if (!(await isDirectSale(input.inventoryProductId))) {
-    throw new Error(
-      "Product is not marked direct-sale; only merchandised direct-sale products can be added to cart",
-    );
   }
 
   const session = await prisma.session.findUnique({

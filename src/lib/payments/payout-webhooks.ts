@@ -7,6 +7,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { accountIsPayoutReady } from "@/lib/stripe-connect";
 import { dispatchNotification } from "@/lib/notifications/dispatcher";
+import { syncStylistOnboardingForUser } from "@/lib/auth/reconcile-clerk-user";
 
 type PayoutLookupRow = {
   id: string;
@@ -104,14 +105,18 @@ export async function handleAccountUpdated(account: Stripe.Account): Promise<voi
     ? account.metadata.stylistProfileId
     : null;
 
+  // `userId` is pulled here so we can opportunistically push the new
+  // `onboardingStatus` into Clerk publicMetadata after we advance — the
+  // proxy gate in `src/proxy.ts` reads from that key on every request and
+  // would otherwise stay stale until the wizard's next save() catches up.
   const profile = stylistProfileId
     ? await prisma.stylistProfile.findUnique({
         where: { id: stylistProfileId },
-        select: { id: true, payoutsEnabled: true, onboardingStatus: true },
+        select: { id: true, userId: true, payoutsEnabled: true, onboardingStatus: true },
       })
     : await prisma.stylistProfile.findUnique({
         where: { stripeConnectId: account.id },
-        select: { id: true, payoutsEnabled: true, onboardingStatus: true },
+        select: { id: true, userId: true, payoutsEnabled: true, onboardingStatus: true },
       });
 
   if (!profile) {
@@ -131,6 +136,10 @@ export async function handleAccountUpdated(account: Stripe.Account): Promise<voi
       ...(advance ? { onboardingStatus: "STRIPE_CONNECTED" } : {}),
     },
   });
+
+  if (advance) {
+    await syncStylistOnboardingForUser(profile.userId);
+  }
 }
 
 // ── payment_intent.succeeded (tip only) ────────────────────────────────────

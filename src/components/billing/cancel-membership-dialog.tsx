@@ -150,7 +150,7 @@ export function CancelMembershipDialog({
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         {step === "options" ? (
           <>
             <DialogHeader>

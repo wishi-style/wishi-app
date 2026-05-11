@@ -60,6 +60,10 @@ const isPublicRoute = createRouteMatcher([
   "/sitemap.xml",
   "/robots.txt",
   "/favicon.ico",
+  // Dev/e2e-only harness pages used to pin layout/component contracts
+  // without seeding a full chat. The route handler returns notFound() in
+  // production builds, so the public matcher here is a no-op outside dev.
+  "/dev/(.*)",
 ]);
 
 // Stylist routes that MUST stay accessible during onboarding — otherwise the
