@@ -110,11 +110,17 @@ export default async function BookingSuccessPage(props: {
           </div>
 
           <div className="mb-10 animate-in fade-in slide-in-from-bottom-4 space-y-3 text-center duration-700 delay-150">
-            <h1 className="font-display text-5xl leading-[1.05] tracking-tight md:text-6xl">
-              Meet <em className="italic text-accent">{stylistFirstName}</em>, your stylist.
+            <h1 className="font-display text-4xl leading-[1.05] tracking-tight text-balance md:whitespace-nowrap md:text-5xl">
+              {stylist ? (
+                <>
+                  Meet <em className="italic text-accent">{stylistFirstName}</em>, your stylist.
+                </>
+              ) : (
+                <>Meet your stylist.</>
+              )}
             </h1>
             <p className="font-body text-base text-muted-foreground">
-              Booking confirmed — she&rsquo;ll take it from here.
+              Booking confirmed — they&rsquo;ll take it from here.
             </p>
           </div>
 
