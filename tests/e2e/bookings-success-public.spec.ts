@@ -31,6 +31,11 @@ test("anonymous request to /bookings/success renders the confirmation page", asy
     page.getByRole("heading", { name: /your stylist/i }),
   ).toBeVisible();
   await expect(page.getByText(/Booking confirmed/i)).toBeVisible();
+
+  // Subtitle stays gender-neutral — we don't know the stylist's pronouns.
+  const body = await page.locator("body").innerText();
+  expect(body).not.toMatch(/\bshe(?:'|’)ll take/i);
+  expect(body).not.toMatch(/\bhe(?:'|’)ll take/i);
 });
 
 test("anonymous request to /bookings/success with stale session_id still renders", async ({
