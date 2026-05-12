@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import {
   getPresignedUploadUrl,
   getBoardPhotoPresignedUrl,
+  getStyleQuizBodyPhotoPresignedUrl,
   getPublicUrl,
 } from "@/lib/s3";
 
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILENAME_LENGTH = 255;
-const ALLOWED_PURPOSES = ["avatar", "profile-moodboard"] as const;
+const ALLOWED_PURPOSES = ["avatar", "profile-moodboard", "style-quiz-body-photo"] as const;
 type Purpose = (typeof ALLOWED_PURPOSES)[number];
 
 export async function GET(req: NextRequest) {
@@ -57,13 +58,20 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Avatar: returns `/api/images/avatars/<userId>/<filename>` via getPublicUrl.
-  // Profile moodboard: lives under `boards/<userId>/<timestamp>-<filename>`,
-  // stored on a stylist's profile Board. Both flows use the same presigned
-  // PUT pattern; only the bucket prefix and the publicUrl shape differ.
+  // Each purpose maps to a different bucket prefix; the presigned PUT pattern
+  // is the same. style-quiz-body-photo lands under `style-quiz/<userId>/...`
+  // so admin tooling can list a client's quiz uploads by prefix.
   if (purpose === "avatar") {
     const { url, key } = await getPresignedUploadUrl(user.id, filename, contentType);
     return Response.json({ url, key, publicUrl: getPublicUrl(key) });
+  }
+  if (purpose === "style-quiz-body-photo") {
+    const { uploadUrl, key, publicUrl } = await getStyleQuizBodyPhotoPresignedUrl(
+      user.id,
+      filename,
+      contentType,
+    );
+    return Response.json({ url: uploadUrl, key, publicUrl });
   }
   const { uploadUrl, key, publicUrl } = await getBoardPhotoPresignedUrl(
     user.id,

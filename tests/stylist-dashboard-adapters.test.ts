@@ -185,14 +185,22 @@ test("splitToChips handles single-value, multi-value, and null entries", () => {
   assert.deepEqual(splitToChips("Gold\nMixed metals"), ["Gold", "Mixed metals"]);
 });
 
-test("comfortZoneLabel buckets quiz Int (1–10) into Loveable phrase vocabulary", () => {
+test("comfortZoneLabel resolves Loveable enum first, falls back to legacy Int", () => {
+  // Empty when neither input is set
   assert.equal(comfortZoneLabel(null), "");
-  assert.equal(comfortZoneLabel(1), "Stay close");
-  assert.equal(comfortZoneLabel(3), "Stay close");
-  assert.equal(comfortZoneLabel(4), "A little outside");
-  assert.equal(comfortZoneLabel(7), "A little outside");
-  assert.equal(comfortZoneLabel(8), "Push my boundaries");
-  assert.equal(comfortZoneLabel(10), "Push my boundaries");
+  // Loveable enum (new) — 3 buckets, exact mapping
+  assert.equal(comfortZoneLabel("STAY_CLOSE"), "Stay close");
+  assert.equal(comfortZoneLabel("FEW_NEW_ITEMS"), "A little outside");
+  assert.equal(comfortZoneLabel("NEW_STYLE"), "Push my boundaries");
+  // Enum wins over legacy Int
+  assert.equal(comfortZoneLabel("STAY_CLOSE", 10), "Stay close");
+  // Falls back to legacy Int when enum is null
+  assert.equal(comfortZoneLabel(null, 1), "Stay close");
+  assert.equal(comfortZoneLabel(null, 3), "Stay close");
+  assert.equal(comfortZoneLabel(null, 4), "A little outside");
+  assert.equal(comfortZoneLabel(null, 7), "A little outside");
+  assert.equal(comfortZoneLabel(null, 8), "Push my boundaries");
+  assert.equal(comfortZoneLabel(null, 10), "Push my boundaries");
 });
 
 test("extractHandle pulls the trailing path segment from a URL", () => {
