@@ -598,6 +598,31 @@ export async function loadShopInventory(
     dismissed,
   );
 
+  // Intent override: when the stylist explicitly types a dislike into the
+  // search box ("long black leather jacket" for a client who normally
+  // avoids leather), they know what they're doing — they're showing the
+  // client an option, not forcing it. Suspend the corresponding dislike
+  // (and the auto-applied `excludeLeather` smart default) for this query
+  // so semantic search isn't silently emptied.
+  const q = merged.query?.toLowerCase() ?? "";
+  const queryMatchesDislike = (list: string[]): string[] =>
+    q ? list.filter((d) => d && q.includes(d.toLowerCase())) : [];
+  const suspendedFabrics = queryMatchesDislike(ctx.dislikedFabrics);
+  const suspendedColors = queryMatchesDislike(ctx.dislikedColors);
+  const suspendedPatterns = queryMatchesDislike(ctx.dislikedPatterns);
+  const effectiveCtx = {
+    avoidBrands: ctx.avoidBrands,
+    dislikedColors: ctx.dislikedColors.filter((c) => !suspendedColors.includes(c)),
+    dislikedFabrics: ctx.dislikedFabrics.filter((f) => !suspendedFabrics.includes(f)),
+    dislikedPatterns: ctx.dislikedPatterns.filter((p) => !suspendedPatterns.includes(p)),
+  };
+  if (
+    suspendedFabrics.some((f) => f.toLowerCase().includes("leather")) ||
+    q.includes("leather")
+  ) {
+    merged.excludeLeather = undefined;
+  }
+
   // Power-mode invocations skip the search-query construction and route
   // straight into vector / direction modes.
   const dto = buildSearchDto(merged, page, pageSize);
@@ -606,12 +631,7 @@ export async function loadShopInventory(
   const search: SearchResponse = await searchProducts(dto);
 
   const preDislike = search.results;
-  const postDislike = filterOutClientDislikes(preDislike, {
-    avoidBrands: ctx.avoidBrands,
-    dislikedColors: ctx.dislikedColors,
-    dislikedFabrics: ctx.dislikedFabrics,
-    dislikedPatterns: ctx.dislikedPatterns,
-  });
+  const postDislike = filterOutClientDislikes(preDislike, effectiveCtx);
   const ranked = rankByClientLikes(postDislike, {
     preferredBrands: ctx.preferredBrands,
     likedColors: ctx.likedColors,
