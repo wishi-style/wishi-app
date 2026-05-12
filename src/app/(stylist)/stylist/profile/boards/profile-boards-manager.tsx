@@ -1,10 +1,27 @@
 "use client";
 
+// Stylist's profile-boards manager. Lists featured boards bucketed by style
+// and provides two creation entry points via the +New board picker:
+//   1. Moodboard — inspiration-image collage
+//   2. Styleboard — shoppable canvas built from the LookCreator
+// Both creation paths land at sessionless variants of the existing builders.
+
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+
+type BoardType = "MOODBOARD" | "STYLEBOARD";
 
 type Board = {
   id: string;
+  type: BoardType;
   profileStyle: string | null;
   isFeaturedOnProfile: boolean;
   coverUrl: string | null;
@@ -19,10 +36,24 @@ export function ProfileBoardsManager({
   initialBoards: Board[];
 }) {
   const router = useRouter();
-  const [boards, setBoards] = useState<Board[]>(initialBoards);
+  // Local optimistic overlay for unfeature actions. Keyed by id; the prop
+  // remains the source of truth so router.refresh() reflects new boards
+  // created via the picker without a stale `useState(initialBoards)` lock.
+  const [unfeaturedLocally, setUnfeaturedLocally] = useState<Set<string>>(
+    new Set(),
+  );
   const [activeStyle, setActiveStyle] = useState<string | null>(styles[0] ?? null);
   const [error, setError] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+
+  const boards = useMemo(
+    () =>
+      initialBoards.map((b) =>
+        unfeaturedLocally.has(b.id) ? { ...b, isFeaturedOnProfile: false } : b,
+      ),
+    [initialBoards, unfeaturedLocally],
+  );
 
   const grouped = useMemo(() => {
     const bucket = new Map<string, Board[]>();
@@ -36,23 +67,6 @@ export function ProfileBoardsManager({
     return bucket;
   }, [boards, styles]);
 
-  function addBoard(style: string) {
-    setError(null);
-    startTransition(async () => {
-      const res = await fetch("/api/stylist/profile/boards", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileStyle: style }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.error ?? "Failed to create board");
-        return;
-      }
-      router.refresh();
-    });
-  }
-
   function removeBoard(boardId: string) {
     setError(null);
     startTransition(async () => {
@@ -63,7 +77,12 @@ export function ProfileBoardsManager({
         setError("Failed to remove");
         return;
       }
-      setBoards((prev) => prev.map((b) => (b.id === boardId ? { ...b, isFeaturedOnProfile: false } : b)));
+      setUnfeaturedLocally((prev) => {
+        const next = new Set(prev);
+        next.add(boardId);
+        return next;
+      });
+      router.refresh();
     });
   }
 
@@ -106,10 +125,10 @@ export function ProfileBoardsManager({
             <button
               type="button"
               disabled={isPending || (grouped.get(activeStyle)?.length ?? 0) >= 10}
-              onClick={() => addBoard(activeStyle)}
+              onClick={() => setPickerOpen(true)}
               className="rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background disabled:opacity-50"
             >
-              {isPending ? "Adding…" : "+ New board"}
+              + New board
             </button>
           </div>
 
@@ -129,9 +148,14 @@ export function ProfileBoardsManager({
                   </div>
                 )}
                 <div className="flex items-center justify-between p-3 text-xs">
-                  <span className="text-muted-foreground">
-                    {new Date(b.createdAt).toLocaleDateString()}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {b.type === "STYLEBOARD" ? "Look" : "Moodboard"}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {new Date(b.createdAt).toLocaleDateString()}
+                    </span>
+                  </div>
                   <button
                     type="button"
                     onClick={() => removeBoard(b.id)}
@@ -152,6 +176,38 @@ export function ProfileBoardsManager({
           )}
         </div>
       )}
+
+      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
+        <DialogContent className="sm:max-w-md rounded-sm">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg">
+              Create from a session
+            </DialogTitle>
+            <DialogDescription className="font-body text-sm text-muted-foreground">
+              While you're styling a client, the save dialog now has a{" "}
+              <span className="font-medium text-foreground">
+                Also feature on my profile
+              </span>{" "}
+              toggle plus a style picker. Looks and moodboards built that way
+              will appear here.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="font-body text-xs text-muted-foreground">
+            Standalone creation from this page is coming soon — it'll launch the
+            same LookCreator and moodboard builder, just without a client
+            attached.
+          </p>
+          <div className="flex justify-end pt-2">
+            <Link
+              href="/stylist/dashboard"
+              onClick={() => setPickerOpen(false)}
+              className="rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background"
+            >
+              Go to dashboard
+            </Link>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

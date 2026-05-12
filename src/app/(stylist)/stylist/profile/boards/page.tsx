@@ -34,9 +34,10 @@ export default async function ProfileBoardsPage({
         styles={profile?.styleSpecialties ?? []}
         initialBoards={boards.map((b) => ({
           id: b.id,
+          type: b.type,
           profileStyle: b.profileStyle ?? null,
           isFeaturedOnProfile: b.isFeaturedOnProfile,
-          coverUrl: b.photos[0]?.url ?? null,
+          coverUrl: b.coverUrl ?? b.photos[0]?.url ?? null,
           createdAt: b.createdAt.toISOString(),
         }))}
       />
