@@ -1095,15 +1095,17 @@ export function StyleboardBuilder({
           })()}
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setClientInfoOpen(true)}
-            className="font-body text-xs h-8 rounded-sm gap-1.5"
-          >
-            <UserIcon className="h-3.5 w-3.5" />
-            Client Profile
-          </Button>
+          {!profileMode && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setClientInfoOpen(true)}
+              className="font-body text-xs h-8 rounded-sm gap-1.5"
+            >
+              <UserIcon className="h-3.5 w-3.5" />
+              Client Profile
+            </Button>
+          )}
           {canvas.length > 0 && (
             <Button
               variant="ghost"
@@ -1123,7 +1125,8 @@ export function StyleboardBuilder({
             className="h-8 rounded-sm bg-foreground text-background hover:bg-foreground/90 font-body text-xs gap-1.5"
           >
             <SendIcon className="h-3.5 w-3.5" />
-            Save & send{canvas.length < MIN_ITEMS_TO_SAVE ? ` (${canvas.length}/${MIN_ITEMS_TO_SAVE})` : ""}
+            {profileMode ? "Publish to profile" : "Save & send"}
+            {canvas.length < MIN_ITEMS_TO_SAVE ? ` (${canvas.length}/${MIN_ITEMS_TO_SAVE})` : ""}
           </Button>
         </div>
       </div>
@@ -2448,7 +2451,7 @@ export function StyleboardBuilder({
               ) : (
                 <>
                   <SendIcon className="h-4 w-4" />
-                  Save & send
+                  {profileMode ? "Publish to profile" : "Save & send"}
                 </>
               )}
             </Button>

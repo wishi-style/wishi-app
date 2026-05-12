@@ -213,15 +213,17 @@ export function MoodboardBuilder({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setClientInfoOpen(true)}
-            className="font-body text-xs h-8 rounded-sm gap-1.5"
-          >
-            <UserIcon className="h-3.5 w-3.5" />
-            Client Profile
-          </Button>
+          {!profileMode && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setClientInfoOpen(true)}
+              className="font-body text-xs h-8 rounded-sm gap-1.5"
+            >
+              <UserIcon className="h-3.5 w-3.5" />
+              Client Profile
+            </Button>
+          )}
           {canvasImages.length > 0 && (
             <>
               <Button

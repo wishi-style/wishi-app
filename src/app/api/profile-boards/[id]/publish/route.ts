@@ -8,7 +8,10 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
-import { publishProfileBoard } from "@/lib/boards/profile-boards.service";
+import {
+  publishProfileBoard,
+  type PublishStyleboardItem,
+} from "@/lib/boards/profile-boards.service";
 import { isDomainError } from "@/lib/errors/domain-error";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +32,11 @@ export async function POST(
       title?: string | null;
       description?: string | null;
       tags?: string[];
+      // Styleboard variant: canvas snapshot from the LookCreator. The
+      // service replaces existing BoardItem rows in the same tx that flips
+      // isFeaturedOnProfile. Moodboards don't send this (photos live in
+      // BoardPhoto and are persisted incrementally via /photos).
+      items?: PublishStyleboardItem[];
     };
 
     const board = await publishProfileBoard({
@@ -39,6 +47,7 @@ export async function POST(
       title: body.title ?? null,
       description: body.description ?? null,
       tags: body.tags ?? [],
+      items: body.items,
     });
     return NextResponse.json({ board });
   } catch (err) {

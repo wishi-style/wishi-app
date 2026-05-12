@@ -198,7 +198,9 @@ export async function listProfileBoards(
       ...(profileStyle ? { profileStyle } : {}),
     },
     include: {
-      photos: { orderBy: { orderIndex: "asc" }, take: 1 },
+      // Up to 4 photos so the manager card can render a 2x2 collage for
+      // moodboards. STYLEBOARDs use Board.coverUrl directly and ignore this.
+      photos: { orderBy: { orderIndex: "asc" }, take: 4 },
     },
     orderBy: { createdAt: "desc" },
   });

@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { ArrowLeftIcon } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
@@ -19,25 +21,37 @@ export default async function ProfileBoardsPage({
     where: { userId: user.id },
     select: { styleSpecialties: true },
   });
-  const focusStyle = (await searchParams)?.style;
-
-  const boards = await listProfileBoards(user.id, focusStyle);
+  // Always load every featured board for this stylist so the tab counts
+  // are accurate. The ?style= query param is forwarded to the manager as a
+  // *focus* hint (which tab to open), not a DB filter — pre-fix the page
+  // dropped boards from other styles entirely, making them disappear.
+  const focusStyle = (await searchParams)?.style ?? null;
+  const boards = await listProfileBoards(user.id);
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
+      <Link
+        href="/stylist/profile"
+        className="mb-4 inline-flex items-center gap-1.5 text-xs font-body text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeftIcon className="h-3.5 w-3.5" />
+        Back to profile
+      </Link>
       <h1 className="mb-2 text-3xl font-semibold">Profile boards</h1>
       <p className="mb-6 text-sm text-muted-foreground">
-        Create 3–10 moodboards for each style you claim. Clients see these on
-        your public profile.
+        Create 3–10 boards for each style you claim. Clients see these on your
+        public profile.
       </p>
       <ProfileBoardsManager
         styles={profile?.styleSpecialties ?? []}
+        focusStyle={focusStyle}
         initialBoards={boards.map((b) => ({
           id: b.id,
           type: b.type,
           profileStyle: b.profileStyle ?? null,
           isFeaturedOnProfile: b.isFeaturedOnProfile,
           coverUrl: b.coverUrl ?? b.photos[0]?.url ?? null,
+          photoUrls: b.photos.map((p) => p.url).filter((u): u is string => !!u),
           createdAt: b.createdAt.toISOString(),
         }))}
       />

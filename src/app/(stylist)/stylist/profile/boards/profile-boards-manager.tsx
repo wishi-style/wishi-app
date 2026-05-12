@@ -25,15 +25,18 @@ type Board = {
   profileStyle: string | null;
   isFeaturedOnProfile: boolean;
   coverUrl: string | null;
+  photoUrls: string[];
   createdAt: string;
 };
 
 export function ProfileBoardsManager({
   styles,
   initialBoards,
+  focusStyle,
 }: {
   styles: string[];
   initialBoards: Board[];
+  focusStyle?: string | null;
 }) {
   const router = useRouter();
   // Local optimistic overlay for unfeature actions. Keyed by id; the prop
@@ -42,7 +45,14 @@ export function ProfileBoardsManager({
   const [unfeaturedLocally, setUnfeaturedLocally] = useState<Set<string>>(
     new Set(),
   );
-  const [activeStyle, setActiveStyle] = useState<string | null>(styles[0] ?? null);
+  // focusStyle (from ?style= on the URL) wins on first render so post-publish
+  // redirects land the stylist on the just-published bucket. Fall back to the
+  // first claimed specialty.
+  const initialActive =
+    (focusStyle && styles.includes(focusStyle) ? focusStyle : null) ??
+    styles[0] ??
+    null;
+  const [activeStyle, setActiveStyle] = useState<string | null>(initialActive);
   const [error, setError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -133,12 +143,45 @@ export function ProfileBoardsManager({
           </div>
 
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            {(grouped.get(activeStyle) ?? []).map((b) => (
+            {(grouped.get(activeStyle) ?? []).map((b) => {
+              // Moodboards collage up to 4 photos so the card visually
+              // reads as a moodboard. Styleboards are single-cover cards
+              // (the canvas itself is the artifact; thumbnail is the
+              // first item's product image).
+              const photos = b.photoUrls.slice(0, 4);
+              const showCollage = b.type === "MOODBOARD" && photos.length > 1;
+              const single =
+                b.coverUrl ?? (photos.length > 0 ? photos[0] : null);
+              return (
               <div key={b.id} className="overflow-hidden rounded-lg border border-muted">
-                {b.coverUrl ? (
+                {showCollage ? (
+                  <div
+                    className={
+                      photos.length >= 4
+                        ? "grid aspect-square w-full grid-cols-2 grid-rows-2 gap-px bg-muted"
+                        : photos.length === 3
+                          ? "grid aspect-square w-full grid-cols-2 gap-px bg-muted"
+                          : "grid aspect-square w-full grid-cols-2 gap-px bg-muted"
+                    }
+                  >
+                    {photos.map((url, i) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={`${b.id}-${i}`}
+                        src={url}
+                        alt={`${activeStyle} moodboard photo ${i + 1}`}
+                        className={
+                          photos.length === 3 && i === 0
+                            ? "col-span-2 h-full w-full object-cover"
+                            : "h-full w-full object-cover"
+                        }
+                      />
+                    ))}
+                  </div>
+                ) : single ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={b.coverUrl}
+                    src={single}
                     alt={`${activeStyle} board`}
                     className="aspect-square w-full object-cover"
                   />
@@ -165,7 +208,8 @@ export function ProfileBoardsManager({
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
 
           {(grouped.get(activeStyle)?.length ?? 0) < 3 && (
