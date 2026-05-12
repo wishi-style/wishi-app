@@ -1497,7 +1497,7 @@ export function StyleboardBuilder({
               </div>
               <span className="font-body text-sm text-muted-foreground whitespace-nowrap">
                 {tab === "shop"
-                  ? `${shop.items.length} of ${shop.total > 0 ? `≈${shop.visibleApprox}` : "0"} items`
+                  ? shop.total === 0 ? "0 items" : shop.items.length >= shop.visibleApprox ? `${shop.items.length} ${shop.items.length === 1 ? "item" : "items"}` : `${shop.items.length} of ~${shop.visibleApprox} items`
                   : `${filtered.length} ${filtered.length === 1 ? "item" : "items"}`}
               </span>
             </div>
@@ -1793,7 +1793,7 @@ export function StyleboardBuilder({
                   </Button>
                 ) : (
                   <span className="font-body text-[11px] text-muted-foreground">
-                    End of catalog · {shop.items.length} of ≈{shop.visibleApprox} items
+                    End of catalog · {shop.items.length} {shop.items.length === 1 ? "item" : "items"}
                   </span>
                 )}
               </div>
