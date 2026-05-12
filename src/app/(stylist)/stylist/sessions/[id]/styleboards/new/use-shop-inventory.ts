@@ -405,7 +405,10 @@ export function useShopInventory(opts: UseShopInventoryOpts) {
     isLoading: status === "loading",
     isLoadingMore: status === "loading-more",
     error,
-    canLoadMore: items.length < response.total && powerMode === null,
+    canLoadMore:
+      items.length < response.total &&
+      items.length < response.visibleApprox &&
+      powerMode === null,
 
     // State
     filters,

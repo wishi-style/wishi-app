@@ -1788,7 +1788,7 @@ export function StyleboardBuilder({
                         Loading…
                       </>
                     ) : (
-                      <>Load more · {Math.max(0, shop.total - shop.items.length)} left</>
+                      <>Load more · ~{Math.max(0, shop.visibleApprox - shop.items.length)} left</>
                     )}
                   </Button>
                 ) : (
