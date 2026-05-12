@@ -646,26 +646,6 @@ export function ShopFilterRail({
             );
           })}
         </div>
-        <div className="space-y-0.5 max-h-32 overflow-y-auto pr-1">
-          {facets.colors.map((c) => {
-            const selected = value.colors?.includes(c.value) ?? false;
-            return (
-              <CheckRow
-                key={`r-${c.value}`}
-                label={c.value.charAt(0).toUpperCase() + c.value.slice(1)}
-                count={c.count}
-                selected={selected}
-                onClick={() => {
-                  const next = toggleInSet(value.colors, c.value);
-                  onChange({ colors: next.length ? next : undefined });
-                  if (!selected) setExpandedColorFamily(c.value);
-                  else if (expandedColorFamily === c.value)
-                    setExpandedColorFamily(null);
-                }}
-              />
-            );
-          })}
-        </div>
 
         {/* Sub-color drawer for the expanded family */}
         {expandedColorFamily &&
