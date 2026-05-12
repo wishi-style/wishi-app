@@ -56,7 +56,9 @@ export async function GET(
       session: { select: { clientId: true, stylistId: true } },
       items: {
         orderBy: { orderIndex: "asc" },
-        take: 12,
+        // Bumped from 12 → 24 so the chat card's collage + product grid
+        // reflect every piece the stylist placed on the canvas.
+        take: 24,
         include: {
           closetItem: { select: { url: true, name: true, designer: true } },
           inspirationPhoto: { select: { url: true } },
@@ -148,10 +150,11 @@ export async function GET(
   );
 
   const products = resolved.filter((p): p is PreviewProduct => p != null);
+  // No cap: the left-column collage tiles every item on the canvas so the
+  // card reflects the actual styleboard rather than an arbitrary first 6.
   const thumbnails = products
     .map((p) => p.image)
-    .filter((u): u is string => Boolean(u))
-    .slice(0, 6);
+    .filter((u): u is string => Boolean(u));
 
   return NextResponse.json({ thumbnails, products });
 }

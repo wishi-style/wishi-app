@@ -199,8 +199,23 @@ export async function listProfileBoards(
     },
     include: {
       // Up to 4 photos so the manager card can render a 2x2 collage for
-      // moodboards. STYLEBOARDs use Board.coverUrl directly and ignore this.
+      // moodboards.
       photos: { orderBy: { orderIndex: "asc" }, take: 4 },
+      // BoardItems so STYLEBOARDs render a multi-item collage instead of
+      // a single cover. INVENTORY items have only an inventoryProductId
+      // (image lives in tastegraph) — `resolveThumbnailsForBoards` does
+      // that resolution in the page loader.
+      items: {
+        orderBy: { orderIndex: "asc" },
+        take: 8,
+        select: {
+          source: true,
+          inventoryProductId: true,
+          webItemImageUrl: true,
+          closetItem: { select: { url: true } },
+          inspirationPhoto: { select: { url: true } },
+        },
+      },
     },
     orderBy: { createdAt: "desc" },
   });

@@ -25,7 +25,10 @@ type Board = {
   profileStyle: string | null;
   isFeaturedOnProfile: boolean;
   coverUrl: string | null;
-  photoUrls: string[];
+  // Up to 4 thumbnails for the card collage. Moodboards: BoardPhoto URLs.
+  // Styleboards: resolved BoardItem images (tastegraph product photos for
+  // INVENTORY items, raw URLs for closet/web/inspiration).
+  thumbnailUrls: string[];
   createdAt: string;
 };
 
@@ -144,34 +147,33 @@ export function ProfileBoardsManager({
 
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             {(grouped.get(activeStyle) ?? []).map((b) => {
-              // Moodboards collage up to 4 photos so the card visually
-              // reads as a moodboard. Styleboards are single-cover cards
-              // (the canvas itself is the artifact; thumbnail is the
-              // first item's product image).
-              const photos = b.photoUrls.slice(0, 4);
-              const showCollage = b.type === "MOODBOARD" && photos.length > 1;
+              // Both moodboards (photo collage) and styleboards (item
+              // collage) render up to 4 thumbnails — for styleboards the
+              // images are resolved from BoardItems server-side so the
+              // card reflects the actual canvas, not just a single cover.
+              const thumbs = b.thumbnailUrls.slice(0, 4);
               const single =
-                b.coverUrl ?? (photos.length > 0 ? photos[0] : null);
+                thumbs.length === 1 ? thumbs[0] : b.coverUrl;
+              const altLabel =
+                b.type === "STYLEBOARD" ? "styleboard piece" : "moodboard photo";
               return (
               <div key={b.id} className="overflow-hidden rounded-lg border border-muted">
-                {showCollage ? (
+                {thumbs.length > 1 ? (
                   <div
                     className={
-                      photos.length >= 4
+                      thumbs.length >= 4
                         ? "grid aspect-square w-full grid-cols-2 grid-rows-2 gap-px bg-muted"
-                        : photos.length === 3
-                          ? "grid aspect-square w-full grid-cols-2 gap-px bg-muted"
-                          : "grid aspect-square w-full grid-cols-2 gap-px bg-muted"
+                        : "grid aspect-square w-full grid-cols-2 gap-px bg-muted"
                     }
                   >
-                    {photos.map((url, i) => (
+                    {thumbs.map((url, i) => (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         key={`${b.id}-${i}`}
                         src={url}
-                        alt={`${activeStyle} moodboard photo ${i + 1}`}
+                        alt={`${activeStyle} ${altLabel} ${i + 1}`}
                         className={
-                          photos.length === 3 && i === 0
+                          thumbs.length === 3 && i === 0
                             ? "col-span-2 h-full w-full object-cover"
                             : "h-full w-full object-cover"
                         }
