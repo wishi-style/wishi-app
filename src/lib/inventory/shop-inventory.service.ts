@@ -373,6 +373,98 @@ const ACCENT_FAMILIES = new Set([
   "pattern",
 ]);
 
+// Per-family sub-colour evidence tokens. A product whose `color_families`
+// includes "red" but whose `available_colors` contains zero red-flavoured
+// strings is a service misclassification (the color_normalizer mapped a
+// non-red variant into the red bucket) — drop it. The vocab is conservative;
+// adding a token costs little, missing one drops a real match.
+const COLOR_FAMILY_TOKENS: Record<string, string[]> = {
+  red: [
+    "red",
+    "burgundy",
+    "crimson",
+    "wine",
+    "scarlet",
+    "maroon",
+    "bordeaux",
+    "oxblood",
+    "cherry",
+    "ruby",
+    "merlot",
+    "rust",
+    "rose red",
+    "brick",
+    "garnet",
+  ],
+  blue: [
+    "blue",
+    "navy",
+    "indigo",
+    "cobalt",
+    "denim",
+    "midnight",
+    "teal",
+    "azure",
+    "powder blue",
+    "sky",
+    "royal",
+    "sapphire",
+  ],
+  green: [
+    "green",
+    "olive",
+    "sage",
+    "mint",
+    "emerald",
+    "forest",
+    "moss",
+    "kelly",
+    "khaki",
+    "hunter",
+    "jade",
+    "pistachio",
+  ],
+  pink: [
+    "pink",
+    "blush",
+    "rose",
+    "fuchsia",
+    "magenta",
+    "salmon",
+    "coral",
+    "peach",
+  ],
+  purple: ["purple", "violet", "lavender", "plum", "mauve", "lilac", "aubergine"],
+  yellow: ["yellow", "mustard", "gold", "amber", "lemon", "ochre", "saffron"],
+  orange: ["orange", "rust", "terracotta", "tangerine", "apricot", "burnt"],
+  brown: ["brown", "tan", "camel", "chocolate", "chestnut", "mocha", "cognac", "coffee"],
+  black: ["black", "ink", "onyx", "jet"],
+  white: ["white", "ivory", "cream", "ecru", "off-white", "off white", "bone"],
+  grey: ["grey", "gray", "charcoal", "slate", "graphite", "ash", "silver"],
+  neutral: ["beige", "nude", "tan", "stone", "sand", "taupe", "khaki"],
+  metallic: ["metallic", "silver", "gold", "bronze", "copper", "rose gold"],
+};
+
+function hasMatchingSubColor(
+  available: readonly string[] | undefined,
+  selected: Set<string>,
+): boolean {
+  if (!available || available.length === 0) return false;
+  // Build a single token alternation regex from every selected family's
+  // synonym list. Lowercase, word-boundary substring match.
+  const tokens: string[] = [];
+  for (const fam of selected) {
+    const list = COLOR_FAMILY_TOKENS[fam];
+    if (list) tokens.push(...list);
+    else tokens.push(fam);
+  }
+  if (tokens.length === 0) return false;
+  return available.some((c) => {
+    const s = c.toLowerCase();
+    return tokens.some((t) => s.includes(t));
+  });
+}
+
 function filterByDominantColor(
   items: AdaptedInventoryItem[],
   colors: string[] | undefined,
@@ -390,6 +482,9 @@ function filterByDominantColor(
     if (families.length === 0) return false;
     const hasSelected = families.some((c) => selected.has(c));
     if (!hasSelected) return false;
+    // Service misclassifications: drop products where the family says red
+    // but no available_colors string carries any red token.
+    if (!hasMatchingSubColor(doc.available_colors, selected)) return false;
     // Drop accents + metadata families from the denominator so a
     // black/red/pattern item still reads as "red" when red was picked.
     const real = families.filter((c) => !ACCENT_FAMILIES.has(c) || selected.has(c));
