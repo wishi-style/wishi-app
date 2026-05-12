@@ -445,24 +445,28 @@ const COLOR_FAMILY_TOKENS: Record<string, string[]> = {
   metallic: ["metallic", "silver", "gold", "bronze", "copper", "rose gold"],
 };
 
-function hasMatchingSubColor(
+// Count how many entries in `available_colors` substring-match a synonym
+// for any of the selected families. Returns { matches, total } so the
+// caller can apply both an absolute floor ("at least N red variants") and
+// a ratio check ("at least 25 % of variants are red").
+function countSubColorMatches(
   available: readonly string[] | undefined,
   selected: Set<string>,
-): boolean {
-  if (!available || available.length === 0) return false;
-  // Build a single token alternation regex from every selected family's
-  // synonym list. Lowercase, word-boundary substring match.
+): { matches: number; total: number } {
+  if (!available || available.length === 0) return { matches: 0, total: 0 };
   const tokens: string[] = [];
   for (const fam of selected) {
     const list = COLOR_FAMILY_TOKENS[fam];
     if (list) tokens.push(...list);
     else tokens.push(fam);
   }
-  if (tokens.length === 0) return false;
-  return available.some((c) => {
+  if (tokens.length === 0) return { matches: 0, total: available.length };
+  let matches = 0;
+  for (const c of available) {
     const s = c.toLowerCase();
-    return tokens.some((t) => s.includes(t));
-  });
+    if (tokens.some((t) => s.includes(t))) matches++;
+  }
+  return { matches, total: available.length };
 }
 
 function filterByDominantColor(
@@ -482,11 +486,20 @@ function filterByDominantColor(
     if (families.length === 0) return false;
     const hasSelected = families.some((c) => selected.has(c));
     if (!hasSelected) return false;
-    // Service misclassifications: drop products where the family says red
-    // but no available_colors string carries any red token.
-    if (!hasMatchingSubColor(doc.available_colors, selected)) return false;
-    // Drop accents + metadata families from the denominator so a
-    // black/red/pattern item still reads as "red" when red was picked.
+    // Sub-color evidence: tastegraph's color_normalizer occasionally drifts
+    // (Asics tagged "red family" with no red string anywhere in its
+    // available_colors). Require either (a) at least 2 sub-colour hits, or
+    // (b) ≥ 25 % of available_colors carrying a selected-family token. A
+    // bra with 7 variants where 1 is "scarlet" reads visually as the other
+    // 6 colours — we'd rather drop it than waste a card on it.
+    const { matches, total } = countSubColorMatches(
+      doc.available_colors,
+      selected,
+    );
+    if (matches === 0) return false;
+    if (total > 0 && matches < 2 && matches / total < 0.25) return false;
+    // Dominance — drop accents + metadata families from the denominator so
+    // a black/red/pattern item still reads as "red" when red was picked.
     const real = families.filter((c) => !ACCENT_FAMILIES.has(c) || selected.has(c));
     if (real.length === 0) return true; // entirely accents + at least one match → keep
     const matched = real.filter((c) => selected.has(c)).length;
