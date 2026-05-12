@@ -184,7 +184,7 @@ export function ProfileBoardsManager({
               Create from a session
             </DialogTitle>
             <DialogDescription className="font-body text-sm text-muted-foreground">
-              While you're styling a client, the save dialog now has a{" "}
+              While you&apos;re styling a client, the save dialog now has a{" "}
               <span className="font-medium text-foreground">
                 Also feature on my profile
               </span>{" "}
@@ -193,7 +193,7 @@ export function ProfileBoardsManager({
             </DialogDescription>
           </DialogHeader>
           <p className="font-body text-xs text-muted-foreground">
-            Standalone creation from this page is coming soon — it'll launch the
+            Standalone creation from this page is coming soon — it&apos;ll launch the
             same LookCreator and moodboard builder, just without a client
             attached.
           </p>
