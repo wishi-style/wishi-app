@@ -49,7 +49,6 @@ import { removeBackground } from "@/lib/removeBackground";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ClientDetailPanel from "@/components/stylist/client-detail-panel";
 import { ProductDetailDialog } from "@/components/products/product-detail-dialog";
-import { SuitPairDialog } from "./suit-pair-dialog";
 import type { ProductItem } from "@/components/boards/styleboard";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
@@ -398,16 +397,8 @@ export function StyleboardBuilder({
   };
   const [pdpItem, setPdpItem] = useState<InventoryItem | null>(null);
 
-  // Shop workspace UI refs + power-mode dialogs
+  // Shop workspace UI refs
   const shopSearchInputRef = useRef<HTMLInputElement>(null);
-  const [suitPairOpen, setSuitPairOpen] = useState(false);
-  const [lookPieces, setLookPieces] = useState<
-    {
-      bucket: Exclude<CategoryBucket, "all">;
-      items: InventoryItem[];
-    }[]
-  >([]);
-  const [lookPiecesLoading, setLookPiecesLoading] = useState(false);
 
   // Save dialog state
   const [saveOpen, setSaveOpen] = useState(false);
@@ -783,85 +774,6 @@ export function StyleboardBuilder({
         .filter(Boolean),
     [canvas],
   );
-
-  const triggerLooksLikeCanvas = useCallback(async () => {
-    if (canvasInventoryProductIds.length === 0) {
-      toast("Add an inventory item to the canvas first");
-      return;
-    }
-    // Resolve canvas product ids → listing ids on the client by reading
-    // current shop.items if available; otherwise the server resolves.
-    const productById = new Map<string, { listingId?: string }>();
-    for (const it of shop.items) {
-      if (it.id) productById.set(it.id, { listingId: it.listingId });
-    }
-    const listingIds = canvasInventoryProductIds
-      .map((pid) => productById.get(pid)?.listingId)
-      .filter((v): v is string => Boolean(v));
-
-    if (listingIds.length === canvasInventoryProductIds.length) {
-      shop.searchLooksLikeCanvas(
-        listingIds,
-        `Looks like canvas (${listingIds.length} ${listingIds.length === 1 ? "item" : "items"})`,
-      );
-      return;
-    }
-
-    // Fall back to server-side resolution
-    try {
-      shop.searchLooksLikeCanvas(
-        canvasInventoryProductIds, // route accepts productIds OR listingIds
-        `Looks like canvas (${canvasInventoryProductIds.length} ${canvasInventoryProductIds.length === 1 ? "item" : "items"})`,
-      );
-    } catch (err) {
-      console.warn("[shop] looks-like trigger failed:", err);
-      toast.error("Couldn't run looks-like search");
-    }
-  }, [canvasInventoryProductIds, shop]);
-
-  const triggerFindPiecesForLook = useCallback(async () => {
-    if (canvasInventoryProductIds.length === 0) {
-      toast("Add an inventory item to the canvas first");
-      return;
-    }
-    setLookPiecesLoading(true);
-    try {
-      const res = await fetch(
-        `/api/stylist/sessions/${encodeURIComponent(sessionId)}/shop-inventory/look-pieces`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            canvasProductIds: canvasInventoryProductIds,
-            filledBuckets: Array.from(
-              new Set(
-                canvas
-                  .filter((c) => c.source === "INVENTORY")
-                  .map((c) => {
-                    const it = shop.items.find((s) => s.id === c.refId);
-                    return it?.category;
-                  })
-                  .filter(Boolean),
-              ),
-            ),
-          }),
-        },
-      );
-      if (!res.ok) throw new Error(`look-pieces failed (${res.status})`);
-      const json = (await res.json()) as {
-        buckets: { bucket: Exclude<CategoryBucket, "all">; items: InventoryItem[] }[];
-      };
-      setLookPieces(json.buckets);
-      if (json.buckets.every((b) => b.items.length === 0)) {
-        toast("No suggestions yet — try adding another canvas item");
-      }
-    } catch (err) {
-      console.warn("[shop] find-pieces trigger failed:", err);
-      toast.error("Couldn't load look pieces");
-    } finally {
-      setLookPiecesLoading(false);
-    }
-  }, [canvasInventoryProductIds, canvas, sessionId, shop.items]);
 
   // Keyboard shortcut: `/` focuses the Shop search bar from anywhere
   useEffect(() => {
@@ -1588,50 +1500,6 @@ export function StyleboardBuilder({
                   ? `${shop.items.length} of ${shop.total > 0 ? `≈${shop.visibleApprox}` : "0"} items`
                   : `${filtered.length} ${filtered.length === 1 ? "item" : "items"}`}
               </span>
-              {tab === "shop" && (
-                <>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => triggerLooksLikeCanvas()}
-                    disabled={canvas.length === 0}
-                    title={
-                      canvas.length === 0
-                        ? "Add an item to the canvas to enable"
-                        : "Find items that look like the items on the canvas"
-                    }
-                    className="h-8 font-body text-[11px] rounded-sm"
-                  >
-                    <SparklesIcon className="h-3 w-3 mr-1" />
-                    Looks like canvas
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSuitPairOpen(true)}
-                    className="h-8 font-body text-[11px] rounded-sm"
-                  >
-                    Suit pair
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => triggerFindPiecesForLook()}
-                    disabled={canvas.length === 0}
-                    title={
-                      canvas.length === 0
-                        ? "Add an item to the canvas to enable"
-                        : "Suggest pieces that complete this look"
-                    }
-                    className="h-8 font-body text-[11px] rounded-sm"
-                  >
-                    Find pieces for this look
-                  </Button>
-                </>
-              )}
             </div>
             <div className="flex items-center gap-1">
               <span className="font-body text-[11px] text-muted-foreground mr-1">View</span>
@@ -1788,7 +1656,7 @@ export function StyleboardBuilder({
               )}
             </div>
           )}
-          <ScrollArea className="flex-1">
+          <div className="flex-1 min-h-0 overflow-y-auto">
             <div
               className={cn(
                 "grid gap-3 p-5",
@@ -1930,74 +1798,7 @@ export function StyleboardBuilder({
                 )}
               </div>
             )}
-            {/* "Find pieces for this look" tray (Shop tab only). Each bucket
-                renders a horizontal carousel; tapping a card adds it to the
-                canvas like any other inventory item. */}
-            {tab === "shop" && (lookPiecesLoading || lookPieces.length > 0) && (
-              <div className="border-t border-border bg-background px-5 py-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-foreground inline-flex items-center gap-1.5">
-                    <SparklesIcon className="h-3 w-3" />
-                    Pieces for this look
-                  </h3>
-                  {lookPieces.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setLookPieces([])}
-                      className="font-body text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2"
-                    >
-                      Hide
-                    </button>
-                  )}
-                </div>
-                {lookPiecesLoading ? (
-                  <div className="font-body text-xs text-muted-foreground">
-                    Looking for complementary pieces…
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {lookPieces
-                      .filter((b) => b.items.length > 0)
-                      .map((bucket) => (
-                        <div key={bucket.bucket}>
-                          <p className="font-body text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">
-                            {bucket.bucket}
-                          </p>
-                          <div className="flex gap-2 overflow-x-auto pb-1">
-                            {bucket.items.map((it) => (
-                              <button
-                                key={it.id}
-                                type="button"
-                                onClick={() => addToCanvas(it)}
-                                className="shrink-0 w-32 group bg-card border border-border rounded-sm overflow-hidden hover:border-foreground transition-colors"
-                              >
-                                <div className="aspect-square overflow-hidden bg-muted">
-                                  <Image
-                                    src={it.image}
-                                    alt={it.name}
-                                    width={200}
-                                    height={200}
-                                    unoptimized
-                                    className="w-full h-full object-cover"
-                                    loading="lazy"
-                                  />
-                                </div>
-                                <div className="p-1.5">
-                                  <p className="font-body text-[10px] font-medium truncate">{it.brand}</p>
-                                  {it.price && (
-                                    <p className="font-body text-[10px] text-muted-foreground">{it.price}</p>
-                                  )}
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </ScrollArea>
+          </div>
         </div>
 
         {/* Right: canvas */}
@@ -2299,38 +2100,6 @@ export function StyleboardBuilder({
         onOpenChange={setClientInfoOpen}
         sessionId={sessionId || null}
         clientId={clientId}
-      />
-
-      <SuitPairDialog
-        open={suitPairOpen}
-        onOpenChange={setSuitPairOpen}
-        sessionId={sessionId}
-        onAddPair={(p) => {
-          // Add the blazer first, then the pants. Use a minimal InventoryItem
-          // shape — the canvas only needs id + image to render. The save-flow
-          // persists the inventoryProductId regardless.
-          const blazer: InventoryItem = {
-            id: p.blazer_product_id,
-            inventoryProductId: p.blazer_product_id,
-            image: p.blazer_image_url ?? "",
-            brand: p.brand_name,
-            name: p.blazer_name,
-            price: `$${Math.round(p.blazer_min_price)}`,
-            category: "outerwear",
-          };
-          const pants: InventoryItem = {
-            id: p.pants_product_id,
-            inventoryProductId: p.pants_product_id,
-            image: p.pants_image_url ?? "",
-            brand: p.brand_name,
-            name: p.pants_name,
-            price: `$${Math.round(p.pants_min_price)}`,
-            category: "bottoms",
-          };
-          addToCanvas(blazer);
-          addToCanvas(pants);
-          toast.success(`Added ${p.brand_name} suit pair to canvas`);
-        }}
       />
 
       <ProductDetailDialog

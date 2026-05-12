@@ -114,7 +114,7 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
       select: { id: true, inventoryProductId: true, quantity: true },
     }),
     loadClientStylingContext({ sessionId }),
-    loadShopInventory({ sessionId, page: 1, pageSize: 60 }),
+    loadShopInventory({ sessionId, page: 1, pageSize: 120 }),
     getFilters(),
     Promise.all(
       directSaleProductIds.slice(0, 60).map((id) => getProduct(id)),

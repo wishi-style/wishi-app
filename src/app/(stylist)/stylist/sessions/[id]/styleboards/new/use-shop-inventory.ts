@@ -199,7 +199,7 @@ export function useShopInventory(opts: UseShopInventoryOpts) {
       category,
       dismissed: [...dismissed],
       page: 1,
-      pageSize: 60,
+      pageSize: 120,
       power: powerMode?.payload,
       ...overrides,
     }),
@@ -275,7 +275,7 @@ export function useShopInventory(opts: UseShopInventoryOpts) {
         category: opts.category,
         dismissed: [...readDismissed(sessionId)],
         page: 1,
-        pageSize: 60,
+        pageSize: 120,
         power: undefined,
       })
     ) {
