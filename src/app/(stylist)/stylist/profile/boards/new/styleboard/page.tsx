@@ -103,7 +103,20 @@ export default async function NewProfileStyleboardPage({ searchParams }: Props) 
       directSaleProductIds={directSaleProductIds}
       initialShopResponse={initialShop}
       shopFacets={facets}
-      clientContextSummary={null}
+      // Empty-but-shaped client context so the Shop tab's full filter rail
+      // (Brand / Category / Color / Size / Price / Fabric / etc.) renders
+      // in profile mode. The rail gates client-specific prose on
+      // `clientFirstName` being truthy, so an empty name suppresses the
+      // "Tuned for <client>" and "Reset to <client>'s profile" bits.
+      clientContextSummary={{
+        clientFirstName: "",
+        inventoryGender: undefined,
+        sizesByCategory: {},
+        budgetsByCategory: {},
+        likedColorKeys: [],
+        preferredBrandNames: [],
+        excludeLeatherByDefault: false,
+      }}
       closetItems={[]}
       cartItems={[]}
       purchasedItems={[]}

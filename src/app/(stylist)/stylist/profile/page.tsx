@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
+import { resolveThumbnailsForBoards } from "@/lib/boards/board-thumbnails";
 import StylistProfile from "./profile-client";
 
 export const dynamic = "force-dynamic";
@@ -22,9 +23,22 @@ export default async function StylistProfilePage() {
         where: { isFeaturedOnProfile: true },
         select: {
           id: true,
+          type: true,
+          coverUrl: true,
           profileStyle: true,
           profileGender: true,
-          photos: { select: { url: true }, take: 1 },
+          photos: { select: { url: true }, take: 4, orderBy: { orderIndex: "asc" } },
+          items: {
+            orderBy: { orderIndex: "asc" },
+            take: 8,
+            select: {
+              source: true,
+              inventoryProductId: true,
+              webItemImageUrl: true,
+              closetItem: { select: { url: true } },
+              inspirationPhoto: { select: { url: true } },
+            },
+          },
         },
       },
       profileMoodboard: { select: { photos: { select: { url: true }, take: 1 } } },
@@ -40,6 +54,15 @@ export default async function StylistProfilePage() {
     },
   });
 
+  // Resolve up to 4 thumbnails per board (BoardPhoto for moodboards,
+  // resolved BoardItem images for styleboards). Without this, styleboards
+  // surface an empty src (they have no BoardPhotos) and Next/Image renders
+  // a broken-image icon.
+  const thumbsByBoardId = await resolveThumbnailsForBoards(
+    profile?.profileBoards ?? [],
+    4,
+  );
+
   // Adapt DB row → Loveable's StylistProfileData shape so the verbatim
   // chrome can hydrate from DB on first render. localStorage drafts still
   // override per Loveable's autosave-while-editing pattern.
@@ -47,13 +70,13 @@ export default async function StylistProfilePage() {
     .filter((b) => b.profileGender === "FEMALE" || b.profileGender == null)
     .map((b) => ({
       style: b.profileStyle ?? "",
-      imageUrl: b.photos[0]?.url ?? "",
+      imageUrls: thumbsByBoardId.get(b.id) ?? [],
     }));
   const menBoards = (profile?.profileBoards ?? [])
     .filter((b) => b.profileGender === "MALE" || b.profileGender == null)
     .map((b) => ({
       style: b.profileStyle ?? "",
-      imageUrl: b.photos[0]?.url ?? "",
+      imageUrls: thumbsByBoardId.get(b.id) ?? [],
     }));
 
   const loc = dbUser?.locations?.[0];

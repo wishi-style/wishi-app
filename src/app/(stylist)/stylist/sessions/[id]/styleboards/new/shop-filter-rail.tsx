@@ -488,14 +488,18 @@ export function ShopFilterRail({
             {totalActive} filter{totalActive === 1 ? "" : "s"} applied
           </p>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onResetToProfile}
-              className="font-body text-[11px] text-foreground underline underline-offset-2 hover:no-underline"
-            >
-              Reset to {clientContext.clientFirstName}&apos;s profile
-            </button>
-            <span className="text-muted-foreground">·</span>
+            {clientContext.clientFirstName ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onResetToProfile}
+                  className="font-body text-[11px] text-foreground underline underline-offset-2 hover:no-underline"
+                >
+                  Reset to {clientContext.clientFirstName}&apos;s profile
+                </button>
+                <span className="text-muted-foreground">·</span>
+              </>
+            ) : null}
             <button
               type="button"
               onClick={onClearAll}
@@ -565,7 +569,7 @@ export function ShopFilterRail({
         onClear={() => onChange({ minPrice: undefined, maxPrice: undefined })}
       >
         <div className="px-1.5">
-          {clientBudgetForBucket && (
+          {clientBudgetForBucket && clientContext.clientFirstName && (
             <p className="font-body text-[10px] text-muted-foreground mb-2">
               {clientContext.clientFirstName}&apos;s {category} budget:{" "}
               <span className="text-foreground">
@@ -816,7 +820,7 @@ export function ShopFilterRail({
         count={counts.size}
         onClear={() => onChange({ sizes: undefined })}
       >
-        {clientSizeForBucket && (
+        {clientSizeForBucket && clientContext.clientFirstName && (
           <div className="px-2 mb-2">
             <p className="font-body text-[10px] text-muted-foreground">
               {clientContext.clientFirstName}&apos;s {category} size:{" "}

@@ -104,7 +104,9 @@ const DRAFT_TS_KEY = "stylist_profile_draft_ts_v1";
 
 interface StyleBoardEntry {
   style: string;
-  imageUrl: string;
+  // Up to 4 thumbnails for the tile collage. Moodboards: BoardPhoto URLs.
+  // Styleboards: resolved BoardItem product images.
+  imageUrls: string[];
 }
 
 interface StylistProfileData {
@@ -880,14 +882,50 @@ function StyleBoardGrid({ boards }: { boards: StyleBoardEntry[] }) {
   }
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-      {boards.map((b) => (
-        <div key={b.style} className="space-y-2">
-          <div className="aspect-square overflow-hidden rounded-md border border-border bg-muted">
-            <Image src={b.imageUrl} alt={b.style} width={400} height={400} unoptimized className="h-full w-full object-cover" />
+      {boards.map((b, boardIdx) => {
+        const thumbs = b.imageUrls.slice(0, 4);
+        return (
+          <div key={`${b.style}-${boardIdx}`} className="space-y-2">
+            <div className="aspect-square overflow-hidden rounded-md border border-border bg-muted">
+              {thumbs.length > 1 ? (
+                <div
+                  className={
+                    thumbs.length >= 4
+                      ? "grid h-full w-full grid-cols-2 grid-rows-2 gap-px"
+                      : "grid h-full w-full grid-cols-2 gap-px"
+                  }
+                >
+                  {thumbs.map((url, i) => (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      key={`${b.style}-${boardIdx}-${i}`}
+                      src={url}
+                      alt={`${b.style} ${i + 1}`}
+                      className={
+                        thumbs.length === 3 && i === 0
+                          ? "col-span-2 h-full w-full object-cover"
+                          : "h-full w-full object-cover"
+                      }
+                    />
+                  ))}
+                </div>
+              ) : thumbs[0] ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={thumbs[0]}
+                  alt={b.style}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+                  Empty board
+                </div>
+              )}
+            </div>
+            <p className="font-body text-sm">{b.style}</p>
           </div>
-          <p className="font-body text-sm">{b.style}</p>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
