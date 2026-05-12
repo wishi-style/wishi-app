@@ -7,6 +7,7 @@
 // StylistPrivateNote into the Loveable shape.
 
 import { prisma } from "@/lib/prisma";
+import type { ComfortZone } from "@/generated/prisma/client";
 import { getPrivateNote } from "@/lib/stylists/private-notes";
 import { clientDisplayName } from "@/lib/users/display-name";
 import { ensureUserNamesFromClerk } from "@/lib/users/ensure-clerk-name";
@@ -95,7 +96,7 @@ export function splitToChips(value: string | null | undefined): string[] {
 //   • the legacy StyleProfile.comfortZoneLevel Int 1-10 (DB-driven quiz era,
 //     retained for back-compat reads). Same buckets either way.
 export function comfortZoneLabel(
-  zone: "STAY_CLOSE" | "FEW_NEW_ITEMS" | "NEW_STYLE" | null | undefined,
+  zone: ComfortZone | null | undefined,
   legacyLevel?: number | null,
 ): string {
   if (zone === "STAY_CLOSE") return "Stay close";

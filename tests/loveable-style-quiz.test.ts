@@ -5,6 +5,7 @@ import {
   aggregateBudgetBrackets,
   expandLikedColors,
   formatPhone,
+  loveableQuizAnswersSchema,
   mapComfortZone,
   mapFit,
   mapHearAbout,
@@ -15,6 +16,35 @@ import {
   mergeStyleIcons,
   parseBudgetBracket,
 } from "@/lib/quiz/loveable-style-quiz";
+
+// Minimum-viable answers — only the two required fields filled; every
+// optional array is empty. Mirrors what the UI sends if the user picks a
+// shopping reason + at least one piece and skips the rest.
+function minimalAnswers() {
+  return {
+    shoppingFor: "A holiday" as const,
+    pieces: ["Tops"] as const,
+    selectedColors: [],
+    selectedPatterns: [],
+    sizeTops: [],
+    sizeBottoms: [],
+    sizeShoes: [],
+    sizeJeans: [],
+    sizeDresses: [],
+    sizeOuterwear: [],
+    budgetTops: [],
+    budgetBottoms: [],
+    budgetShoes: [],
+    budgetJewelry: [],
+    budgetAccessories: [],
+    accentuate: [],
+    necklinesAvoid: [],
+    bodyAreas: [],
+    materialsAvoid: [],
+    styleIcons: [],
+    values: [],
+  };
+}
 
 test("mapShoppingReason translates every Loveable label to a ShoppingReason enum", () => {
   assert.equal(mapShoppingReason("A special event"), "SPECIAL_EVENT");
@@ -116,4 +146,58 @@ test("formatPhone joins country code + number, returns null for empty input", ()
   assert.equal(formatPhone("+44", "  207 1234 5678  "), "+44 207 1234 5678");
   assert.equal(formatPhone("+1", ""), null);
   assert.equal(formatPhone("+1", undefined), null);
+});
+
+// =====================================================================
+// loveableQuizAnswersSchema — server-side validation contract
+// =====================================================================
+
+test("schema accepts a minimal payload (required fields only)", () => {
+  const result = loveableQuizAnswersSchema.safeParse(minimalAnswers());
+  assert.equal(result.success, true);
+});
+
+test("schema rejects an unknown shoppingFor value", () => {
+  const bad = { ...minimalAnswers(), shoppingFor: "Not a real reason" };
+  const result = loveableQuizAnswersSchema.safeParse(bad);
+  assert.equal(result.success, false);
+});
+
+test("schema rejects an empty pieces array (step 1 is required)", () => {
+  const bad = { ...minimalAnswers(), pieces: [] };
+  const result = loveableQuizAnswersSchema.safeParse(bad);
+  assert.equal(result.success, false);
+});
+
+test("schema rejects an unknown piece in the pieces array", () => {
+  const bad = { ...minimalAnswers(), pieces: ["Tops", "Not a real piece"] };
+  const result = loveableQuizAnswersSchema.safeParse(bad);
+  assert.equal(result.success, false);
+});
+
+test("schema rejects an unknown comfortZone phrase", () => {
+  const bad = { ...minimalAnswers(), comfortZone: "Burn it all down" };
+  const result = loveableQuizAnswersSchema.safeParse(bad);
+  assert.equal(result.success, false);
+});
+
+test('schema accepts "Anything Goes" sentinel in selectedColors', () => {
+  const ok = { ...minimalAnswers(), selectedColors: ["Anything Goes" as const] };
+  const result = loveableQuizAnswersSchema.safeParse(ok);
+  assert.equal(result.success, true);
+});
+
+test("schema rejects bodyPhotoUrl that doesn't point at our image proxy", () => {
+  const bad = { ...minimalAnswers(), bodyPhotoUrl: "https://evil.example.com/x.jpg" };
+  const result = loveableQuizAnswersSchema.safeParse(bad);
+  assert.equal(result.success, false);
+});
+
+test("schema accepts bodyPhotoUrl under /api/images/style-quiz/", () => {
+  const ok = {
+    ...minimalAnswers(),
+    bodyPhotoUrl: "/api/images/style-quiz/user_123/body-photo/1234567890-photo.jpg",
+  };
+  const result = loveableQuizAnswersSchema.safeParse(ok);
+  assert.equal(result.success, true);
 });

@@ -10,6 +10,7 @@ import {
   BUDGET_CATEGORY_KEYS,
   expandLikedColors,
   formatPhone,
+  loveableQuizAnswersSchema,
   mapComfortZone,
   mapFit,
   mapHearAbout,
@@ -26,7 +27,10 @@ export type SubmitContext =
 
 type SubmitResult =
   | { ok: true; redirectTo: string }
-  | { ok: false; error: "unauthenticated" | "session_not_found" | "internal" };
+  | {
+      ok: false;
+      error: "unauthenticated" | "session_not_found" | "invalid_payload" | "internal";
+    };
 
 /**
  * Single write path for Loveable's `/style-quiz`. Replaces the old
@@ -59,8 +63,26 @@ export async function submitStyleQuiz(
     return { ok: true, redirectTo: resolveRedirect(ctx) };
   }
 
+  // Server-side validation. The action is callable from anywhere a session
+  // cookie is present, so a forged payload can't be allowed to set
+  // `quizCompletedAt` with junk in the structured columns. Required:
+  // `shoppingFor` (enum) and at least one piece (step 1). Optional fields
+  // must still match their enum vocabularies if present.
+  const parsed = loveableQuizAnswersSchema.safeParse(answers);
+  if (!parsed.success) {
+    console.warn(
+      JSON.stringify({
+        event: "style_quiz_submit_invalid_payload",
+        userId: user.id,
+        ctxKind: ctx.kind,
+        issues: parsed.error.issues.slice(0, 8),
+      }),
+    );
+    return { ok: false, error: "invalid_payload" };
+  }
+
   try {
-    await persist(user.id, answers);
+    await persist(user.id, parsed.data);
   } catch (err) {
     console.error(
       JSON.stringify({

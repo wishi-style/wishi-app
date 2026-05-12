@@ -3,6 +3,8 @@
 // option-string → enum translation in one place so the client component
 // can stay a near-verbatim port of Loveable's JSX.
 
+import { z } from "zod";
+
 import type {
   ComfortZone,
   HearAboutSource,
@@ -518,3 +520,105 @@ export function formatPhone(countryCode: string | undefined, number: string | un
   const code = countryCode ?? "+1";
   return `${code} ${number.trim()}`;
 }
+
+// =====================================================================
+// Server-side validation schema
+// =====================================================================
+//
+// `submitStyleQuiz` is callable from any authenticated session. A forged
+// payload can't be allowed to mark the quiz complete with garbage in the
+// structured columns, so every optional field is constrained to its
+// Loveable vocabulary, and the two required steps (0: shoppingFor,
+// 1: pieces) must be present and non-empty.
+//
+// Free-text fields (`location`, `occupation`, `bodyAreasNotes`, social
+// handles, etc.) stay permissive — Loveable allowed any string. Length
+// caps prevent a single mutation from carrying a megabyte of text.
+
+const TEXT_MAX = 500;
+const NOTES_MAX = 2000;
+
+const optionalText = (max: number = TEXT_MAX) =>
+  z.string().max(max).optional();
+
+const optionalNullableEnum = <T extends readonly [string, ...string[]]>(values: T) =>
+  z.enum(values).nullish();
+
+export const loveableQuizAnswersSchema = z.object({
+  // Required
+  shoppingFor: z.enum(LOVEABLE_SHOPPING_REASONS),
+  pieces: z.array(z.enum(LOVEABLE_PIECES)).min(1).max(LOVEABLE_PIECES.length),
+
+  // Optional sub-question + freeform other
+  workEnvironment: optionalNullableEnum(LOVEABLE_WORK_ENVIRONMENTS),
+  workEnvironmentOther: optionalText(),
+
+  // Step 2 — colors include the synthetic "Anything Goes" sentinel
+  selectedColors: z
+    .array(z.enum([...LOVEABLE_COLORS, "Anything Goes"] as const))
+    .max(LOVEABLE_COLORS.length + 1),
+
+  location: optionalText(),
+
+  selectedPatterns: z.array(z.enum(LOVEABLE_PATTERNS)).max(LOVEABLE_PATTERNS.length),
+
+  heightPreference: optionalNullableEnum(LOVEABLE_HEIGHTS),
+
+  // Sizes are strings (vocabulary varies per category) — cap array length only
+  sizeTops: z.array(z.string().max(32)).max(16),
+  sizeBottoms: z.array(z.string().max(32)).max(16),
+  sizeShoes: z.array(z.string().max(32)).max(20),
+  sizeJeans: z.array(z.string().max(32)).max(20),
+  sizeDresses: z.array(z.string().max(32)).max(16),
+  sizeOuterwear: z.array(z.string().max(32)).max(16),
+
+  budgetTops: z.array(z.enum(LOVEABLE_BUDGET_BRACKETS)).max(LOVEABLE_BUDGET_BRACKETS.length),
+  budgetBottoms: z.array(z.enum(LOVEABLE_BUDGET_BRACKETS)).max(LOVEABLE_BUDGET_BRACKETS.length),
+  budgetShoes: z.array(z.enum(LOVEABLE_BUDGET_BRACKETS)).max(LOVEABLE_BUDGET_BRACKETS.length),
+  budgetJewelry: z.array(z.enum(LOVEABLE_BUDGET_BRACKETS)).max(LOVEABLE_BUDGET_BRACKETS.length),
+  budgetAccessories: z.array(z.enum(LOVEABLE_BUDGET_BRACKETS)).max(LOVEABLE_BUDGET_BRACKETS.length),
+
+  fitPreference: optionalNullableEnum(LOVEABLE_FITS),
+  fitBottomPreference: optionalNullableEnum(LOVEABLE_FITS),
+  tendToWear: optionalNullableEnum(LOVEABLE_TEND_TO_WEAR),
+
+  accentuate: z.array(z.enum(LOVEABLE_ACCENTUATE)).max(LOVEABLE_ACCENTUATE.length),
+  necklinesAvoid: z.array(z.enum(LOVEABLE_NECKLINES_AVOID)).max(LOVEABLE_NECKLINES_AVOID.length),
+  bodyAreas: z.array(z.enum(LOVEABLE_BODY_AREAS)).max(LOVEABLE_BODY_AREAS.length),
+  bodyAreasNotes: optionalText(NOTES_MAX),
+
+  materialsAvoid: z.array(z.enum(LOVEABLE_MATERIALS_AVOID)).max(LOVEABLE_MATERIALS_AVOID.length),
+
+  comfortZone: optionalNullableEnum(LOVEABLE_COMFORT_ZONES),
+
+  // YYYY-MM-DD; Loveable's date input enforces shape, but accept loose
+  // strings up to a sane cap rather than fail on unexpected formats.
+  birthday: optionalText(32),
+  occupation: optionalText(),
+
+  styleIcons: z.array(z.enum(LOVEABLE_STYLE_ICONS)).max(LOVEABLE_STYLE_ICONS.length),
+  styleIconsOther: optionalText(NOTES_MAX),
+
+  instagram: optionalText(),
+  pinterest: optionalText(),
+
+  values: z.array(z.enum(LOVEABLE_SHOPPING_VALUES)).max(LOVEABLE_SHOPPING_VALUES.length),
+  extraNotes: optionalText(NOTES_MAX),
+
+  // S3 publicUrl — server validates the prefix at GET time via
+  // /api/images/[...key]; here we only cap length and accept the
+  // /api/images/style-quiz/... shape (the upload route returns this).
+  bodyPhotoUrl: z
+    .string()
+    .max(512)
+    .regex(/^\/api\/images\/style-quiz\//)
+    .nullish(),
+
+  hearAboutUs: optionalNullableEnum(LOVEABLE_HEAR_ABOUT),
+  hearAboutUsOther: optionalText(),
+
+  phoneCountryCode: z.enum(LOVEABLE_COUNTRY_CODES).optional(),
+  phoneNumber: optionalText(32),
+
+  preferredEmail: optionalText(),
+}) satisfies z.ZodType<LoveableQuizAnswers>;

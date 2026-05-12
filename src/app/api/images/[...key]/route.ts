@@ -29,6 +29,7 @@ const PREFIX_AUTH: Array<{ prefix: string; mode: AuthMode }> = [
   { prefix: "boards/", mode: "public" },      // /board/[id] is anonymous-by-default
   { prefix: "closet/", mode: "authed" },      // private to user + active-session stylist
   { prefix: "chat/", mode: "authed" },        // session participants only
+  { prefix: "style-quiz/", mode: "authed" },  // body photo (Loveable step 22) — owner + their stylist
 ];
 
 function authModeFor(key: string): AuthMode | null {

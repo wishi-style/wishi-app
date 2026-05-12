@@ -235,22 +235,47 @@ export default function StyleQuizLoveable({ ctx, userEmail }: StyleQuizLoveableP
 
   // Body photo: keep a local blob URL for instant preview AND a remote
   // S3 URL captured from the presigned-PUT response — the remote is what
-  // we persist on submit.
+  // we persist on submit. Blob URLs are revoked when replaced and on
+  // unmount so the browser can GC the underlying file.
   const [bodyPhotoPreview, setBodyPhotoPreview] = useState<string | null>(null);
   const [bodyPhotoRemoteUrl, setBodyPhotoRemoteUrl] = useState<string | null>(null);
   const [bodyPhotoUploading, setBodyPhotoUploading] = useState(false);
   const [bodyPhotoError, setBodyPhotoError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const bodyPhotoBlobUrlRef = useRef<string | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (bodyPhotoBlobUrlRef.current) {
+        URL.revokeObjectURL(bodyPhotoBlobUrlRef.current);
+        bodyPhotoBlobUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  const setPreviewBlob = (file: File | null) => {
+    if (bodyPhotoBlobUrlRef.current) {
+      URL.revokeObjectURL(bodyPhotoBlobUrlRef.current);
+      bodyPhotoBlobUrlRef.current = null;
+    }
+    if (!file) {
+      setBodyPhotoPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    bodyPhotoBlobUrlRef.current = url;
+    setBodyPhotoPreview(url);
+  };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setBodyPhotoError(null);
     setBodyPhotoUploading(true);
-    setBodyPhotoPreview(URL.createObjectURL(file));
+    setPreviewBlob(file);
     try {
       const params = new URLSearchParams({
         filename: sanitizeFilename(file.name),
@@ -272,7 +297,7 @@ export default function StyleQuizLoveable({ ctx, userEmail }: StyleQuizLoveableP
       setBodyPhotoRemoteUrl(publicUrl);
     } catch (err) {
       setBodyPhotoError(err instanceof Error ? err.message : "Upload failed");
-      setBodyPhotoPreview(null);
+      setPreviewBlob(null);
       setBodyPhotoRemoteUrl(null);
     } finally {
       setBodyPhotoUploading(false);
@@ -280,7 +305,7 @@ export default function StyleQuizLoveable({ ctx, userEmail }: StyleQuizLoveableP
   };
 
   const removePhoto = () => {
-    setBodyPhotoPreview(null);
+    setPreviewBlob(null);
     setBodyPhotoRemoteUrl(null);
     setBodyPhotoError(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -1337,12 +1362,16 @@ function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
 }
 
-function humanizeError(code: "unauthenticated" | "session_not_found" | "internal"): string {
+function humanizeError(
+  code: "unauthenticated" | "session_not_found" | "invalid_payload" | "internal",
+): string {
   switch (code) {
     case "unauthenticated":
       return "Your session expired. Please sign in again.";
     case "session_not_found":
       return "We couldn't find your styling session. Please refresh and try again.";
+    case "invalid_payload":
+      return "Some of your answers didn't look right. Please review and try again.";
     case "internal":
       return "Something went wrong saving your quiz. Please try again.";
   }

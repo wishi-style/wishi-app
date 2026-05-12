@@ -45,6 +45,22 @@ test.describe("/api/images/[...key] proxy", () => {
     expect(body.error).toBe("Unauthorized");
   });
 
+  test("style-quiz/ body-photo prefix is recognised (401 anonymous, not 404)", async ({
+    request,
+  }) => {
+    // Regression for the Loveable port: body-photo URLs (Loveable step 22)
+    // are stored under style-quiz/<userId>/body-photo/... and served via
+    // /api/images/style-quiz/.... If the prefix isn't whitelisted, the
+    // stylist's view of the client's body photo silently 404s.
+    const res = await request.get(
+      "/api/images/style-quiz/some-user/body-photo/123.jpg",
+      { maxRedirects: 0 },
+    );
+    expect(res.status()).toBe(401);
+    const body = await res.json();
+    expect(body.error).toBe("Unauthorized");
+  });
+
   test("unrecognised prefixes 404", async ({ request }) => {
     const res = await request.get(
       "/api/images/secrets/very-secret-key.txt",

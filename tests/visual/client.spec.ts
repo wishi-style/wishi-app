@@ -52,9 +52,10 @@ async function signIn(page: Page, email: string) {
   await page.getByRole("button", { name: "Sign In" }).click();
   // CLIENT users land on `/` (smart-spark-craft home) per the locked
   // post-signin decision in CLAUDE.md; the older regex didn't accept it
-  // and timed out before we could navigate to the test route.
+  // and timed out before we could navigate to the test route. The intermediate
+  // `/post-signin` redirect is included so a slow chain doesn't time out.
   await expect(page).toHaveURL(
-    /\/($|sessions|stylists|onboarding|profile|cart|matches|favorites|orders|settings|match-quiz)/,
+    /\/($|sessions|stylists|onboarding|profile|cart|matches|favorites|orders|settings|match-quiz|post-signin)/,
   );
 }
 
