@@ -599,7 +599,7 @@ export function ProfilePageClient({
               filter chip row are deferred — the data needs to be enriched on
               the Look type from the Board → Session → StylistProfile chain
               + Board.occasion / season / style fields that don't exist yet.
-              Tracked under Phase 11 polish in WISHI-REBUILD-PLAN.md. */}
+              Tracked under Track C1 in WISHI-LAUNCH-PREP.md. */}
           <div className="mb-4 flex items-center gap-3">
             <button
               type="button"

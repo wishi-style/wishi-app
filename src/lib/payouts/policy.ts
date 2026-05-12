@@ -2,7 +2,8 @@
 //   1. Does a payout fire for this (plan, trigger)?
 //   2. How much goes to the stylist in cents?
 //
-// Rules from WISHI-REBUILD-PLAN.md § Phase 6 items 13–14:
+// Rules from archive/WISHI-REBUILD-PLAN.md § Phase 6 items 13–14
+// (rebuild plan archived; rules unchanged):
 //   PLATFORM Mini/Major: one Stripe Transfer = 70% of plan price + full tip
 //     on SESSION_COMPLETED trigger.
 //   PLATFORM Lux: two transfers —
