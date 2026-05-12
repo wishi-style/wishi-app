@@ -87,7 +87,11 @@ export async function getAdminQuiz(type: QuizType) {
 }
 
 export async function listAdminQuizzes() {
+  // STYLE_PREFERENCE is hidden from the builder index — the quiz is now a
+  // verbatim Loveable port and isn't editable via this surface. Filtering
+  // here keeps stale rows from rendering until the next seed run drops them.
   return prisma.quiz.findMany({
+    where: { type: { not: "STYLE_PREFERENCE" } },
     orderBy: { type: "asc" },
     include: {
       _count: { select: { questions: true } },

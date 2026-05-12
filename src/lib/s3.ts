@@ -87,6 +87,26 @@ export async function getInspirationPhotoPresignedUrl(
 }
 
 /**
+ * Presigned PUT for a client's style-quiz body photo (Loveable step 22).
+ * Scoped under the user's namespace so different users can't clobber each
+ * other's photos and admin tooling can list-by-prefix.
+ */
+export async function getStyleQuizBodyPhotoPresignedUrl(
+  userId: string,
+  filename: string,
+  contentType: string,
+): Promise<{ uploadUrl: string; key: string; publicUrl: string }> {
+  const key = `style-quiz/${userId}/body-photo/${Date.now()}-${filename}`;
+  const command = new PutObjectCommand({
+    Bucket: getBucket(),
+    Key: key,
+    ContentType: contentType,
+  });
+  const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
+  return { uploadUrl, key, publicUrl: getPublicUrl(key) };
+}
+
+/**
  * Presigned PUT for a client-uploaded closet item photo.
  */
 export async function getClosetItemPresignedUrl(

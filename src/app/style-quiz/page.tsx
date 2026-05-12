@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
-import { getQuizWithQuestions } from "@/lib/quiz/engine";
 import { hasCompletedStyleQuiz } from "@/lib/quiz/style-quiz-status";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
-import { StandaloneStyleQuizClient } from "./style-quiz-client";
+import StyleQuizLoveable from "./style-quiz-loveable";
 
 export const dynamic = "force-dynamic";
 
@@ -11,14 +10,14 @@ interface Props {
 }
 
 /**
- * Top-level /style-quiz route — Loveable's pre-booking gate. Required from
- * /stylists/[id] Continue CTA before a user can book. Returning clients
- * with `StyleProfile.quizCompletedAt` bypass straight to wherever sent
- * them. Unauth'd users sign in first.
+ * Loveable's pre-booking style-quiz gate. Required from /stylists/[id]
+ * Continue CTA before a user can book. Returning clients with
+ * `StyleProfile.quizCompletedAt` bypass straight to wherever sent them.
+ * Unauth'd users sign in first.
  *
- * Per locked decision (2026-04-22): we don't port Loveable's 1017-line
- * hardcoded questionnaire — the body uses our DB-driven STYLE_PREFERENCE
- * quiz shell, but the route itself exists at the same URL Loveable uses.
+ * Body is a verbatim port of `smart-spark-craft/src/pages/StyleQuiz.tsx`.
+ * The pre-2026-05 DB-driven shell is gone; the admin quiz-builder now
+ * only manages MATCH.
  */
 export default async function StandaloneStyleQuizPage({ searchParams }: Props) {
   const params = await searchParams;
@@ -30,38 +29,15 @@ export default async function StandaloneStyleQuizPage({ searchParams }: Props) {
     redirect(`/sign-in?redirect=${encodeURIComponent(next)}`);
   }
 
-  // Returning clients skip the quiz — Loveable's contract is "ask once".
   if (await hasCompletedStyleQuiz(user.id)) {
     redirect(safeReturn(returnPath));
   }
 
-  const quiz = await getQuizWithQuestions("STYLE_PREFERENCE");
-  if (!quiz || quiz.questions.length === 0) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="font-body text-sm text-muted-foreground">
-          Style quiz is not available yet.
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <main className="min-h-screen bg-background">
-      <header className="border-b border-border">
-        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-5">
-          <h1 className="font-display text-xl tracking-tight">
-            Your Style Profile
-          </h1>
-        </div>
-      </header>
-      <div className="mx-auto max-w-2xl px-4 py-8">
-        <StandaloneStyleQuizClient
-          questions={quiz.questions}
-          returnPath={returnPath}
-        />
-      </div>
-    </main>
+    <StyleQuizLoveable
+      ctx={{ kind: "standalone", returnPath: returnPath ?? undefined }}
+      userEmail={user.email}
+    />
   );
 }
 
