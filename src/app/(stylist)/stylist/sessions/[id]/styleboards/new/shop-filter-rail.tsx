@@ -444,6 +444,7 @@ export function ShopFilterRail({
       (value.primaryFabrics?.length ?? 0) +
       (value.fabricTiers?.length ?? 0) +
       (value.excludeLeather ? 1 : 0),
+    pattern: value.patterns?.length ?? 0,
     gender: value.gender ? 1 : 0,
     availability: value.inStockOnly ? 1 : 0,
   };
@@ -606,7 +607,7 @@ export function ShopFilterRail({
         onClear={() => onChange({ colors: undefined, subColors: undefined })}
       >
         <div className="grid grid-cols-4 gap-2 px-1 mb-2">
-          {facets.colors.map((c) => {
+          {facets.colors.filter((c) => c.value !== "pattern").map((c) => {
             const selected = value.colors?.includes(c.value) ?? false;
             const bg = ALL_COLORS_HEX[c.value] ?? "#888";
             return (
@@ -687,6 +688,32 @@ export function ShopFilterRail({
             </div>
           )}
       </Section>
+
+      {/* ----- PATTERN ----- */}
+      {(facets.subColorsByFamily.pattern?.length ?? 0) > 0 && (
+        <Section
+          label="Pattern"
+          count={counts.pattern}
+          onClear={() => onChange({ patterns: undefined })}
+        >
+          <div className="flex flex-wrap gap-1 max-h-40 overflow-y-auto pr-1">
+            {facets.subColorsByFamily.pattern.slice(0, 40).map((p) => {
+              const selected = value.patterns?.includes(p) ?? false;
+              return (
+                <Pill
+                  key={p}
+                  label={p}
+                  selected={selected}
+                  onClick={() => {
+                    const next = toggleInSet(value.patterns, p);
+                    onChange({ patterns: next.length ? next : undefined });
+                  }}
+                />
+              );
+            })}
+          </div>
+        </Section>
+      )}
 
       {/* ----- BRAND ----- */}
       <Section

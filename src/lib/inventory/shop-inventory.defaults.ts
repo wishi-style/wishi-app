@@ -46,6 +46,9 @@ export interface ShopInventoryFilters {
   /** Service-tagged size values (the same value the size facet emits). */
   sizes?: string[];
   primaryFabrics?: string[];
+  /** Pattern surface values (leopard, stripe, floral, plaid, ...); matched
+   *  against `available_colors` client-side post-fetch like sub-colors. */
+  patterns?: string[];
   /** "luxury" | "premium" | "standard" | "synthetic"; client-side post-fetch
    *  filter in v1 — service doesn't yet expose tier as a DTO field. */
   fabricTiers?: string[];

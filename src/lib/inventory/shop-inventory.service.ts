@@ -302,6 +302,7 @@ export async function loadShopInventory(
     categoryId: req.categoryId,
     colors: req.colors,
     subColors: req.subColors,
+    patterns: req.patterns,
     sizes: req.sizes,
     primaryFabrics: req.primaryFabrics,
     fabricTiers: req.fabricTiers,
@@ -344,6 +345,7 @@ export async function loadShopInventory(
   let items = ranked.map(adaptProductDoc);
   items = filterByFabricTier(items, merged.fabricTiers);
   items = filterBySubColors(items, merged.subColors, ranked);
+  items = filterBySubColors(items, merged.patterns, ranked);
   items = applySort(items, merged.sort);
 
   const lossRate = dislikeLossRate(preDislike, postDislike);
