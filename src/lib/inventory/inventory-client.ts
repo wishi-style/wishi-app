@@ -73,7 +73,11 @@ export async function searchProducts(
     });
     if (!res.ok) return EMPTY_RESULT;
     const json = (await res.json()) as SearchResponse;
-    cacheSet(cacheKey, json);
+    // Don't cache empty results — a transient hiccup (timeout, race during
+    // a dev hot-reload, brief upstream blip) would otherwise wedge the same
+    // DTO into an empty state for the full 5-minute TTL. Real empty matches
+    // are cheap to recompute and rare in practice.
+    if ((json.total ?? 0) > 0) cacheSet(cacheKey, json);
     return json;
   } catch (err) {
     console.warn("[inventory] searchProducts failed:", err);
