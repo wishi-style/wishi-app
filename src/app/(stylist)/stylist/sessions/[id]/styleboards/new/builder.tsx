@@ -60,6 +60,7 @@ import { Badge } from "@/components/ui/badge";
 import { loyaltyConfig } from "@/data/client-profiles";
 import { toast } from "sonner";
 import { useShopInventory } from "./use-shop-inventory";
+import { ShopFilterRail } from "./shop-filter-rail";
 import type { CategoryBucket } from "@/lib/inventory/adapt-product-doc";
 import type { SmartDefaultKind } from "@/lib/inventory/shop-inventory.defaults";
 
@@ -466,51 +467,21 @@ export function StyleboardBuilder({
     [selectedSubColors],
   );
 
+  // Sync the *toolbar* state (search query, search mode, sort) into the
+  // shop hook. The rest of the filter shape — retailers, colors, sizes,
+  // fabrics, brands, gender, price range — is now owned by the new
+  // ShopFilterRail, which calls `shop.setFilters` directly. Keeping a
+  // single source of truth for those there avoids the rail's writes being
+  // clobbered every time the toolbar effect re-fires.
   useEffect(() => {
     if (tab !== "shop") return;
-    const merchantIds = Array.from(selectedRetailers)
-      .map((name) => merchantIdByName.get(name))
-      .filter((v): v is string => Boolean(v));
-    const colors = Array.from(selectedColors);
-    const sizes = Array.from(selectedSizes);
-    const fabricTiers = Array.from(selectedFabricTiers);
-    const primaryFabrics = Array.from(selectedFabrics);
-    const subColors = Array.from(selectedSubColors);
-    const minPrice = budget[0] > 0 ? budget[0] : undefined;
-    const maxPrice = budget[1] < 5000 ? budget[1] : undefined;
-
     shop.setFilters({
       query: search.trim() || undefined,
       mode: shopSearchMode,
-      merchantIds: merchantIds.length > 0 ? merchantIds : undefined,
-      colors: colors.length > 0 ? colors : undefined,
-      sizes: sizes.length > 0 ? sizes : undefined,
-      primaryFabrics: primaryFabrics.length > 0 ? primaryFabrics : undefined,
-      fabricTiers: fabricTiers.length > 0 ? fabricTiers : undefined,
-      subColors: subColors.length > 0 ? subColors : undefined,
-      excludeLeather: excludeLeatherUi,
-      inStockOnly: inStockOnlyUi,
-      minPrice,
-      maxPrice,
       sort: shopSort,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    tab,
-    search,
-    shopSearchMode,
-    shopSort,
-    selectedRetailersKey,
-    selectedColorsKey,
-    selectedSizesKey,
-    selectedFabricTiersKey,
-    selectedFabricsKey,
-    selectedSubColorsKey,
-    excludeLeatherUi,
-    inStockOnlyUi,
-    budget[0],
-    budget[1],
-  ]);
+  }, [tab, search, shopSearchMode, shopSort]);
 
   const toggleRetailer = (retailer: string) => {
     setSelectedRetailers((prev) => {
@@ -1224,6 +1195,52 @@ export function StyleboardBuilder({
               Filters
             </div>
           </aside>
+        ) : tab === "shop" && clientContextSummary ? (
+          <ShopFilterRail
+            value={shop.filters}
+            onChange={(patch) => shop.setFilters(patch)}
+            facets={shopFacets}
+            clientContext={clientContextSummary}
+            category={category as CategoryBucket}
+            onCategoryChange={(next) => setCategory(next)}
+            onCollapse={() => setFiltersCollapsed(true)}
+            onClearAll={() => {
+              shop.setFilters({
+                merchantIds: undefined,
+                brandIds: undefined,
+                categoryId: undefined,
+                colors: undefined,
+                subColors: undefined,
+                sizes: undefined,
+                primaryFabrics: undefined,
+                fabricTiers: undefined,
+                excludeLeather: undefined,
+                inStockOnly: undefined,
+                minPrice: undefined,
+                maxPrice: undefined,
+                gender: undefined,
+              });
+              setCategory("all");
+            }}
+            onResetToProfile={() => {
+              shop.setFilters({
+                merchantIds: undefined,
+                brandIds: undefined,
+                categoryId: undefined,
+                colors: undefined,
+                subColors: undefined,
+                sizes: undefined,
+                primaryFabrics: undefined,
+                fabricTiers: undefined,
+                excludeLeather: undefined,
+                inStockOnly: undefined,
+                minPrice: undefined,
+                maxPrice: undefined,
+                gender: undefined,
+              });
+              shop.restoreSmartDefaults();
+            }}
+          />
         ) : (
         <aside className="w-[200px] shrink-0 border-r border-border bg-muted/20 p-4 flex flex-col gap-5 overflow-y-auto relative">
           <div className="flex items-center justify-between -mt-1 -mr-1">
@@ -1239,94 +1256,11 @@ export function StyleboardBuilder({
               <PanelLeftCloseIcon className="h-3.5 w-3.5" />
             </button>
           </div>
-          {tab === "shop" && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Filter by retailers
-                </h3>
-                {selectedRetailers.size > 0 && (
-                  <button
-                    onClick={() => setSelectedRetailers(new Set())}
-                    className="font-body text-[10px] text-muted-foreground hover:text-foreground underline"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-              <div className="space-y-0.5 max-h-48 overflow-y-auto pr-1">
-                {shopRetailers.map((r) => {
-                  const active = selectedRetailers.has(r);
-                  return (
-                    <button
-                      key={r}
-                      onClick={() => toggleRetailer(r)}
-                      className={cn(
-                        "w-full text-left px-2 py-1.5 rounded-sm font-body text-xs transition-colors flex items-center gap-2",
-                        active
-                          ? "bg-foreground text-background"
-                          : "text-foreground hover:bg-muted"
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "h-3 w-3 rounded-sm border flex items-center justify-center shrink-0",
-                          active
-                            ? "bg-background border-background"
-                            : "border-border"
-                        )}
-                      >
-                        {active && <span className="h-1.5 w-1.5 bg-foreground rounded-[1px]" />}
-                      </span>
-                      <span className="truncate">{r}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {tab === "shop" && (
-            <div>
-              <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                Availability
-              </h3>
-              <div className="space-y-0.5">
-                {([
-                  { key: "in-stock" as const, label: "In-Stock" },
-                  { key: "preorder" as const, label: "Preorder" },
-                  { key: "sale" as const, label: "Sale" },
-                  { key: "final-sale" as const, label: "Final Sale" },
-                ]).map((opt) => {
-                  const active = selectedAvailability.has(opt.key);
-                  return (
-                    <button
-                      key={opt.key}
-                      onClick={() => toggleAvailability(opt.key)}
-                      className={cn(
-                        "w-full text-left px-2 py-1.5 rounded-sm font-body text-xs transition-colors flex items-center gap-2",
-                        active
-                          ? "bg-foreground text-background"
-                          : "text-foreground hover:bg-muted"
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "h-3 w-3 rounded-sm border flex items-center justify-center shrink-0",
-                          active
-                            ? "bg-background border-background"
-                            : "border-border"
-                        )}
-                      >
-                        {active && <span className="h-1.5 w-1.5 bg-foreground rounded-[1px]" />}
-                      </span>
-                      <span className="truncate">{opt.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          {/* Shop-tab filter rail is rendered by <ShopFilterRail/> above the
+              legacy aside (see the `tab === "shop" ?` branch upstream). The
+              non-shop sections below — inspiration, closet, category, color,
+              size, budget — stay on the legacy aside chrome until those tabs
+              get their own dedicated rail. */}
 
           {tab === "inspiration" && (
             <>
@@ -1418,43 +1352,6 @@ export function StyleboardBuilder({
                     >
                       {c.label}
                     </button>
-                    {tab === "shop" && isActive && subs && (
-                      <div className="mt-1 ml-2 pl-2 border-l border-border space-y-0.5 max-h-64 overflow-y-auto pr-1">
-                        {selectedSubcategories.size > 0 && (
-                          <button
-                            onClick={() => setSelectedSubcategories(new Set())}
-                            className="font-body text-[10px] text-muted-foreground hover:text-foreground underline px-2 py-0.5"
-                          >
-                            Clear
-                          </button>
-                        )}
-                        {subs.map((s) => {
-                          const subActive = selectedSubcategories.has(s);
-                          return (
-                            <button
-                              key={s}
-                              onClick={() => toggleSubcategory(s)}
-                              className={cn(
-                                "w-full text-left px-2 py-1 rounded-sm font-body text-xs transition-colors flex items-center gap-2",
-                                subActive
-                                  ? "bg-foreground text-background"
-                                  : "text-foreground hover:bg-muted"
-                              )}
-                            >
-                              <span
-                                className={cn(
-                                  "h-3 w-3 rounded-sm border flex items-center justify-center shrink-0",
-                                  subActive ? "bg-background border-background" : "border-border"
-                                )}
-                              >
-                                {subActive && <span className="h-1.5 w-1.5 bg-foreground rounded-[1px]" />}
-                              </span>
-                              <span className="truncate">{s}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
                   </div>
                 );
               })}
@@ -1462,144 +1359,6 @@ export function StyleboardBuilder({
           </div>
           )}
 
-
-          {tab === "shop" && (
-            <>
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setColorOpen((v) => !v)}
-                  aria-expanded={colorOpen}
-                  className="w-full flex items-center justify-between mb-2 group"
-                >
-                  <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
-                    Color{selectedColors.size > 0 && ` (${selectedColors.size})`}
-                  </h3>
-                  <ChevronDownIcon
-                    className={cn(
-                      "h-3.5 w-3.5 text-muted-foreground transition-transform",
-                      colorOpen && "rotate-180"
-                    )}
-                  />
-                </button>
-                {colorOpen && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {COLOR_OPTIONS.map((c) => {
-                      const active = selectedColors.has(c.key);
-                      return (
-                        <button
-                          key={c.key}
-                          onClick={() => toggleColor(c.key)}
-                          title={c.label}
-                          aria-label={c.label}
-                          aria-pressed={active}
-                          className={cn(
-                            "h-6 w-6 rounded-full border transition-all",
-                            active
-                              ? "border-foreground ring-2 ring-foreground ring-offset-1 ring-offset-background"
-                              : "border-border hover:border-foreground/60"
-                          )}
-                          style={{ backgroundColor: c.hex }}
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setSizeOpen((v) => !v)}
-                  aria-expanded={sizeOpen}
-                  className="w-full flex items-center justify-between mb-2 group"
-                >
-                  <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
-                    Size{selectedSizes.size > 0 && ` (${selectedSizes.size})`}
-                  </h3>
-                  <ChevronDownIcon
-                    className={cn(
-                      "h-3.5 w-3.5 text-muted-foreground transition-transform",
-                      sizeOpen && "rotate-180"
-                    )}
-                  />
-                </button>
-                {sizeOpen && (
-                  <>
-                    <div className="flex flex-wrap gap-1.5">
-                      {SIZE_OPTIONS.map((s) => {
-                        const active = selectedSizes.has(s);
-                        return (
-                          <button
-                            key={s}
-                            onClick={() => toggleSize(s)}
-                            className={cn(
-                              "min-w-8 h-7 px-2 rounded-sm border font-body text-[11px] transition-colors",
-                              active
-                                ? "bg-foreground text-background border-foreground"
-                                : "bg-background text-foreground border-border hover:bg-muted"
-                            )}
-                          >
-                            {s}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {selectedSizes.size > 0 && (
-                      <button
-                        onClick={() => setSelectedSizes(new Set())}
-                        className="mt-2 font-body text-[11px] text-foreground hover:text-foreground/80 underline underline-offset-2"
-                      >
-                        Clear size
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setBudgetOpen((v) => !v)}
-                  aria-expanded={budgetOpen}
-                  className="w-full flex items-center justify-between mb-2 group"
-                >
-                  <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
-                    Budget{(budget[0] > 0 || budget[1] < 5000) && " •"}
-                  </h3>
-                  <ChevronDownIcon
-                    className={cn(
-                      "h-3.5 w-3.5 text-muted-foreground transition-transform",
-                      budgetOpen && "rotate-180"
-                    )}
-                  />
-                </button>
-                {budgetOpen && (
-                  <>
-                    <div className="flex justify-end mb-1">
-                      <span className="font-body text-[10px] text-muted-foreground">
-                        ${budget[0].toLocaleString()} – ${budget[1].toLocaleString()}{budget[1] >= 5000 ? "+" : ""}
-                      </span>
-                    </div>
-                    <Slider
-                      min={0}
-                      max={5000}
-                      step={50}
-                      value={budget}
-                      onValueChange={(v) => { const arr = v as readonly number[]; setBudget([arr[0], arr[1]] as [number, number]); }}
-                      className="my-2"
-                    />
-                    {(budget[0] > 0 || budget[1] < 5000) && (
-                      <button
-                        onClick={() => setBudget([0, 5000])}
-                        className="mt-2 font-body text-[11px] text-foreground hover:text-foreground/80 underline underline-offset-2"
-                      >
-                        Reset budget
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            </>
-          )}
 
           {tab === "closet" && (
             <>
