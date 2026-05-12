@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getServerAuth } from "@/lib/auth/server-auth";
 import { cosmeticMatchScore } from "@/lib/matching/score";
@@ -104,9 +105,25 @@ export default async function StylistProfilePage({ params }: Props) {
       user: {
         select: { firstName: true, lastName: true, avatarUrl: true },
       },
+      // Featured boards now include both session-scoped looks that the
+      // stylist opted to feature via the save dialog AND sessionless boards
+      // built standalone from /stylist/profile/boards. coverUrl is set on
+      // send/publish so we render without re-joining photos or hitting
+      // tastegraph.
       profileBoards: {
-        where: { isFeaturedOnProfile: true, sessionId: null },
-        include: { photos: { orderBy: { orderIndex: "asc" }, take: 1 } },
+        where: { isFeaturedOnProfile: true },
+        select: {
+          id: true,
+          type: true,
+          profileStyle: true,
+          coverUrl: true,
+          // Legacy fallback: pre-coverUrl rows wrote a single BoardPhoto.
+          photos: {
+            orderBy: { orderIndex: "asc" },
+            take: 1,
+            select: { url: true },
+          },
+        },
         orderBy: { createdAt: "desc" },
         take: 12,
       },
@@ -121,7 +138,10 @@ export default async function StylistProfilePage({ params }: Props) {
     `${stylist.user.firstName?.[0] ?? ""}${stylist.user.lastName?.[0] ?? ""}`.toUpperCase() ||
     name.charAt(0);
 
-  const heroImage = stylist.profileBoards[0]?.photos[0]?.url ?? null;
+  function boardCover(b: { coverUrl: string | null; photos: { url: string }[] }): string | null {
+    return b.coverUrl ?? b.photos[0]?.url ?? null;
+  }
+  const heroImage = stylist.profileBoards[0] ? boardCover(stylist.profileBoards[0]) : null;
   const styledLooks = stylist.profileBoards.slice(heroImage ? 1 : 0).slice(0, 4);
 
   let matchScore: number | null = null;
@@ -458,6 +478,30 @@ export default async function StylistProfilePage({ params }: Props) {
                   const caption = look.profileStyle
                     ? look.profileStyle.toString().toLowerCase()
                     : "";
+                  const cover = boardCover(look);
+                  // Styleboards open the full canvas via the public
+                  // SharedBoard route. Moodboards stay non-interactive
+                  // (TODO: in-page lightbox follow-up).
+                  const isStyleboard = look.type === "STYLEBOARD";
+                  const inner = (
+                    <div className="aspect-square overflow-hidden group cursor-pointer">
+                      {cover ? (
+                        <Image
+                          src={cover}
+                          alt={caption || "styled look"}
+                          width={450}
+                          height={450}
+                          sizes="(min-width: 768px) 450px, 100vw"
+                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-muted text-xs text-muted-foreground">
+                          {caption}
+                        </div>
+                      )}
+                    </div>
+                  );
                   return (
                     <div key={look.id} className="w-[450px] max-w-full">
                       {caption ? (
@@ -465,23 +509,13 @@ export default async function StylistProfilePage({ params }: Props) {
                           {caption}
                         </p>
                       ) : null}
-                      <div className="aspect-square overflow-hidden group cursor-pointer">
-                        {look.photos[0]?.url ? (
-                          <Image
-                            src={look.photos[0].url}
-                            alt={caption || "styled look"}
-                            width={450}
-                            height={450}
-                            sizes="(min-width: 768px) 450px, 100vw"
-                            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                            loading="lazy"
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center bg-muted text-xs text-muted-foreground">
-                            {caption}
-                          </div>
-                        )}
-                      </div>
+                      {isStyleboard ? (
+                        <Link href={`/board/${look.id}`} aria-label={caption || "open look"}>
+                          {inner}
+                        </Link>
+                      ) : (
+                        inner
+                      )}
                     </div>
                   );
                 })}
