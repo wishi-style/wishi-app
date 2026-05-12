@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, Calendar, Settings } from "lucide-react";
+import { Calendar, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { NotificationsPopover } from "@/components/stylist/NotificationsPopover";
 
 interface Props {
   stylistInitials: string;
@@ -47,15 +48,7 @@ export function StylistTopBar({ stylistInitials }: Props) {
         >
           <Calendar className="h-5 w-5" />
         </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Notifications"
-          className="text-muted-foreground hover:text-foreground relative"
-        >
-          <Bell className="h-5 w-5" />
-          <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-destructive" />
-        </Button>
+        <NotificationsPopover />
         <Button
           variant="ghost"
           size="icon"

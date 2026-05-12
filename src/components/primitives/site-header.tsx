@@ -21,16 +21,7 @@ async function getCartCountForClerkUser(clerkId: string): Promise<number> {
   }
 }
 
-interface SiteHeaderProps {
-  /**
-   * Optional content rendered alongside the signed-in chrome (between the
-   * cart icon and user menu). Used by /stylist/* surfaces to inject the
-   * NotificationsPopover so stylists keep their bell at the top.
-   */
-  extras?: React.ReactNode;
-}
-
-export async function SiteHeader({ extras }: SiteHeaderProps = {}) {
+export async function SiteHeader() {
   const { userId } = await getServerAuth();
   const signedIn = userId !== null && userId !== undefined;
   const cartCount = signedIn ? await getCartCountForClerkUser(userId) : 0;
@@ -72,7 +63,6 @@ export async function SiteHeader({ extras }: SiteHeaderProps = {}) {
                   </span>
                 )}
               </Link>
-              {extras}
               <SiteHeaderUserMenu />
             </>
           ) : (

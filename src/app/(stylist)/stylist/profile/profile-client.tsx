@@ -231,7 +231,12 @@ async function validateAndReadImage(
   return dataUrl;
 }
 
-export default function StylistProfile(props: { initialProfile?: StylistProfileData | null } = {}) {
+export default function StylistProfile(
+  props: {
+    initialProfile?: StylistProfileData | null;
+    stylistInitials?: string;
+  } = {},
+) {
   const router = useRouter();
   // DB-hydrated state from the server component is the source of truth.
   // The localStorage cache (text-only) is only consulted when the page
@@ -445,7 +450,7 @@ export default function StylistProfile(props: { initialProfile?: StylistProfileD
   // ===== VIEW MODE =====
   if (!editing && !isCreating) {
     return (
-      <StylistLayout>
+      <StylistLayout stylistInitials={props.stylistInitials}>
         <div className="max-w-5xl mx-auto px-4 sm:px-8 py-8 sm:py-12">
           <div className="flex items-start justify-between gap-4 mb-8">
             <div>
