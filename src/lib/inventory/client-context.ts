@@ -87,24 +87,24 @@ export async function loadClientStylingContext(opts: {
   sessionId: string | null;
 }): Promise<ClientStylingContext | null> {
   // Sessionless callers (profile-board styleboard creator) get a zero-state
-  // context. The caller is expected to treat null/empty fields gracefully —
-  // no client likes, no sizes, no budgets, no dislike-filtering.
+  // context shaped to the real interface so callers can run their normal
+  // `.filter()` / iteration paths without null guards. No client likes, no
+  // sizes, no budgets, no dislike-filtering.
   if (!opts.sessionId) {
     return {
-      clientId: null,
-      firstName: null,
-      gender: null,
+      clientId: "",
+      clientFirstName: "",
+      inventoryGender: undefined,
       sizesByCategory: {},
       budgetsByCategory: {},
-      likedBrandIds: [],
+      avoidBrands: [],
+      preferredBrands: [],
       likedColors: [],
-      dislikedBrandIds: [],
       dislikedColors: [],
-      dislikedListingIds: [],
-      stylesLiked: [],
-      bodyTypesLiked: [],
-      occasionsLiked: [],
-    } as unknown as ClientStylingContext;
+      dislikedFabrics: [],
+      dislikedPatterns: [],
+      excludeLeatherByDefault: false,
+    };
   }
   const session = await prisma.session.findUnique({
     where: { id: opts.sessionId },

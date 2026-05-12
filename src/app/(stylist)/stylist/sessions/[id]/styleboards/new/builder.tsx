@@ -2405,14 +2405,20 @@ export function StyleboardBuilder({
               )}
             </div>
 
-            <FeatureOnProfile
-              enabled={featureOnProfile}
-              onEnabledChange={setFeatureOnProfile}
-              style={profileStyle}
-              onStyleChange={setProfileStyle}
-              disabled={isSaving}
-              alwaysOn={profileMode}
-            />
+            {/* Profile mode arrives via /stylist/profile/boards/new/styleboard
+                with the style label already chosen in the picker — no need to
+                ask again. Session mode keeps the toggle + style picker so the
+                stylist can decide whether the look also lands on /stylists/[id]
+                while shipping to a client. */}
+            {!profileMode && (
+              <FeatureOnProfile
+                enabled={featureOnProfile}
+                onEnabledChange={setFeatureOnProfile}
+                style={profileStyle}
+                onStyleChange={setProfileStyle}
+                disabled={isSaving}
+              />
+            )}
           </div>
 
           <DialogFooter className="gap-2 sm:gap-2 pt-2">

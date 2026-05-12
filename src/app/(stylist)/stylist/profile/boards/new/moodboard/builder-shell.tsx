@@ -2,23 +2,14 @@
 
 // Profile-mode shell around MoodboardBuilder. Pipes photo add/remove to the
 // shared /api/moodboards/[id]/photos endpoint (which now allows sessionless
-// boards owned by the stylist) and routes the save action through the
-// sessionless publish endpoint instead of /api/moodboards/[id]/send.
+// boards owned by the stylist). The save dialog (title/description/tags) is
+// owned by MoodboardBuilder in profileMode; this shell only forwards the
+// publish payload to /api/profile-boards/[id]/publish.
 
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { MoodboardBuilder } from "@/app/(stylist)/stylist/sessions/[id]/moodboards/new/builder";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { FeatureOnProfile } from "@/components/stylist/feature-on-profile";
 
 interface Props {
   boardId: string;
@@ -35,11 +26,6 @@ export function ProfileMoodboardBuilderShell({
 }: Props) {
   const router = useRouter();
   const photoIdsRef = useRef<Record<string, string>>({ ...initialPhotoIds });
-
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [profileStyle, setProfileStyle] = useState(initialStyle ?? "");
-  const [publishing, setPublishing] = useState(false);
-  const [pendingImages, setPendingImages] = useState<string[]>([]);
 
   const onPhotoAdded = async (input: {
     url: string;
@@ -82,92 +68,53 @@ export function ProfileMoodboardBuilderShell({
 
   const back = () => router.push("/stylist/profile/boards");
 
-  async function publish() {
-    if (!profileStyle.trim()) {
-      toast.error("Pick a style label before publishing");
-      return;
+  async function onProfileSave({
+    images,
+    title,
+    description,
+    tags,
+  }: {
+    images: string[];
+    title: string;
+    description: string;
+    tags: string[];
+  }) {
+    const coverUrl = images[0] ?? null;
+    const res = await fetch(`/api/profile-boards/${boardId}/publish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profileStyle: initialStyle ?? null,
+        coverUrl,
+        title,
+        description,
+        tags,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      toast.error(body.error || "Publish failed");
+      throw new Error(body.error || "Publish failed");
     }
-    setPublishing(true);
-    try {
-      const coverUrl = pendingImages[0] ?? initialImages[0] ?? null;
-      const res = await fetch(`/api/profile-boards/${boardId}/publish`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          profileStyle: profileStyle.trim(),
-          coverUrl,
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        toast.error(body.error || "Publish failed");
-        return;
-      }
-      toast.success("Added to your profile");
-      router.push(
-        `/stylist/profile/boards?style=${encodeURIComponent(profileStyle.trim())}`,
-      );
-      router.refresh();
-    } finally {
-      setPublishing(false);
-    }
+    toast.success("Added to your profile");
+    router.push(
+      `/stylist/profile/boards?style=${encodeURIComponent(initialStyle ?? "")}`,
+    );
+    router.refresh();
   }
 
   return (
-    <>
-      <MoodboardBuilder
-        clientName="your profile"
-        sessionId={null}
-        clientId={null}
-        initialImages={initialImages}
-        onBack={back}
-        onPhotoAdded={onPhotoAdded}
-        onPhotoRemoved={onPhotoRemoved}
-        onSend={(images) => {
-          setPendingImages(images);
-          setConfirmOpen(true);
-        }}
-      />
-
-      <Dialog open={confirmOpen} onOpenChange={(o) => !publishing && setConfirmOpen(o)}>
-        <DialogContent className="sm:max-w-md rounded-sm">
-          <DialogHeader>
-            <DialogTitle className="font-display text-lg">
-              Publish moodboard
-            </DialogTitle>
-            <DialogDescription className="font-body text-sm text-muted-foreground">
-              This will appear on your public stylist profile under the chosen style.
-            </DialogDescription>
-          </DialogHeader>
-          <FeatureOnProfile
-            alwaysOn
-            enabled
-            onEnabledChange={() => {}}
-            style={profileStyle}
-            onStyleChange={setProfileStyle}
-            disabled={publishing}
-          />
-          <DialogFooter className="gap-2 pt-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setConfirmOpen(false)}
-              disabled={publishing}
-              className="font-body text-xs h-8 rounded-sm"
-            >
-              Keep editing
-            </Button>
-            <Button
-              onClick={publish}
-              disabled={publishing || !profileStyle.trim()}
-              size="sm"
-              className="h-8 rounded-sm bg-foreground text-background hover:bg-foreground/90 font-body text-xs"
-            >
-              {publishing ? "Publishing…" : "Publish to profile"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+    <MoodboardBuilder
+      clientName="your profile"
+      sessionId={null}
+      clientId={null}
+      initialImages={initialImages}
+      onBack={back}
+      onPhotoAdded={onPhotoAdded}
+      onPhotoRemoved={onPhotoRemoved}
+      profileMode
+      profileStyle={initialStyle}
+      onProfileSave={onProfileSave}
+    />
   );
 }
