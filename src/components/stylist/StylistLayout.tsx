@@ -1,27 +1,24 @@
 "use client";
 
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { StylistSidebar } from "./StylistSidebar";
-import { NotificationsPopover } from "./NotificationsPopover";
 
 interface StylistLayoutProps {
   children: React.ReactNode;
 }
 
+// Wishi site header is rendered above this layout by the page itself
+// (server-component composition); the NotificationsPopover lives inside
+// the SiteHeader via its `extras` slot. The slim sticky stylist sub-header
+// + collapse trigger were removed per founder feedback.
 export function StylistLayout({ children }: StylistLayoutProps) {
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
+      <div className="flex w-full flex-1">
         <StylistSidebar />
-        <div className="flex-1 flex flex-col min-w-0">
-          <header className="sticky top-0 z-40 h-14 flex items-center justify-between border-b border-border px-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 shrink-0">
-            <SidebarTrigger className="text-muted-foreground hover:text-foreground" />
-            <NotificationsPopover />
-          </header>
-          <main className="flex-1 overflow-y-auto">
-            {children}
-          </main>
-        </div>
+        <main className="flex-1 min-w-0 overflow-y-auto">
+          {children}
+        </main>
       </div>
     </SidebarProvider>
   );

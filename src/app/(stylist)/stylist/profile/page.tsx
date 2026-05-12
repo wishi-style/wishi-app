@@ -2,6 +2,8 @@ import { requireRole } from "@/lib/auth";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
 import { resolveThumbnailsForBoards } from "@/lib/boards/board-thumbnails";
+import { SiteHeader } from "@/components/primitives/site-header";
+import { NotificationsPopover } from "@/components/stylist/NotificationsPopover";
 import StylistProfile from "./profile-client";
 
 export const dynamic = "force-dynamic";
@@ -93,5 +95,10 @@ export default async function StylistProfilePage() {
     menBoards,
   };
 
-  return <StylistProfile initialProfile={initialProfile} />;
+  return (
+    <div className="flex min-h-screen flex-col">
+      <SiteHeader extras={<NotificationsPopover />} />
+      <StylistProfile initialProfile={initialProfile} />
+    </div>
+  );
 }
