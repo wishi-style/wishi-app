@@ -600,15 +600,15 @@ export function StyleboardBuilder({
       if (tab === "closet" && closetSelectedColors.size > 0 && (!it.colors || !it.colors.some((c) => closetSelectedColors.has(c)))) return false;
       if (tab === "closet" && closetSelectedDesigners.size > 0 && (!it.designer || !closetSelectedDesigners.has(it.designer))) return false;
       if (tab === "closet" && closetSelectedSeasons.size > 0 && (!it.season || !closetSelectedSeasons.has(it.season))) return false;
-      if (category !== "all" && it.category !== category) return false;
+      if (tab !== "shop" && category !== "all" && it.category !== category) return false;
       if (tab === "shop" && selectedSubcategories.size > 0 && (!it.subcategory || !selectedSubcategories.has(it.subcategory))) return false;
-      // Non-shop tabs keep the local-substring search; shop tab also keeps
-      // it so typing while a server fetch is in-flight feels responsive.
-      if (search && !`${it.brand} ${it.name}`.toLowerCase().includes(search.toLowerCase())) return false;
-      if (tab === "shop" && it.price) {
-        const value = Number(it.price.replace(/[^0-9.]/g, ""));
-        if (value < budget[0] || value > budget[1]) return false;
-      }
+      // Shop tab pushes search + budget to the inventory service (semantic
+      // / FTS / vector / direction). Re-applying brand+name substring or a
+      // local price gate here would clobber semantically-ranked results
+      // ("blue dress" returns blue dresses even if neither word appears in
+      // the brand+name). Keep both filters for closet / inspiration / store
+      // where there's no server pipeline.
+      if (tab !== "shop" && search && !`${it.brand} ${it.name}`.toLowerCase().includes(search.toLowerCase())) return false;
       if (priceRange !== "any" && it.price) {
         const value = Number(it.price.replace(/[^0-9.]/g, ""));
         if (priceRange === "u250" && value >= 250) return false;
@@ -1750,7 +1750,7 @@ export function StyleboardBuilder({
         )}
 
         {/* Center: inventory grid */}
-        <div className="flex-1 flex flex-col min-w-0 border-r border-border">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 border-r border-border">
           <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border">
             <div className="flex items-center gap-2 min-w-0 flex-1">
               {tab === "shop" && (

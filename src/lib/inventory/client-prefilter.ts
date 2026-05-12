@@ -24,8 +24,9 @@ interface ClientPreferences {
   dislikedPatterns: readonly string[];
 }
 
-function normalize(s: string | null | undefined): string {
-  return (s ?? "").trim().toLowerCase();
+function normalize(s: unknown): string {
+  if (typeof s !== "string") return "";
+  return s.trim().toLowerCase();
 }
 
 function normalizeSet(values: readonly string[]): Set<string> {

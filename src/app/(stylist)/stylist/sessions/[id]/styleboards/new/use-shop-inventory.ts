@@ -145,6 +145,25 @@ async function fetchShopInventory(
   return (await res.json()) as ShopInventoryResponse;
 }
 
+// Inventory occasionally returns the same product across consecutive pages
+// (re-ranking on a moving page boundary). Without dedup, React throws
+// "Encountered two children with the same key" and the duplicate row is
+// dropped silently. Keep the first occurrence so existing favorites / canvas
+// references stay attached to the earlier instance.
+function dedupById(
+  prev: AdaptedInventoryItem[],
+  next: AdaptedInventoryItem[],
+): AdaptedInventoryItem[] {
+  const seen = new Set(prev.map((it) => it.id));
+  const merged = prev.slice();
+  for (const it of next) {
+    if (seen.has(it.id)) continue;
+    seen.add(it.id);
+    merged.push(it);
+  }
+  return merged;
+}
+
 export function useShopInventory(opts: UseShopInventoryOpts) {
   const { sessionId, initial, facets, context } = opts;
   // `category` flows through as a controlled prop. Reseting `size` /
@@ -202,7 +221,7 @@ export function useShopInventory(opts: UseShopInventoryOpts) {
           setItems(cached.items);
         } else {
           setResponse(cached);
-          setItems((prev) => [...prev, ...cached.items]);
+          setItems((prev) => dedupById(prev, cached.items));
         }
         setStatus("idle");
         setError(null);
@@ -226,7 +245,7 @@ export function useShopInventory(opts: UseShopInventoryOpts) {
         if (mode === "replace") {
           setItems(result.items);
         } else {
-          setItems((prev) => [...prev, ...result.items]);
+          setItems((prev) => dedupById(prev, result.items));
         }
         setStatus("idle");
       } catch (err) {
