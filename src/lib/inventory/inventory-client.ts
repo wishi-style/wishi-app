@@ -3,9 +3,16 @@ import type {
   SearchResponse,
   ProductSearchDoc,
   FilterValuesResponse,
+  FilterSchemaResponse,
   ListingsLookupResponse,
   CommissionEvent,
   CommissionsResponse,
+  SearchBatchResponse,
+  CandidateSearchResponse,
+  EmbeddingsResponse,
+  DirectionEmbeddingsResponse,
+  SuitPairQueryDto,
+  SuitPairRow,
 } from "./types";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -66,7 +73,11 @@ export async function searchProducts(
     });
     if (!res.ok) return EMPTY_RESULT;
     const json = (await res.json()) as SearchResponse;
-    cacheSet(cacheKey, json);
+    // Don't cache empty results — a transient hiccup (timeout, race during
+    // a dev hot-reload, brief upstream blip) would otherwise wedge the same
+    // DTO into an empty state for the full 5-minute TTL. Real empty matches
+    // are cheap to recompute and rare in practice.
+    if ((json.total ?? 0) > 0) cacheSet(cacheKey, json);
     return json;
   } catch (err) {
     console.warn("[inventory] searchProducts failed:", err);
@@ -104,6 +115,7 @@ const EMPTY_FILTERS: FilterValuesResponse = {
   brands: [],
   categories: [],
   colors: [],
+  subColorsByFamily: {},
   sizes: [],
   primaryFabrics: [],
   merchants: [],
@@ -223,6 +235,203 @@ export async function* iterateCommissions(
     if (page.data.length > 0) yield page.data;
     if (!page.cursor) return;
     cursor = page.cursor;
+  }
+}
+
+// --------------------------------------------------------------------------
+// Phase 11 / Phase 7 capability wrappers (batch, candidates, embeddings,
+// suit-pairs, filter schema) — the stylist Shop workspace uses these for
+// semantic / direction / composition flows. Same fail-soft pattern as above:
+// empty/null results on network failure so the UI can render an empty state.
+// --------------------------------------------------------------------------
+
+const EMPTY_BATCH: SearchBatchResponse = { results: [] };
+const EMPTY_CANDIDATES: CandidateSearchResponse = { total: 0, results: [] };
+const EMPTY_EMBEDDINGS: EmbeddingsResponse = { embeddings: {} };
+const EMPTY_DIRECTION: DirectionEmbeddingsResponse = { embeddings: {} };
+const EMPTY_FILTER_SCHEMA: FilterSchemaResponse = { filters: [], modes: [] };
+
+/**
+ * Run multiple search queries in one round-trip. The service batches the
+ * embedding step so semantic queries amortise the model call. Caps at 20
+ * queries per request (service-side limit).
+ */
+export async function searchBatch(
+  queries: SearchQueryDto[],
+): Promise<SearchBatchResponse> {
+  const base = getBaseUrl();
+  if (!base || queries.length === 0) return EMPTY_BATCH;
+
+  const trimmed = queries.slice(0, 20);
+  const cacheKey = `batch:${JSON.stringify(trimmed)}`;
+  const hit = cacheGet<SearchBatchResponse>(cacheKey);
+  if (hit) return hit;
+
+  try {
+    const res = await fetch(`${base}/search/batch`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ queries: trimmed }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return EMPTY_BATCH;
+    const json = (await res.json()) as SearchBatchResponse;
+    cacheSet(cacheKey, json);
+    return json;
+  } catch (err) {
+    console.warn("[inventory] searchBatch failed:", err);
+    return EMPTY_BATCH;
+  }
+}
+
+/**
+ * Lightweight candidate search — no variants/listings hydrated. Returns one
+ * row per matched listing (not deduped to product level on every path).
+ * Useful for ML scoring pipelines and downstream rerankers.
+ */
+export async function searchCandidates(
+  dto: SearchQueryDto,
+): Promise<CandidateSearchResponse> {
+  const base = getBaseUrl();
+  if (!base) return EMPTY_CANDIDATES;
+
+  const cacheKey = `candidates:${JSON.stringify(dto)}`;
+  const hit = cacheGet<CandidateSearchResponse>(cacheKey);
+  if (hit) return hit;
+
+  try {
+    const res = await fetch(`${base}/search/candidates`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(dto),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return EMPTY_CANDIDATES;
+    const json = (await res.json()) as CandidateSearchResponse;
+    cacheSet(cacheKey, json);
+    return json;
+  } catch (err) {
+    console.warn("[inventory] searchCandidates failed:", err);
+    return EMPTY_CANDIDATES;
+  }
+}
+
+/**
+ * Fetch 1024-dim semantic embeddings for one or more listings. Used to seed
+ * `mode: "vector"` follow-up queries ("find similar to this product").
+ * Caches because the embeddings rarely change.
+ */
+export async function getEmbeddings(
+  listingIds: string[],
+): Promise<EmbeddingsResponse> {
+  const base = getBaseUrl();
+  if (!base || listingIds.length === 0) return EMPTY_EMBEDDINGS;
+
+  const trimmed = listingIds.slice(0, 500);
+  const cacheKey = `embeddings:${trimmed.slice().sort().join(",")}`;
+  const hit = cacheGet<EmbeddingsResponse>(cacheKey);
+  if (hit) return hit;
+
+  try {
+    const res = await fetch(`${base}/search/embeddings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ listingIds: trimmed }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return EMPTY_EMBEDDINGS;
+    const json = (await res.json()) as EmbeddingsResponse;
+    cacheSet(cacheKey, json);
+    return json;
+  } catch (err) {
+    console.warn("[inventory] getEmbeddings failed:", err);
+    return EMPTY_EMBEDDINGS;
+  }
+}
+
+/**
+ * Fetch 768-dim FashionSigLIP direction embeddings — the moodboard-aware
+ * vector space. Used by the LookCreator's "Looks like canvas" and
+ * "Find pieces for this look" power modes. Uncached because the canvas
+ * composition changes each call.
+ */
+export async function getDirectionEmbeddings(
+  listingIds: string[],
+): Promise<DirectionEmbeddingsResponse> {
+  const base = getBaseUrl();
+  if (!base || listingIds.length === 0) return EMPTY_DIRECTION;
+
+  const trimmed = listingIds.slice(0, 500);
+
+  try {
+    const res = await fetch(`${base}/search/direction-embeddings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ listingIds: trimmed }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return EMPTY_DIRECTION;
+    return (await res.json()) as DirectionEmbeddingsResponse;
+  } catch (err) {
+    console.warn("[inventory] getDirectionEmbeddings failed:", err);
+    return EMPTY_DIRECTION;
+  }
+}
+
+/**
+ * Fetch pre-computed blazer + pants pairs by color family. Optional semantic
+ * query refines the blazer choice. Returns an empty array on failure.
+ */
+export async function searchSuitPairs(
+  dto: SuitPairQueryDto,
+): Promise<SuitPairRow[]> {
+  const base = getBaseUrl();
+  if (!base) return [];
+
+  const cacheKey = `suitpairs:${JSON.stringify(dto)}`;
+  const hit = cacheGet<SuitPairRow[]>(cacheKey);
+  if (hit) return hit;
+
+  try {
+    const res = await fetch(`${base}/search/suit-pairs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(dto),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return [];
+    const json = (await res.json()) as SuitPairRow[];
+    cacheSet(cacheKey, json);
+    return json;
+  } catch (err) {
+    console.warn("[inventory] searchSuitPairs failed:", err);
+    return [];
+  }
+}
+
+/**
+ * Fetch the machine-readable filter contract. Long-lived (1h cache); the
+ * shape only changes when the service deploys a new filter field.
+ */
+export async function getFilterSchema(): Promise<FilterSchemaResponse> {
+  const base = getBaseUrl();
+  if (!base) return EMPTY_FILTER_SCHEMA;
+
+  const cacheKey = "filterschema";
+  const hit = cacheGet<FilterSchemaResponse>(cacheKey);
+  if (hit) return hit;
+
+  try {
+    const res = await fetch(`${base}/search/filters/schema`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return EMPTY_FILTER_SCHEMA;
+    const json = (await res.json()) as FilterSchemaResponse;
+    cacheSet(cacheKey, json, 60 * 60 * 1000);
+    return json;
+  } catch (err) {
+    console.warn("[inventory] getFilterSchema failed:", err);
+    return EMPTY_FILTER_SCHEMA;
   }
 }
 

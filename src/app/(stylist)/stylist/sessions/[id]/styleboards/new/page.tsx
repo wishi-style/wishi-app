@@ -5,43 +5,17 @@ import { listInspirationPhotos } from "@/lib/boards/inspiration.service";
 import { listClosetItems } from "@/lib/boards/closet.service";
 import { mapLoyalty } from "@/lib/stylists/client-profile";
 import { clientDisplayName, clientInitials } from "@/lib/users/display-name";
-import { getProduct, searchProducts } from "@/lib/inventory/inventory-client";
-import type { ProductSearchDoc } from "@/lib/inventory/types";
+import { getProduct, getFilters } from "@/lib/inventory/inventory-client";
+import { loadShopInventory } from "@/lib/inventory/shop-inventory.service";
 import {
-  filterOutClientDislikes,
-  mapGenderToInventory,
-  rankByClientLikes,
-} from "@/lib/inventory/client-prefilter";
+  loadClientStylingContext,
+  toClientContextSummary,
+} from "@/lib/inventory/client-context";
+import {
+  adaptProductDoc,
+  bucketCategory,
+} from "@/lib/inventory/adapt-product-doc";
 import { StyleboardBuilder } from "./builder";
-
-type LoveableCategory = "all" | "tops" | "bottoms" | "outerwear" | "accessories" | "shoes";
-
-// Map tastegraph free-text category_slug to Loveable's 5 chrome buckets.
-function bucketCategory(slug: string | null | undefined): Exclude<LoveableCategory, "all"> {
-  const s = (slug ?? "").toLowerCase();
-  if (/coat|jacket|outerwear|sweater|knitwear|cardigan|blazer/.test(s)) return "outerwear";
-  if (/pant|jean|trouser|skirt|short|legging/.test(s)) return "bottoms";
-  if (/shoe|boot|sandal|sneaker|loafer|heel|flat/.test(s)) return "shoes";
-  if (/bag|belt|scarf|hat|jewelry|earring|necklace|bracelet|sunglass|wallet/.test(s)) return "accessories";
-  return "tops";
-}
-
-function adaptProductDoc(doc: ProductSearchDoc) {
-  return {
-    id: doc.id,
-    image: doc.primary_image_url ?? doc.image_urls?.[0] ?? "",
-    brand: doc.brand_name,
-    name: doc.canonical_name,
-    price: `$${Math.round(doc.min_price)}`,
-    category: bucketCategory(doc.category_slug),
-    colors: doc.color_families ?? [],
-    sizes: doc.available_sizes ?? [],
-    retailer: doc.listings?.[0]?.merchant_name,
-    retailerUrl: doc.listings?.[0]?.product_url,
-    availability: doc.in_stock ? ("in-stock" as const) : undefined,
-    designer: doc.brand_name,
-  };
-}
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +42,6 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
           email: true,
           avatarUrl: true,
           loyaltyTier: true,
-          gender: true,
         },
       },
     },
@@ -111,73 +84,6 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
     board = { ...created, items: [] };
   }
 
-  const [
-    closetItems,
-    inspiration,
-    cartRows,
-    bodyProfile,
-    budgetRows,
-    matchQuiz,
-    styleProfile,
-    colorPrefs,
-    fabricPrefs,
-    patternPrefs,
-  ] = await Promise.all([
-    listClosetItems({ userId: session.clientId }),
-    listInspirationPhotos({ take: 60 }),
-    prisma.cartItem.findMany({
-      where: { userId: session.clientId, sessionId },
-      orderBy: { addedAt: "desc" },
-      select: { id: true, inventoryProductId: true, quantity: true },
-    }),
-    prisma.bodyProfile.findUnique({
-      where: { userId: session.clientId },
-      select: { sizes: { select: { category: true, size: true } } },
-    }),
-    prisma.budgetByCategory.findMany({
-      where: { userId: session.clientId },
-      select: { category: true, minInCents: true, maxInCents: true },
-    }),
-    prisma.matchQuizResult.findFirst({
-      where: { userId: session.clientId },
-      orderBy: { completedAt: "desc" },
-      select: { genderToStyle: true },
-    }),
-    prisma.styleProfile.findUnique({
-      where: { userId: session.clientId },
-      select: { avoidBrands: true, preferredBrands: true },
-    }),
-    prisma.colorPreference.findMany({
-      where: { userId: session.clientId },
-      select: { color: true, isLiked: true },
-    }),
-    prisma.fabricPreference.findMany({
-      where: { userId: session.clientId, isDisliked: true },
-      select: { fabric: true },
-    }),
-    prisma.patternPreference.findMany({
-      where: { userId: session.clientId, isDisliked: true },
-      select: { pattern: true },
-    }),
-  ]);
-
-  // Resolve the gender to filter the tastegraph catalog by. MatchQuizResult
-  // captures shopping intent ("which gender's clothing to style for me"),
-  // which can differ from User.gender (a non-binary client may explicitly
-  // pick men's or women's). Fall back to User.gender, then to no filter.
-  const effectiveGender =
-    matchQuiz?.genderToStyle ?? session.client.gender ?? null;
-  const inventoryGender = mapGenderToInventory(effectiveGender);
-
-  // Build client preference lists for post-filter + ranking. Tastegraph has
-  // no exclusion params, so brand/colour/fabric dislikes apply client-side.
-  const dislikedColors = colorPrefs.filter((c) => !c.isLiked).map((c) => c.color);
-  const likedColors = colorPrefs.filter((c) => c.isLiked).map((c) => c.color);
-  const dislikedFabrics = fabricPrefs.map((f) => f.fabric);
-  const dislikedPatterns = patternPrefs.map((p) => p.pattern);
-  const avoidBrands = styleProfile?.avoidBrands ?? [];
-  const preferredBrands = styleProfile?.preferredBrands ?? [];
-
   // Direct-sale id set powers the LookCreator's Shop / Store sub-tabs.
   // Store narrows the inventory grid to MerchandisedProduct rows flagged
   // `isDirectSale = true`; Shop shows the full tastegraph catalog.
@@ -187,53 +93,50 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
   });
   const directSaleProductIds = directSaleRows.map((r) => r.inventoryProductId);
 
-  // Build category-keyed lookups for the LookCreator's stylistContext
-  // PDP: client size per category (lowercased free-text key) + client
-  // budget range per category (cents → dollars). Both default to empty
-  // so the PDP degrades gracefully when the client hasn't filled in
-  // either part of their style profile.
-  const clientSizesByCategory: Record<string, string> = {};
-  for (const s of bodyProfile?.sizes ?? []) {
-    if (s.category && s.size)
-      clientSizesByCategory[s.category.toLowerCase()] = s.size;
-  }
-  const clientBudgetsByCategory: Record<string, [number, number]> = {};
-  for (const b of budgetRows) {
-    clientBudgetsByCategory[b.category.toLowerCase()] = [
-      Math.round(b.minInCents / 100),
-      Math.round(b.maxInCents / 100),
-    ];
-  }
-
-  // Loveable's Shop / Store / Cart tabs all want hydrated tastegraph product
-  // shapes. Fetch the catalog page (Shop) + direct-sale fan-out (Store) +
-  // cart row hydration (Cart) in parallel. Filters that tastegraph doesn't
-  // support — preorder/sale/final-sale availability, inspo styles, body
-  // types, season — stay in the chrome but no-op against this data set;
-  // those are deferred to the inventory project.
-  const [shopSearch, storeProductDocs, cartProductDocs] = await Promise.all([
-    searchProducts({ pageSize: 60, gender: inventoryGender }),
+  // Parallel fan-out: closet/inspiration/cart from DB, shop inventory +
+  // facets + store + cart hydration from tastegraph. The shop call goes
+  // through `loadShopInventory` so smart defaults + dislike filtering +
+  // adaptation are identical between SSR and the paginated client fetches.
+  const [
+    closetItems,
+    inspiration,
+    cartRows,
+    clientCtx,
+    initialShop,
+    facets,
+    storeProductDocs,
+  ] = await Promise.all([
+    listClosetItems({ userId: session.clientId }),
+    listInspirationPhotos({ take: 60 }),
+    prisma.cartItem.findMany({
+      where: { userId: session.clientId, sessionId },
+      orderBy: { addedAt: "desc" },
+      select: { id: true, inventoryProductId: true, quantity: true },
+    }),
+    loadClientStylingContext({ sessionId }),
+    loadShopInventory({ sessionId, page: 1, pageSize: 120 }),
+    getFilters(),
     Promise.all(
       directSaleProductIds.slice(0, 60).map((id) => getProduct(id)),
     ),
-    Promise.all(cartRows.map((c) => getProduct(c.inventoryProductId))),
   ]);
-  // Apply client preference filters + ranking before adapting to the
-  // builder's InventoryItem shape so the chrome never sees an item the
-  // client has explicitly opted out of, and preferred brands surface first.
-  const shopProducts = rankByClientLikes(
-    filterOutClientDislikes(shopSearch.results, {
-      avoidBrands,
-      dislikedColors,
-      dislikedFabrics,
-      dislikedPatterns,
-    }),
-    { preferredBrands, likedColors },
+
+  // Cart items need their tastegraph product doc hydrated separately because
+  // CartItem.id is the row id, not the underlying inventoryProductId. We fan
+  // out one getProduct per row (cached server-side for 5min) and stitch the
+  // results back together preserving the CartItem.id as the chrome id.
+  const cartProductDocs = await Promise.all(
+    cartRows.map((c) => getProduct(c.inventoryProductId)),
   );
-  const shopInventoryItems = shopProducts.map(adaptProductDoc);
+
   const storeInventoryItems = storeProductDocs.flatMap((doc) =>
     doc ? [adaptProductDoc(doc)] : [],
   );
+  const cartInventoryItems = cartRows.flatMap((c, i) => {
+    const doc = cartProductDocs[i];
+    if (!doc) return [];
+    return [{ ...adaptProductDoc(doc), id: c.id, inventoryProductId: doc.id }];
+  });
 
   const clientName = clientDisplayName(
     session.client.firstName,
@@ -246,10 +149,7 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
     session.client.email,
   );
 
-  // Adapters: shape real DB rows into Loveable's InventoryItem shape so the
-  // verbatim-ported builder JSX consumes them unchanged. Empty-array adapters
-  // (shopItems, purchasedItems, previousMoodBoardItems, previousStyleBoardItems,
-  // storeItems) are deferred follow-ups — chrome renders correctly with [].
+  // Closet + inspiration items shape into the chrome's InventoryItem.
   const closetInventoryItems = closetItems.map((c) => ({
     id: c.id,
     image: c.url,
@@ -258,13 +158,14 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
     category: bucketCategory(c.category),
     colors: c.colors ?? [],
     designer: c.designer ?? undefined,
-    season: (c.season?.toLowerCase() as "spring" | "summer" | "fall" | "winter" | undefined) ?? undefined,
+    season:
+      (c.season?.toLowerCase() as
+        | "spring"
+        | "summer"
+        | "fall"
+        | "winter"
+        | undefined) ?? undefined,
   }));
-  const cartInventoryItems = cartRows.flatMap((c, i) => {
-    const doc = cartProductDocs[i];
-    if (!doc) return [];
-    return [{ ...adaptProductDoc(doc), id: c.id, inventoryProductId: doc.id }];
-  });
   const inspirationInventoryItems = inspiration.map((p) => ({
     id: p.id,
     image: p.url,
@@ -272,6 +173,21 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
     name: p.title ?? "",
     category: "tops" as const,
   }));
+
+  // The chrome's existing `clientSizesByCategory` / `clientBudgetsByCategory`
+  // props use lowercased free-text category keys (so the PDP can look up
+  // sizes by `"tops"`, `"bottoms"`, etc.). Keep that shape — derive from
+  // the now-canonical ClientStylingContext.
+  const clientSizesByCategory: Record<string, string> = {};
+  for (const [bucket, size] of Object.entries(clientCtx?.sizesByCategory ?? {})) {
+    if (size) clientSizesByCategory[bucket] = size;
+  }
+  const clientBudgetsByCategory: Record<string, [number, number]> = {};
+  for (const [bucket, range] of Object.entries(
+    clientCtx?.budgetsByCategory ?? {},
+  )) {
+    if (range) clientBudgetsByCategory[bucket] = range;
+  }
 
   const clientProfile = {
     fullName: clientName,
@@ -306,7 +222,11 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
       clientSizesByCategory={clientSizesByCategory}
       clientBudgetsByCategory={clientBudgetsByCategory}
       directSaleProductIds={directSaleProductIds}
-      shopItems={shopInventoryItems}
+      initialShopResponse={initialShop}
+      shopFacets={facets}
+      clientContextSummary={
+        clientCtx ? toClientContextSummary(clientCtx) : null
+      }
       closetItems={closetInventoryItems}
       cartItems={cartInventoryItems}
       purchasedItems={[]}

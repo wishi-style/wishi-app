@@ -1,28 +1,67 @@
 /**
  * Types mirrored from the tastegraph/ai-stylist-platform inventory service.
  * The service does not publish a shared SDK; keep these in sync manually.
+ *
+ * Source of truth lives at
+ *   apps/inventory/src/search/dto/*.ts
+ *   apps/inventory/src/search/search.service.ts (getFilterValues, getFilterSchema)
+ * in the tastegraph monorepo (cloned locally at ~/tastegraph/ai-stylist-platform/).
  */
 
+// --------------------------------------------------------------------------
+// Search input
+// --------------------------------------------------------------------------
+
+export type SearchMode = "fts" | "semantic" | "vector" | "direction";
+
 export interface SearchQueryDto {
+  // Search text / mode
   query?: string;
-  brandId?: string;
-  merchantIds?: string[];
+  mode?: SearchMode;
+  semanticQuery?: string;
+  /**
+   * Pre-computed query vector. 1024-dim for `vector` mode (semantic space) or
+   * 768-dim for `direction` mode (FashionSigLIP moodboard space).
+   */
+  queryVector?: number[];
+
+  // Brand / merchant / category
+  brandId?: string; // legacy single-brand filter; prefer `brandIds`
   brandIds?: string[];
-  categoryId?: string;
-  gender?: string;
-  sizes?: string[];
-  colors?: string[];
+  merchantIds?: string[];
+  categoryId?: string; // service expands to children automatically
+
+  // Demographics / attributes
+  gender?: string; // "women" | "men" | "unisex" (aliased server-side)
+  sizes?: string[]; // service `available_sizes` array overlap
+  colors?: string[]; // service `color_families` array overlap
+
+  // Material / fabric
+  primaryFabrics?: string[];
+  excludeLeather?: boolean;
+
+  // Price (FTS: strict containment; semantic/vector/direction: existential)
   minPrice?: number;
   maxPrice?: number;
+
+  // Stock + perf
   inStockOnly?: boolean;
-  excludeLeather?: boolean;
-  primaryFabrics?: string[];
-  mode?: "fts" | "semantic" | "vector" | "direction";
-  semanticQuery?: string;
-  queryVector?: number[];
-  page?: number;
-  pageSize?: number;
-  lightweight?: boolean;
+  lightweight?: boolean; // skip listings/variants hydration
+
+  // Pagination
+  page?: number; // 1-indexed
+  pageSize?: number; // max 200
+}
+
+// --------------------------------------------------------------------------
+// Listings / variants
+// --------------------------------------------------------------------------
+
+export interface ProductVariant {
+  size: string;
+  color: string;
+  color_family: string;
+  in_stock: boolean;
 }
 
 export interface ProductListing {
@@ -48,13 +87,12 @@ export interface ProductListing {
   contains_leather: boolean;
   fabric_composition: string;
   pattern: string;
-  variants: Array<{
-    size: string;
-    color: string;
-    color_family: string;
-    in_stock: boolean;
-  }>;
+  variants: ProductVariant[];
 }
+
+// --------------------------------------------------------------------------
+// Product document
+// --------------------------------------------------------------------------
 
 export interface ProductSearchDoc {
   id: string;
@@ -79,6 +117,14 @@ export interface ProductSearchDoc {
   primary_fabric: string | null;
   fabric_tier: string | null;
   contains_leather: boolean | null;
+  /** Structured LLM-extracted attributes used by the semantic reranker. */
+  silhouette?: string | null;
+  construction?: string | null;
+  neckline?: string | null;
+  /** Relevance score from semantic/vector/direction modes (1 − cosine distance). */
+  _score?: number;
+  /** Present on summary docs (lightweight=true). */
+  merchant_count?: number;
   updated_at: string;
   listings: ProductListing[];
 }
@@ -91,15 +137,125 @@ export interface SearchResponse {
   results: ProductSearchDoc[];
 }
 
+// --------------------------------------------------------------------------
+// Candidate search (lightweight, no listings)
+// --------------------------------------------------------------------------
+
+export interface CandidateDoc {
+  id: string;
+  listing_id: string;
+  canonical_name: string;
+  brand_name: string;
+  category_id: string;
+  category_slug: string;
+  min_price: number;
+  primary_image_url: string | null;
+  gender: string;
+  primary_fabric: string | null;
+  fabric_tier: string | null;
+  contains_leather: boolean | null;
+  affiliate_url: string | null;
+  effective_price: number | null;
+  /** Only present in vector / semantic / direction modes. */
+  distance?: number;
+}
+
+export interface CandidateSearchResponse {
+  total: number;
+  results: CandidateDoc[];
+}
+
+// --------------------------------------------------------------------------
+// Batch search
+// --------------------------------------------------------------------------
+
+export interface SearchBatchRequest {
+  /** Max 20 queries per batch. */
+  queries: SearchQueryDto[];
+}
+
+export interface SearchBatchResponse {
+  results: Array<{ total: number; results: ProductSearchDoc[] }>;
+}
+
+// --------------------------------------------------------------------------
+// Suit pairs
+// --------------------------------------------------------------------------
+
+export interface SuitPairQueryDto {
+  /** Required: color family to anchor the pair (e.g. "navy", "burgundy"). */
+  colorFamily: string;
+  semanticQuery?: string;
+  gender?: string;
+  excludeLeather?: boolean;
+  brandId?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  /** 1–50, default 10. */
+  limit?: number;
+}
+
+export interface SuitPairRow {
+  blazer_product_id: string;
+  pants_product_id: string;
+  brand_name: string;
+  blazer_name: string;
+  pants_name: string;
+  color_raw: string;
+  color_family: string;
+  match_score: number;
+  blazer_min_price: number;
+  pants_min_price: number;
+  blazer_image_url: string | null;
+  pants_image_url: string | null;
+  /** Only present when the request included `semanticQuery`. */
+  semantic_distance: number | null;
+}
+
+// --------------------------------------------------------------------------
+// Embeddings (semantic + direction)
+// --------------------------------------------------------------------------
+
+export interface EmbeddingsRequest {
+  /** Max 500 listing IDs per call. */
+  listingIds: string[];
+}
+
+export interface EmbeddingsResponse {
+  /** 1024-dim cosine embedding per listing (OpenAI text-embedding-3-small). */
+  embeddings: Record<string, number[]>;
+}
+
+export interface DirectionEmbeddingsResponse {
+  /** 768-dim FashionSigLIP moodboard direction embedding per listing. */
+  embeddings: Record<string, number[]>;
+}
+
+// --------------------------------------------------------------------------
+// Filter values + schema
+// --------------------------------------------------------------------------
+
 export interface FilterValuesResponse {
+  categories: Array<{ id: string; slug: string; name: string }>;
+  colors: Array<{ value: string; count: number }>;
+  /** Sub-colors keyed by color family (e.g. "red" → ["burgundy", "crimson"]). */
+  subColorsByFamily: Record<string, string[]>;
+  sizes: Array<{ value: string; system: string; count: number }>;
+  primaryFabrics: Array<{ value: string; count: number }>;
   brands: Array<{ id: string; name: string }>;
-  categories: Array<{ id: string; slug: string; label: string }>;
-  colors: string[];
-  sizes: string[];
-  primaryFabrics: string[];
   merchants: Array<{ id: string; name: string }>;
+  /** ["women", "men", "unisex"]. */
   genders: string[];
 }
+
+export interface FilterSchemaResponse {
+  filters: Array<{ field: string; type: string; description: string }>;
+  modes: Array<{ value: SearchMode; description: string }>;
+}
+
+// --------------------------------------------------------------------------
+// Listing lookup + commissions (unchanged from prior version)
+// --------------------------------------------------------------------------
 
 export interface ListingLookupRow {
   title: string;

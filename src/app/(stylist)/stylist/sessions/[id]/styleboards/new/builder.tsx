@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -58,6 +58,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { loyaltyConfig } from "@/data/client-profiles";
 import { toast } from "sonner";
+import { useShopInventory } from "./use-shop-inventory";
+import { ShopFilterRail } from "./shop-filter-rail";
+import type { CategoryBucket } from "@/lib/inventory/adapt-product-doc";
+import type { SmartDefaultKind } from "@/lib/inventory/shop-inventory.defaults";
 
 type SourceTab = "shop" | "closet" | "inspiration" | "previous" | "store";
 type Category = "all" | "tops" | "bottoms" | "outerwear" | "accessories" | "shoes";
@@ -196,7 +200,12 @@ interface StyleboardBuilderProps {
   clientSizesByCategory: Record<string, string>;
   clientBudgetsByCategory: Record<string, [number, number]>;
   directSaleProductIds: string[];
-  shopItems: InventoryItem[];
+  /** Page 1 of the shop catalog. The Shop tab uses `useShopInventory` to
+   *  re-fetch on filter/search/load-more; everything else (closet, cart,
+   *  inspiration, store, previous) stays static. */
+  initialShopResponse: import("@/lib/inventory/shop-inventory.service").ShopInventoryResponse;
+  shopFacets: import("@/lib/inventory/types").FilterValuesResponse;
+  clientContextSummary: import("@/lib/inventory/client-context").ClientStylingContextSummary | null;
   closetItems: InventoryItem[];
   cartItems: InventoryItem[];
   purchasedItems: InventoryItem[];
@@ -212,7 +221,9 @@ export function StyleboardBuilder({
   sessionId,
   clientId,
   clientName,
-  shopItems,
+  initialShopResponse,
+  shopFacets,
+  clientContextSummary,
   closetItems,
   cartItems,
   purchasedItems,
@@ -226,6 +237,23 @@ export function StyleboardBuilder({
   const [tab, setTab] = useState<SourceTab>("shop");
   const [category, setCategory] = useState<Category>("all");
   const [selectedSubcategories, setSelectedSubcategories] = useState<Set<string>>(new Set());
+
+  // -------------------------------------------------------------------------
+  // Shop workspace data hook. Owns server-side filter/search/pagination for
+  // the Shop tab and routes the power-mode invocations (looks-like canvas,
+  // similar to product, suit pair, find pieces for this look) to the right
+  // API. Non-shop tabs still use the static prop arrays below.
+  // -------------------------------------------------------------------------
+  const shop = useShopInventory({
+    sessionId,
+    initial: initialShopResponse,
+    facets: shopFacets,
+    context: clientContextSummary,
+    category: category as CategoryBucket,
+  });
+
+  // Category is a controlled prop on `useShopInventory` (passed via `opts`
+  // above). The hook handles per-bucket smart-default reset internally.
 
   const toggleSubcategory = (s: string) => {
     setSelectedSubcategories((prev) => {
@@ -318,6 +346,31 @@ export function StyleboardBuilder({
     return () => clearTimeout(t);
   }, [budget, budgetOpen]);
 
+  // Mirror the chrome's Shop-tab filter state into the data hook. Each
+  // mutation maps a UI-local Set/state into the canonical filter shape the
+  // shop-inventory service expects. The hook debounces query changes; all
+  // others fire immediately.
+  const [shopSearchMode, setShopSearchMode] = useState<"smart" | "keyword">("smart");
+  const [shopSort, setShopSort] = useState<
+    "relevance" | "newest" | "price_asc" | "price_desc" | "in_stock_first"
+  >("relevance");
+  const [selectedFabricTiers, setSelectedFabricTiers] = useState<Set<string>>(
+    new Set(),
+  );
+  const [selectedFabrics, setSelectedFabrics] = useState<Set<string>>(new Set());
+  const [selectedSubColors, setSelectedSubColors] = useState<Set<string>>(
+    new Set(),
+  );
+  const [excludeLeatherUi, setExcludeLeatherUi] = useState<boolean | undefined>(
+    undefined,
+  );
+  const [inStockOnlyUi, setInStockOnlyUi] = useState<boolean | undefined>(
+    undefined,
+  );
+
+  // (Filter-sync useEffect lives below — after `merchantIdByName` is
+  // declared — so the closure can reference the merchant-name → id map.)
+
   const toggleAvailability = (a: Availability) => {
     setSelectedAvailability((prev) => {
       const next = new Set(prev);
@@ -344,6 +397,9 @@ export function StyleboardBuilder({
   };
   const [pdpItem, setPdpItem] = useState<InventoryItem | null>(null);
 
+  // Shop workspace UI refs
+  const shopSearchInputRef = useRef<HTMLInputElement>(null);
+
   // Save dialog state
   const [saveOpen, setSaveOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -358,11 +414,65 @@ export function StyleboardBuilder({
     highlights: "",
   });
 
-  const shopRetailers = useMemo(() => {
-    const set = new Set<string>();
-    shopItems.forEach((it) => it.retailer && set.add(it.retailer));
-    return Array.from(set).sort();
-  }, [shopItems]);
+  // Retailer chip list is now the canonical merchant facet from the
+  // inventory service rather than a derived-from-current-page set. The
+  // sidebar maps the user-facing name back to merchant_id when applying
+  // the filter via `shop.setFilters({ merchantIds: [...] })`.
+  const shopRetailers = useMemo(
+    () => shopFacets.merchants.map((m) => m.name).sort((a, b) => a.localeCompare(b)),
+    [shopFacets.merchants],
+  );
+  const merchantIdByName = useMemo(() => {
+    const m = new Map<string, string>();
+    shopFacets.merchants.forEach((row) => m.set(row.name, row.id));
+    return m;
+  }, [shopFacets.merchants]);
+
+  // Filter-sync effect — observes the chrome's Shop-tab filter state and
+  // pushes the canonical shape down to the data hook. Lives here (not
+  // earlier) so the closure can reference `merchantIdByName` which is
+  // built from facets. Query is debounced inside the hook (250ms);
+  // checkbox / slider / sort changes fire immediately.
+  const selectedRetailersKey = useMemo(
+    () => [...selectedRetailers].sort().join("|"),
+    [selectedRetailers],
+  );
+  const selectedColorsKey = useMemo(
+    () => [...selectedColors].sort().join("|"),
+    [selectedColors],
+  );
+  const selectedSizesKey = useMemo(
+    () => [...selectedSizes].sort().join("|"),
+    [selectedSizes],
+  );
+  const selectedFabricTiersKey = useMemo(
+    () => [...selectedFabricTiers].sort().join("|"),
+    [selectedFabricTiers],
+  );
+  const selectedFabricsKey = useMemo(
+    () => [...selectedFabrics].sort().join("|"),
+    [selectedFabrics],
+  );
+  const selectedSubColorsKey = useMemo(
+    () => [...selectedSubColors].sort().join("|"),
+    [selectedSubColors],
+  );
+
+  // Sync the *toolbar* state (search query, search mode, sort) into the
+  // shop hook. The rest of the filter shape — retailers, colors, sizes,
+  // fabrics, brands, gender, price range — is now owned by the new
+  // ShopFilterRail, which calls `shop.setFilters` directly. Keeping a
+  // single source of truth for those there avoids the rail's writes being
+  // clobbered every time the toolbar effect re-fires.
+  useEffect(() => {
+    if (tab !== "shop") return;
+    shop.setFilters({
+      query: search.trim() || undefined,
+      mode: shopSearchMode,
+      sort: shopSort,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, search, shopSearchMode, shopSort]);
 
   const toggleRetailer = (retailer: string) => {
     setSelectedRetailers((prev) => {
@@ -419,9 +529,16 @@ export function StyleboardBuilder({
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  const sourceItems = useMemo(() => {
+  const sourceItems = useMemo<InventoryItem[]>(() => {
     switch (tab) {
-      case "shop": return shopItems;
+      // Shop tab is driven by the server-side data hook now — filters and
+      // search are pushed to tastegraph, not applied client-side over a
+      // static page. We cast through unknown because AdaptedInventoryItem
+      // is a structural superset of the chrome's InventoryItem (extra
+      // optional fields like fabricTier / priceValue / listingId that the
+      // rest of the chrome ignores).
+      case "shop":
+        return shop.items as unknown as InventoryItem[];
       case "store": return storeItems;
       case "closet":
         return closetSubTab === "cart" ? cartItems : closetSubTab === "purchased" ? purchasedItems : closetItems;
@@ -429,27 +546,31 @@ export function StyleboardBuilder({
       case "previous":
         return previousSubTab === "style" ? previousStyleBoardItems : previousMoodBoardItems;
     }
-  }, [tab, closetSubTab, previousSubTab, shopItems, storeItems, cartItems, purchasedItems, closetItems, inspirationItems, previousStyleBoardItems, previousMoodBoardItems]);
+  }, [tab, closetSubTab, previousSubTab, shop.items, storeItems, cartItems, purchasedItems, closetItems, inspirationItems, previousStyleBoardItems, previousMoodBoardItems]);
 
   const filtered = useMemo(() => {
     return sourceItems.filter((it) => {
+      // Shop tab: retailer/availability/color/size/search/budget are all
+      // pushed to the inventory service. Favorites + sub-category are still
+      // local because the service has no first-class field for either. The
+      // chrome's free-text `search` substring matcher also stays as a
+      // local fallback so the user can dial in within the already-loaded
+      // page without re-hitting the network.
       if (tab === "shop" && favoritesOnly && !favorites.has(it.id)) return false;
-      if (tab === "shop" && selectedRetailers.size > 0 && (!it.retailer || !selectedRetailers.has(it.retailer))) return false;
-      if (tab === "shop" && selectedAvailability.size > 0 && (!it.availability || !selectedAvailability.has(it.availability))) return false;
-      if (tab === "shop" && selectedColors.size > 0 && (!it.colors || !it.colors.some((c) => selectedColors.has(c)))) return false;
-      if (tab === "shop" && selectedSizes.size > 0 && (!it.sizes || !it.sizes.some((s) => selectedSizes.has(s)))) return false;
       if (tab === "inspiration" && selectedInspoStyles.size > 0 && (!it.styles || !it.styles.some((s) => selectedInspoStyles.has(s)))) return false;
       if (tab === "inspiration" && selectedInspoBodyTypes.size > 0 && (!it.bodyTypes || !it.bodyTypes.some((b) => selectedInspoBodyTypes.has(b)))) return false;
       if (tab === "closet" && closetSelectedColors.size > 0 && (!it.colors || !it.colors.some((c) => closetSelectedColors.has(c)))) return false;
       if (tab === "closet" && closetSelectedDesigners.size > 0 && (!it.designer || !closetSelectedDesigners.has(it.designer))) return false;
       if (tab === "closet" && closetSelectedSeasons.size > 0 && (!it.season || !closetSelectedSeasons.has(it.season))) return false;
-      if (category !== "all" && it.category !== category) return false;
+      if (tab !== "shop" && category !== "all" && it.category !== category) return false;
       if (tab === "shop" && selectedSubcategories.size > 0 && (!it.subcategory || !selectedSubcategories.has(it.subcategory))) return false;
-      if (search && !`${it.brand} ${it.name}`.toLowerCase().includes(search.toLowerCase())) return false;
-      if (tab === "shop" && it.price) {
-        const value = Number(it.price.replace(/[^0-9.]/g, ""));
-        if (value < budget[0] || value > budget[1]) return false;
-      }
+      // Shop tab pushes search + budget to the inventory service (semantic
+      // / FTS / vector / direction). Re-applying brand+name substring or a
+      // local price gate here would clobber semantically-ranked results
+      // ("blue dress" returns blue dresses even if neither word appears in
+      // the brand+name). Keep both filters for closet / inspiration / store
+      // where there's no server pipeline.
+      if (tab !== "shop" && search && !`${it.brand} ${it.name}`.toLowerCase().includes(search.toLowerCase())) return false;
       if (priceRange !== "any" && it.price) {
         const value = Number(it.price.replace(/[^0-9.]/g, ""));
         if (priceRange === "u250" && value >= 250) return false;
@@ -637,6 +758,46 @@ export function StyleboardBuilder({
   const removeFromCanvas = (uid: string) => {
     setCanvas((prev) => prev.filter((c) => c.uid !== uid));
   };
+
+  // ---------------------------------------------------------------------------
+  // Power-mode triggers (looks-like canvas, find pieces for this look). Both
+  // route through the inventory service's FashionSigLIP direction-embedding
+  // space — the average vector of the canvas items becomes the moodboard
+  // query. INVENTORY-source canvas items only; closet/inspiration items
+  // don't have inventory-service listing embeddings.
+  // ---------------------------------------------------------------------------
+  const canvasInventoryProductIds = useMemo(
+    () =>
+      canvas
+        .filter((c) => c.source === "INVENTORY")
+        .map((c) => c.refId)
+        .filter(Boolean),
+    [canvas],
+  );
+
+  // Keyboard shortcut: `/` focuses the Shop search bar from anywhere
+  useEffect(() => {
+    if (tab !== "shop") return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === "/") {
+        e.preventDefault();
+        shopSearchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [tab]);
 
   const clearCanvas = () => {
     setCanvas([]);
@@ -946,6 +1107,52 @@ export function StyleboardBuilder({
               Filters
             </div>
           </aside>
+        ) : tab === "shop" && clientContextSummary ? (
+          <ShopFilterRail
+            value={shop.filters}
+            onChange={(patch) => shop.setFilters(patch)}
+            facets={shopFacets}
+            clientContext={clientContextSummary}
+            category={category as CategoryBucket}
+            onCategoryChange={(next) => setCategory(next)}
+            onCollapse={() => setFiltersCollapsed(true)}
+            onClearAll={() => {
+              shop.setFilters({
+                merchantIds: undefined,
+                brandIds: undefined,
+                categoryId: undefined,
+                colors: undefined,
+                subColors: undefined,
+                sizes: undefined,
+                primaryFabrics: undefined,
+                fabricTiers: undefined,
+                excludeLeather: undefined,
+                inStockOnly: undefined,
+                minPrice: undefined,
+                maxPrice: undefined,
+                gender: undefined,
+              });
+              setCategory("all");
+            }}
+            onResetToProfile={() => {
+              shop.setFilters({
+                merchantIds: undefined,
+                brandIds: undefined,
+                categoryId: undefined,
+                colors: undefined,
+                subColors: undefined,
+                sizes: undefined,
+                primaryFabrics: undefined,
+                fabricTiers: undefined,
+                excludeLeather: undefined,
+                inStockOnly: undefined,
+                minPrice: undefined,
+                maxPrice: undefined,
+                gender: undefined,
+              });
+              shop.restoreSmartDefaults();
+            }}
+          />
         ) : (
         <aside className="w-[200px] shrink-0 border-r border-border bg-muted/20 p-4 flex flex-col gap-5 overflow-y-auto relative">
           <div className="flex items-center justify-between -mt-1 -mr-1">
@@ -961,94 +1168,11 @@ export function StyleboardBuilder({
               <PanelLeftCloseIcon className="h-3.5 w-3.5" />
             </button>
           </div>
-          {tab === "shop" && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Filter by retailers
-                </h3>
-                {selectedRetailers.size > 0 && (
-                  <button
-                    onClick={() => setSelectedRetailers(new Set())}
-                    className="font-body text-[10px] text-muted-foreground hover:text-foreground underline"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-              <div className="space-y-0.5 max-h-48 overflow-y-auto pr-1">
-                {shopRetailers.map((r) => {
-                  const active = selectedRetailers.has(r);
-                  return (
-                    <button
-                      key={r}
-                      onClick={() => toggleRetailer(r)}
-                      className={cn(
-                        "w-full text-left px-2 py-1.5 rounded-sm font-body text-xs transition-colors flex items-center gap-2",
-                        active
-                          ? "bg-foreground text-background"
-                          : "text-foreground hover:bg-muted"
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "h-3 w-3 rounded-sm border flex items-center justify-center shrink-0",
-                          active
-                            ? "bg-background border-background"
-                            : "border-border"
-                        )}
-                      >
-                        {active && <span className="h-1.5 w-1.5 bg-foreground rounded-[1px]" />}
-                      </span>
-                      <span className="truncate">{r}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {tab === "shop" && (
-            <div>
-              <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                Availability
-              </h3>
-              <div className="space-y-0.5">
-                {([
-                  { key: "in-stock" as const, label: "In-Stock" },
-                  { key: "preorder" as const, label: "Preorder" },
-                  { key: "sale" as const, label: "Sale" },
-                  { key: "final-sale" as const, label: "Final Sale" },
-                ]).map((opt) => {
-                  const active = selectedAvailability.has(opt.key);
-                  return (
-                    <button
-                      key={opt.key}
-                      onClick={() => toggleAvailability(opt.key)}
-                      className={cn(
-                        "w-full text-left px-2 py-1.5 rounded-sm font-body text-xs transition-colors flex items-center gap-2",
-                        active
-                          ? "bg-foreground text-background"
-                          : "text-foreground hover:bg-muted"
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "h-3 w-3 rounded-sm border flex items-center justify-center shrink-0",
-                          active
-                            ? "bg-background border-background"
-                            : "border-border"
-                        )}
-                      >
-                        {active && <span className="h-1.5 w-1.5 bg-foreground rounded-[1px]" />}
-                      </span>
-                      <span className="truncate">{opt.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          {/* Shop-tab filter rail is rendered by <ShopFilterRail/> above the
+              legacy aside (see the `tab === "shop" ?` branch upstream). The
+              non-shop sections below — inspiration, closet, category, color,
+              size, budget — stay on the legacy aside chrome until those tabs
+              get their own dedicated rail. */}
 
           {tab === "inspiration" && (
             <>
@@ -1140,43 +1264,6 @@ export function StyleboardBuilder({
                     >
                       {c.label}
                     </button>
-                    {tab === "shop" && isActive && subs && (
-                      <div className="mt-1 ml-2 pl-2 border-l border-border space-y-0.5 max-h-64 overflow-y-auto pr-1">
-                        {selectedSubcategories.size > 0 && (
-                          <button
-                            onClick={() => setSelectedSubcategories(new Set())}
-                            className="font-body text-[10px] text-muted-foreground hover:text-foreground underline px-2 py-0.5"
-                          >
-                            Clear
-                          </button>
-                        )}
-                        {subs.map((s) => {
-                          const subActive = selectedSubcategories.has(s);
-                          return (
-                            <button
-                              key={s}
-                              onClick={() => toggleSubcategory(s)}
-                              className={cn(
-                                "w-full text-left px-2 py-1 rounded-sm font-body text-xs transition-colors flex items-center gap-2",
-                                subActive
-                                  ? "bg-foreground text-background"
-                                  : "text-foreground hover:bg-muted"
-                              )}
-                            >
-                              <span
-                                className={cn(
-                                  "h-3 w-3 rounded-sm border flex items-center justify-center shrink-0",
-                                  subActive ? "bg-background border-background" : "border-border"
-                                )}
-                              >
-                                {subActive && <span className="h-1.5 w-1.5 bg-foreground rounded-[1px]" />}
-                              </span>
-                              <span className="truncate">{s}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
                   </div>
                 );
               })}
@@ -1184,144 +1271,6 @@ export function StyleboardBuilder({
           </div>
           )}
 
-
-          {tab === "shop" && (
-            <>
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setColorOpen((v) => !v)}
-                  aria-expanded={colorOpen}
-                  className="w-full flex items-center justify-between mb-2 group"
-                >
-                  <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
-                    Color{selectedColors.size > 0 && ` (${selectedColors.size})`}
-                  </h3>
-                  <ChevronDownIcon
-                    className={cn(
-                      "h-3.5 w-3.5 text-muted-foreground transition-transform",
-                      colorOpen && "rotate-180"
-                    )}
-                  />
-                </button>
-                {colorOpen && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {COLOR_OPTIONS.map((c) => {
-                      const active = selectedColors.has(c.key);
-                      return (
-                        <button
-                          key={c.key}
-                          onClick={() => toggleColor(c.key)}
-                          title={c.label}
-                          aria-label={c.label}
-                          aria-pressed={active}
-                          className={cn(
-                            "h-6 w-6 rounded-full border transition-all",
-                            active
-                              ? "border-foreground ring-2 ring-foreground ring-offset-1 ring-offset-background"
-                              : "border-border hover:border-foreground/60"
-                          )}
-                          style={{ backgroundColor: c.hex }}
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setSizeOpen((v) => !v)}
-                  aria-expanded={sizeOpen}
-                  className="w-full flex items-center justify-between mb-2 group"
-                >
-                  <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
-                    Size{selectedSizes.size > 0 && ` (${selectedSizes.size})`}
-                  </h3>
-                  <ChevronDownIcon
-                    className={cn(
-                      "h-3.5 w-3.5 text-muted-foreground transition-transform",
-                      sizeOpen && "rotate-180"
-                    )}
-                  />
-                </button>
-                {sizeOpen && (
-                  <>
-                    <div className="flex flex-wrap gap-1.5">
-                      {SIZE_OPTIONS.map((s) => {
-                        const active = selectedSizes.has(s);
-                        return (
-                          <button
-                            key={s}
-                            onClick={() => toggleSize(s)}
-                            className={cn(
-                              "min-w-8 h-7 px-2 rounded-sm border font-body text-[11px] transition-colors",
-                              active
-                                ? "bg-foreground text-background border-foreground"
-                                : "bg-background text-foreground border-border hover:bg-muted"
-                            )}
-                          >
-                            {s}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {selectedSizes.size > 0 && (
-                      <button
-                        onClick={() => setSelectedSizes(new Set())}
-                        className="mt-2 font-body text-[11px] text-foreground hover:text-foreground/80 underline underline-offset-2"
-                      >
-                        Clear size
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setBudgetOpen((v) => !v)}
-                  aria-expanded={budgetOpen}
-                  className="w-full flex items-center justify-between mb-2 group"
-                >
-                  <h3 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
-                    Budget{(budget[0] > 0 || budget[1] < 5000) && " •"}
-                  </h3>
-                  <ChevronDownIcon
-                    className={cn(
-                      "h-3.5 w-3.5 text-muted-foreground transition-transform",
-                      budgetOpen && "rotate-180"
-                    )}
-                  />
-                </button>
-                {budgetOpen && (
-                  <>
-                    <div className="flex justify-end mb-1">
-                      <span className="font-body text-[10px] text-muted-foreground">
-                        ${budget[0].toLocaleString()} – ${budget[1].toLocaleString()}{budget[1] >= 5000 ? "+" : ""}
-                      </span>
-                    </div>
-                    <Slider
-                      min={0}
-                      max={5000}
-                      step={50}
-                      value={budget}
-                      onValueChange={(v) => { const arr = v as readonly number[]; setBudget([arr[0], arr[1]] as [number, number]); }}
-                      className="my-2"
-                    />
-                    {(budget[0] > 0 || budget[1] < 5000) && (
-                      <button
-                        onClick={() => setBudget([0, 5000])}
-                        className="mt-2 font-body text-[11px] text-foreground hover:text-foreground/80 underline underline-offset-2"
-                      >
-                        Reset budget
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            </>
-          )}
 
           {tab === "closet" && (
             <>
@@ -1472,7 +1421,7 @@ export function StyleboardBuilder({
         )}
 
         {/* Center: inventory grid */}
-        <div className="flex-1 flex flex-col min-w-0 border-r border-border">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 border-r border-border">
           <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border">
             <div className="flex items-center gap-2 min-w-0 flex-1">
               {tab === "shop" && (
@@ -1504,17 +1453,52 @@ export function StyleboardBuilder({
                   </span>
                 </button>
               )}
-              <div className="relative w-full max-w-xs">
+              <div className="relative w-full max-w-md flex items-center gap-1">
                 <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
-                  placeholder="Search inventory..."
+                  ref={shopSearchInputRef}
+                  placeholder={
+                    tab === "shop"
+                      ? "Search the catalog — try “navy linen blazer for fall”"
+                      : "Search inventory..."
+                  }
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="h-8 pl-8 font-body text-xs rounded-sm"
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setSearch("");
+                    }
+                  }}
+                  className="h-8 pl-8 font-body text-xs rounded-sm flex-1"
                 />
+                {tab === "shop" && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShopSearchMode((m) => (m === "smart" ? "keyword" : "smart"))
+                    }
+                    title={
+                      shopSearchMode === "smart"
+                        ? "Smart (semantic) search — click for keyword"
+                        : "Keyword (FTS) search — click for smart"
+                    }
+                    aria-pressed={shopSearchMode === "smart"}
+                    className={cn(
+                      "h-8 inline-flex items-center gap-1 px-2 rounded-sm border font-body text-[10px] uppercase tracking-wider whitespace-nowrap transition-colors",
+                      shopSearchMode === "smart"
+                        ? "bg-foreground text-background border-foreground"
+                        : "bg-background text-foreground border-border hover:bg-muted",
+                    )}
+                  >
+                    <SparklesIcon className="h-3 w-3" />
+                    {shopSearchMode === "smart" ? "Smart" : "Keyword"}
+                  </button>
+                )}
               </div>
               <span className="font-body text-sm text-muted-foreground whitespace-nowrap">
-                {filtered.length} {filtered.length === 1 ? "item" : "items"}
+                {tab === "shop"
+                  ? shop.total === 0 ? "0 items" : shop.items.length >= shop.visibleApprox ? `${shop.items.length} ${shop.items.length === 1 ? "item" : "items"}` : `${shop.items.length} of ~${shop.visibleApprox} items`
+                  : `${filtered.length} ${filtered.length === 1 ? "item" : "items"}`}
               </span>
             </div>
             <div className="flex items-center gap-1">
@@ -1587,6 +1571,53 @@ export function StyleboardBuilder({
               })}
             </div>
           )}
+          {tab === "shop" && shop.powerMode && (
+            <div className="flex items-center gap-2 px-5 py-2 border-b border-border bg-accent/30">
+              <SparklesIcon className="h-3.5 w-3.5 text-foreground" />
+              <span className="font-body text-xs text-foreground">
+                {shop.powerMode.label}
+              </span>
+              <button
+                type="button"
+                onClick={() => shop.clearPowerMode()}
+                className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-border bg-background font-body text-[11px] text-foreground hover:bg-muted"
+              >
+                <XIcon className="h-3 w-3" />
+                Back to browse
+              </button>
+            </div>
+          )}
+          {tab === "shop" && shop.appliedSmartDefaults.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap px-5 py-2 border-b border-border bg-cream/30">
+              <span className="font-display text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1 inline-flex items-center gap-1">
+                <SparklesIcon className="h-3 w-3" />
+                Tuned for {clientFirstName}
+              </span>
+              {shop.appliedSmartDefaults.map((d) => (
+                <span
+                  key={d.kind}
+                  className="inline-flex items-center gap-1 h-7 pl-2 pr-1 rounded-full border border-border bg-background text-foreground font-body text-[11px]"
+                >
+                  <span className="max-w-[200px] truncate">{d.reason}</span>
+                  <button
+                    type="button"
+                    onClick={() => shop.dismissSmartDefault(d.kind)}
+                    aria-label={`Dismiss ${d.kind} default`}
+                    className="h-5 w-5 inline-flex items-center justify-center rounded-full hover:bg-muted transition-colors"
+                  >
+                    <XIcon className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+              <button
+                type="button"
+                onClick={() => shop.restoreSmartDefaults()}
+                className="ml-1 font-body text-[11px] text-foreground hover:text-foreground/80 underline underline-offset-2"
+              >
+                Reset to {clientFirstName}&apos;s profile
+              </button>
+            </div>
+          )}
           {activeFilters.length > 0 && (
             <div className="flex items-center gap-1.5 flex-wrap px-5 py-2 border-b border-border bg-muted/20">
               <span className="font-display text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">
@@ -1625,7 +1656,7 @@ export function StyleboardBuilder({
               )}
             </div>
           )}
-          <ScrollArea className="flex-1">
+          <div className="flex-1 min-h-0 overflow-y-auto">
             <div
               className={cn(
                 "grid gap-3 p-5",
@@ -1717,11 +1748,57 @@ export function StyleboardBuilder({
               ))}
               {filtered.length === 0 && (
                 <div className="col-span-full p-12 text-center">
-                  <p className="font-body text-sm text-muted-foreground">No items match these filters</p>
+                  <p className="font-body text-sm text-muted-foreground">
+                    {tab === "shop"
+                      ? "No matches. Try clearing fabric, widening budget, or "
+                      : "No items match these filters"}
+                    {tab === "shop" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          clearAllFilters();
+                          shop.reset();
+                        }}
+                        className="underline underline-offset-2 hover:text-foreground"
+                      >
+                        reset to {clientFirstName}&apos;s profile
+                      </button>
+                    )}
+                  </p>
                 </div>
               )}
             </div>
-          </ScrollArea>
+            {/* Load-more footer — Shop tab only. Hidden while in a power
+                mode (vector / direction); those return a single result set
+                that the stylist can step back from via "Back to browse". */}
+            {tab === "shop" && !shop.powerMode && shop.items.length > 0 && (
+              <div className="border-t border-border bg-muted/10 px-5 py-3 flex items-center justify-center">
+                {shop.canLoadMore ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => shop.loadMore()}
+                    disabled={shop.isLoadingMore}
+                    className="h-8 font-body text-xs rounded-sm"
+                  >
+                    {shop.isLoadingMore ? (
+                      <>
+                        <Loader2Icon className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        Loading…
+                      </>
+                    ) : (
+                      <>Load more · ~{Math.max(0, shop.visibleApprox - shop.items.length)} left</>
+                    )}
+                  </Button>
+                ) : (
+                  <span className="font-body text-[11px] text-muted-foreground">
+                    End of catalog · {shop.items.length} {shop.items.length === 1 ? "item" : "items"}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Right: canvas */}
@@ -2045,18 +2122,18 @@ export function StyleboardBuilder({
           const profile = clientProfile;
           // Map inventory category → client profile keys
           const sizeKeyMap: Record<string, string> = {
-            tops: "Tops",
-            bottoms: "Bottoms",
-            outerwear: "Outerwear",
-            shoes: "Shoes",
+            tops: "tops",
+            bottoms: "bottoms",
+            outerwear: "outerwear",
+            shoes: "shoes",
             accessories: "",
           };
           const budgetKeyMap: Record<string, string> = {
-            tops: "Tops",
-            bottoms: "Bottoms",
-            outerwear: "Tops",
-            shoes: "Shoes",
-            accessories: "Accessories",
+            tops: "tops",
+            bottoms: "bottoms",
+            outerwear: "outerwear",
+            shoes: "shoes",
+            accessories: "accessories",
           };
           const sizeKey = sizeKeyMap[pdpItem.category];
           const budgetKey = budgetKeyMap[pdpItem.category];
