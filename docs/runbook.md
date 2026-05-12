@@ -166,7 +166,7 @@ orders aren't advancing SHIPPED → ARRIVED:
 
 1. Pre-flight (24h out):
    - Staging green for 24h
-   - All Phase 11 verification checkboxes in `WISHI-REBUILD-PLAN.md` checked
+   - All Track A items in `WISHI-LAUNCH-PREP.md` complete (DNS/HTTPS, prod secrets, real stylists, Klaviyo flows, end-to-end money smoke, inline session-room follow-ups, AI minimum-viable, tastegraph prod, legal/TCPA)
    - Klaviyo flows live for all `order.*`, `gift-card.*`, `subscription.*` events
    - CloudWatch dashboard loaded; Slack alert channel confirmed
    - **Full e2e walkthrough clean**: `npm run dev:e2e & npx tsx --env-file=.env scripts/e2e-full-walkthrough.ts` returns 0 (32/32 golden-path + integration + DB checks)

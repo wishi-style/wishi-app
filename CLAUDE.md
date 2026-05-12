@@ -76,7 +76,7 @@ Before pushing, every PR has:
 
 - `CLAUDE.md` — this file. Update Conventions / Locked decisions when those genuinely change. Don't add per-PR change-log entries here.
 - `README.md` — new env vars, new npm scripts, new dev commands.
-- `WISHI-REBUILD-PLAN.md` (in `wishi-style/` parent dir, untracked) — rebuild plan checkboxes + verification evidence per item.
+- `WISHI-LAUNCH-PREP.md` (in `wishi-style/` parent dir, untracked) — launch prep plan; Track A / B / C is the current source of "what's left before real users". The original rebuild plan is archived at `archive/WISHI-REBUILD-PLAN.md` for historical reference only — don't update it.
 - `.env.example` — new env vars, with sane defaults.
 - Notion Roadmap — flip each completed roadmap item to `Status=Done` via the `notion` CLI (DB ID + commands in `reference_notion_roadmap.md` auto-memory). Agent-owned, not user-owned.
 

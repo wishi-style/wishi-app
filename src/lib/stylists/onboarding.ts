@@ -6,6 +6,11 @@
 // stylists skip step 12 — advance() transitions them directly to
 // AWAITING_ELIGIBILITY after step 11.
 //
+// Step 5 (profile boards) is temporarily disabled while the builder is
+// being rebuilt. computeNextState jumps 4 → 6, resume() upgrades any
+// stylist parked on 5 to 6, and saveStep(5) is a no-op. The schema +
+// component files stay so re-enabling is a one-line change.
+//
 // The wizard's current step lives on StylistProfile.onboardingStep. The
 // proxy redirect reads onboardingStatus from Clerk publicMetadata to avoid
 // a per-request DB round trip; this module syncs the metadata on every
@@ -13,12 +18,14 @@
 
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { DomainError } from "@/lib/errors/domain-error";
 import { syncStylistOnboardingForUser } from "@/lib/auth/reconcile-clerk-user";
 import type { StylistProfile, User } from "@/generated/prisma/client";
 
 export const TOTAL_STEPS = 12;
 export const IN_HOUSE_SKIP_STEP = 12;
+// Temporarily disabled while the profile-boards builder is being rebuilt.
+// The wizard advances past these step numbers without rendering or persisting.
+export const SKIPPED_STEPS: ReadonlySet<number> = new Set([5]);
 
 export type StepNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
 
@@ -147,30 +154,9 @@ export async function saveStep<N extends StepNumber>(
       break;
     }
     case 5: {
-      // Profile boards — the user creates them via the builder. We only
-      // advance when the required minimum per claimed style is met. Scope
-      // the count to profile boards (sessionId = null, isFeaturedOnProfile)
-      // so session boards can't spoof the gate.
-      const counts = await prisma.board.groupBy({
-        by: ["profileStyle"],
-        where: {
-          stylistProfileId: profile.id,
-          sessionId: null,
-          isFeaturedOnProfile: true,
-          profileStyle: { not: null },
-        },
-        _count: true,
-      });
-      const styleCounts = new Map(counts.map((c) => [c.profileStyle ?? "", c._count]));
-      const missing = profile.styleSpecialties.filter(
-        (style) => (styleCounts.get(style) ?? 0) < 3,
-      );
-      if (missing.length > 0) {
-        throw new DomainError(
-          `Need at least 3 featured boards per style. Missing: ${missing.join(", ")}`,
-          400,
-        );
-      }
+      // Profile boards step is temporarily disabled (see SKIPPED_STEPS).
+      // saveStep(5) is a no-op so any stale shell request flowing through
+      // doesn't 500. The advance() flow jumps 4 → 6 directly.
       break;
     }
     case 6: {
@@ -293,6 +279,11 @@ export function computeNextState(current: AdvanceState): {
     status = "IN_PROGRESS";
     step = 1;
   }
+  // Skip disabled steps (currently step 5 — profile boards). Walk forward
+  // past any contiguous skipped step so 4 → 6 in one advance call.
+  while (SKIPPED_STEPS.has(step) && step < maxStep) {
+    step += 1;
+  }
   const target = Math.max(current.onboardingStep, step);
   if (target >= 10) {
     status = "PROFILE_CREATED";
@@ -350,8 +341,15 @@ export async function resume(userId: string): Promise<{
 }> {
   const profile = await loadProfileByUserId(userId);
   if (!profile) throw new Error(`No stylist profile for user ${userId}`);
+  // Bump any stylist parked on a now-disabled step (e.g. legacy onboardingStep=5
+  // from before the profile-boards builder was disabled) onto the next live step.
+  let step = profile.onboardingStep === 0 ? 1 : profile.onboardingStep;
+  const maxStep = profile.stylistType === "IN_HOUSE" ? 11 : 12;
+  while (SKIPPED_STEPS.has(step) && step < maxStep) {
+    step += 1;
+  }
   return {
-    step: profile.onboardingStep === 0 ? 1 : profile.onboardingStep,
+    step,
     status: profile.onboardingStatus,
     isInHouse: profile.stylistType === "IN_HOUSE",
   };

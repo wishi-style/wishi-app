@@ -119,7 +119,7 @@ Full deploy + rollback + incident-response procedures: [`docs/runbook.md`](./doc
 - [`docs/architecture.md`](./docs/architecture.md) — system diagram, data model, integrations, worker topology
 - [`docs/runbook.md`](./docs/runbook.md) — on-call procedures
 - [`docs/adr/`](./docs/adr/) — architecture decision records (why we made key calls)
-- [`WISHI-REBUILD-PLAN.md`](../WISHI-REBUILD-PLAN.md) (in parent dir) — phase-by-phase build plan
+- [`WISHI-LAUNCH-PREP.md`](../WISHI-LAUNCH-PREP.md) (in parent dir) — launch prep plan: Track A blockers, Track B coverage, Track C post-launch backlog
 
 ## Project structure
 

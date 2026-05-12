@@ -2,12 +2,11 @@ import { notFound, redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
-import { TOTAL_STEPS } from "@/lib/stylists/onboarding";
+import { SKIPPED_STEPS, TOTAL_STEPS } from "@/lib/stylists/onboarding";
 import { StepOne } from "./step-one";
 import { StepTwo } from "./step-two";
 import { StepThree } from "./step-three";
 import { StepFour } from "./step-four";
-import { StepFive } from "./step-five";
 import { StepSix } from "./step-six";
 import { StepSeven } from "./step-seven";
 import { StepEight } from "./step-eight";
@@ -28,6 +27,16 @@ export default async function OnboardingStepPage({
   const { step } = await params;
   const stepNum = Number(step);
   if (!Number.isInteger(stepNum) || stepNum < 1 || stepNum > TOTAL_STEPS) notFound();
+
+  // Disabled step (currently 5 — profile boards). Send backward so the Back
+  // button from the next live step lands on the previous one. Direct URL hits
+  // get the same treatment; the wizard's natural advance() flow jumps past
+  // these without touching this route.
+  if (SKIPPED_STEPS.has(stepNum)) {
+    let target = stepNum - 1;
+    while (target > 0 && SKIPPED_STEPS.has(target)) target -= 1;
+    redirect(`/onboarding/${Math.max(1, target)}`);
+  }
 
   await requireRole("STYLIST");
   const user = await getCurrentAuthUser();
@@ -99,8 +108,6 @@ export default async function OnboardingStepPage({
       );
     case 4:
       return <StepFour initial={{ favoriteBrands: profile.user?.favoriteBrands ?? [] }} />;
-    case 5:
-      return <StepFive stylistProfileId={profile.id} styleSpecialties={profile.styleSpecialties} />;
     case 6:
       return <StepSix />;
     case 7:

@@ -19,8 +19,8 @@ import {
  *
  * This is *not* a Loveable cross-diff — that lives in
  * tests/visual/marketing.spec.ts and only runs when LOVEABLE_BASE_URL is
- * set. The cross-diff for authed surfaces is tracked under Phase 10
- * Deferred follow-ups in WISHI-REBUILD-PLAN.md.
+ * set. The cross-diff for authed surfaces is tracked under Track C2 in
+ * WISHI-LAUNCH-PREP.md.
  */
 
 test.afterAll(async () => {
