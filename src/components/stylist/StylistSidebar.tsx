@@ -1,10 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
-import { LayoutDashboardIcon, CalendarIcon, SettingsIcon, LogOutIcon, UserIcon } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { LayoutDashboardIcon, CalendarIcon, UserIcon } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -14,39 +10,22 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarFooter,
-  useSidebar,
 } from "@/components/ui/sidebar";
 import { NavLink } from "@/components/NavLink";
 
+// In-page nav for /stylist/* surfaces. The logo + user avatar are
+// owned by StylistTopBar (top of page) so the sidebar deliberately
+// renders neither. Settings + bookings live in the top bar; this rail
+// only carries the section nav stylists move between.
 const mainNav = [
   { title: "Queue", url: "/stylist/dashboard", icon: LayoutDashboardIcon },
   { title: "Profile", url: "/stylist/profile", icon: UserIcon },
   { title: "Availability", url: "/availability", icon: CalendarIcon },
-  { title: "Settings", url: "/settings", icon: SettingsIcon },
 ];
 
 export function StylistSidebar() {
-  const { state } = useSidebar();
-  const collapsed = state === "collapsed";
-  const pathname = usePathname();
-
   return (
-    <Sidebar collapsible="icon" className="border-r border-sidebar-border">
-      <div className="h-14 px-4 flex items-center border-b border-sidebar-border shrink-0">
-        <Link href="/stylist/dashboard" className="flex items-center gap-3">
-          <div className="h-8 w-8 shrink-0 rounded-full border-2 border-foreground flex items-center justify-center">
-            <span className="font-display text-sm font-semibold">W</span>
-          </div>
-          {!collapsed && (
-            <div className="flex flex-col">
-              <span className="font-display text-sm font-semibold leading-tight">Wishi</span>
-              <span className="text-[10px] font-body text-muted-foreground tracking-wide">Stylist</span>
-            </div>
-          )}
-        </Link>
-      </div>
-
+    <Sidebar collapsible="none" className="border-r border-sidebar-border">
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel className="font-body text-[10px] tracking-widest text-muted-foreground uppercase">
@@ -63,7 +42,7 @@ export function StylistSidebar() {
                       activeClassName="bg-sidebar-accent text-sidebar-foreground font-medium"
                     >
                       <item.icon className="mr-2 h-4 w-4" />
-                      {!collapsed && <span className="font-body text-sm">{item.title}</span>}
+                      <span className="font-body text-sm">{item.title}</span>
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -72,22 +51,6 @@ export function StylistSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-
-      <SidebarFooter className="border-t border-sidebar-border p-4">
-        <div className="flex items-center gap-3">
-          <Avatar className="h-8 w-8 shrink-0">
-            <AvatarFallback className="bg-accent text-accent-foreground font-body text-xs">
-              SM
-            </AvatarFallback>
-          </Avatar>
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <p className="font-body text-sm font-medium truncate">Sarah M.</p>
-              <p className="font-body text-[10px] text-muted-foreground">Pro Stylist</p>
-            </div>
-          )}
-        </div>
-      </SidebarFooter>
     </Sidebar>
   );
 }
