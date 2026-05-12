@@ -58,6 +58,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { loyaltyConfig } from "@/data/client-profiles";
 import { toast } from "sonner";
+import { FeatureOnProfile } from "@/components/stylist/feature-on-profile";
 import { useShopInventory } from "./use-shop-inventory";
 import { ShopFilterRail } from "./shop-filter-rail";
 import type { CategoryBucket } from "@/lib/inventory/adapt-product-doc";
@@ -413,6 +414,10 @@ export function StyleboardBuilder({
     fitPreference: "",
     highlights: "",
   });
+  // Feature-on-profile toggle in the save dialog. Same Board row is then
+  // dual-purpose: shipped to the client AND visible on /stylists/[id].
+  const [featureOnProfile, setFeatureOnProfile] = useState(false);
+  const [profileStyle, setProfileStyle] = useState("");
 
   // Retailer chip list is now the canonical merchant facet from the
   // inventory service rather than a derived-from-current-page set. The
@@ -957,10 +962,22 @@ export function StyleboardBuilder({
         else if (c.source === "INSPIRATION_PHOTO") base.inspirationPhotoId = c.refId;
         return base;
       });
+      // Cover image for /stylists/[id] when this look is featured on the
+      // stylist's profile. First canvas item's image is the natural cover —
+      // the LookCreator already shows it as the dominant element.
+      const coverUrl = canvas[0]?.image ?? null;
       const res = await fetch(`/api/styleboards/${boardId}/send`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title: name, description: desc, tags: tagList, items }),
+        body: JSON.stringify({
+          title: name,
+          description: desc,
+          tags: tagList,
+          items,
+          featureOnProfile,
+          profileStyle: profileStyle.trim(),
+          coverUrl,
+        }),
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
@@ -2336,6 +2353,14 @@ export function StyleboardBuilder({
                 </div>
               )}
             </div>
+
+            <FeatureOnProfile
+              enabled={featureOnProfile}
+              onEnabledChange={setFeatureOnProfile}
+              style={profileStyle}
+              onStyleChange={setProfileStyle}
+              disabled={isSaving}
+            />
           </div>
 
           <DialogFooter className="gap-2 sm:gap-2 pt-2">
@@ -2349,7 +2374,12 @@ export function StyleboardBuilder({
             </Button>
             <Button
               onClick={confirmSave}
-              disabled={isSaving || !saveDescription.trim() || !lookName.trim()}
+              disabled={
+                isSaving ||
+                !saveDescription.trim() ||
+                !lookName.trim() ||
+                (featureOnProfile && !profileStyle.trim())
+              }
               className="font-body text-sm gap-1.5 bg-foreground text-background hover:bg-foreground/90"
             >
               {isSaving ? (

@@ -49,7 +49,11 @@ interface MoodBoardCreatorProps {
   clientId?: string | null;
   initialImages?: string[];
   onBack: () => void;
-  onSend?: (images: string[], note: string) => void;
+  onSend?: (
+    images: string[],
+    note: string,
+    feature: { featureOnProfile: boolean; profileStyle: string },
+  ) => void;
   onPhotoAdded?: (input: { url: string; s3Key: string; inspirationPhotoId: string }) => Promise<boolean>;
   onPhotoRemoved?: (url: string) => Promise<void>;
 }
@@ -150,12 +154,16 @@ export function MoodboardBuilder({ clientName, sessionId, clientId, initialImage
     toast.success("Draft saved");
   };
 
-  const handleSend = (images: string[], note: string) => {
+  const handleSend = (
+    images: string[],
+    note: string,
+    feature: { featureOnProfile: boolean; profileStyle: string },
+  ) => {
     toast.success("Mood board sent to " + clientName, {
       description: "Redirecting to dashboard…",
     });
     setTimeout(() => {
-      onSend?.(images, note);
+      onSend?.(images, note, feature);
     }, 900);
   };
 

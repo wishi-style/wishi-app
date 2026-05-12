@@ -82,7 +82,14 @@ export async function removeMoodboardPhoto(photoId: string): Promise<void> {
  */
 export async function sendMoodboard(
   boardId: string,
-  opts: { note?: string | null } = {},
+  opts: {
+    note?: string | null;
+    // When `featureOnProfile` is true the same Board row is dual-purpose:
+    // it ships to the client AND surfaces on the stylist's public profile.
+    // `profileStyle` is required when featuring (free-text or canonical).
+    featureOnProfile?: boolean;
+    profileStyle?: string | null;
+  } = {},
 ): Promise<Board> {
   const board = await prisma.board.findUniqueOrThrow({
     where: { id: boardId },
@@ -130,12 +137,30 @@ export async function sendMoodboard(
   // Atomic compare-and-set on sentAt: null. If a concurrent send already
   // transitioned the row, skip counters / pending actions / side effects.
   const trimmedNote = opts.note?.trim() || null;
+  const trimmedStyle = opts.profileStyle?.trim() || null;
+  const shouldFeature = !!opts.featureOnProfile && !!trimmedStyle;
+  if (opts.featureOnProfile && !trimmedStyle) {
+    throw new BoardSendError(
+      "PROFILE_STYLE_REQUIRED",
+      "Pick a style label to feature this moodboard on your profile",
+      400,
+    );
+  }
+  // Cover URL: first photo by orderIndex. Drives /stylists/[id] rendering
+  // without a second join when this board surfaces on the public profile.
+  const coverUrl = board.photos
+    .slice()
+    .sort((a, b) => a.orderIndex - b.orderIndex)[0]?.url ?? null;
   const updated = await prisma.$transaction(async (tx) => {
     const { count } = await tx.board.updateMany({
       where: { id: boardId, sentAt: null },
       data: {
         sentAt: new Date(),
         ...(trimmedNote != null ? { stylistNote: trimmedNote } : {}),
+        ...(coverUrl != null ? { coverUrl } : {}),
+        ...(shouldFeature
+          ? { isFeaturedOnProfile: true, profileStyle: trimmedStyle }
+          : {}),
       },
     });
     if (count === 0) return null;

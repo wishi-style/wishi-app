@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { SendIcon, Loader2Icon } from "lucide-react";
+import { FeatureOnProfile } from "@/components/stylist/feature-on-profile";
 
 interface Props {
   open: boolean;
@@ -31,6 +32,8 @@ interface Props {
     title: string;
     description: string;
     tags: string[];
+    featureOnProfile: boolean;
+    profileStyle: string;
   }) => Promise<void>;
 }
 
@@ -49,9 +52,12 @@ export function SaveLookDialog({ open, onOpenChange, clientName, onSend }: Props
   const [highlights, setHighlights] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [featureOnProfile, setFeatureOnProfile] = useState(false);
+  const [profileStyle, setProfileStyle] = useState("");
 
   const nameValid = title.trim().length > 0;
   const descValid = description.trim().length > 0;
+  const featureValid = !featureOnProfile || profileStyle.trim().length > 0;
 
   // Live tag chip preview — exactly the values we'll persist.
   const tagChips = useMemo(
@@ -66,13 +72,15 @@ export function SaveLookDialog({ open, onOpenChange, clientName, onSend }: Props
     setError(null);
     setTitleTouched(true);
     setDescriptionTouched(true);
-    if (!nameValid || !descValid) return;
+    if (!nameValid || !descValid || !featureValid) return;
     setSending(true);
     try {
       await onSend({
         title: title.trim(),
         description: description.trim(),
         tags: tagChips,
+        featureOnProfile,
+        profileStyle: profileStyle.trim(),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Send failed");
@@ -242,6 +250,14 @@ export function SaveLookDialog({ open, onOpenChange, clientName, onSend }: Props
             </div>
           )}
 
+          <FeatureOnProfile
+            enabled={featureOnProfile}
+            onEnabledChange={setFeatureOnProfile}
+            style={profileStyle}
+            onStyleChange={setProfileStyle}
+            disabled={sending}
+          />
+
           {error && <p className="font-body text-xs text-red-600">{error}</p>}
         </div>
 
@@ -256,7 +272,7 @@ export function SaveLookDialog({ open, onOpenChange, clientName, onSend }: Props
           </Button>
           <Button
             onClick={handleSend}
-            disabled={sending}
+            disabled={sending || !featureValid}
             size="sm"
             className="h-8 rounded-sm bg-foreground text-background hover:bg-foreground/90 font-body text-xs gap-1.5"
           >
