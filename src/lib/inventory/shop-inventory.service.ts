@@ -494,6 +494,33 @@ function filterByDominantColor(
   });
 }
 
+// Tastegraph ingests each merchant SKU (colourway / size run / region) as
+// its own product row, so a single "Cassie Slingback Heel" by Reformation
+// can come back as 4-8 distinct IDs with identical brand+name+image. Dedup
+// by (brand, normalised name) so the grid doesn't repeat the same shoe
+// across the entire first row.
+function dedupByBrandAndName(
+  items: AdaptedInventoryItem[],
+): AdaptedInventoryItem[] {
+  const seen = new Set<string>();
+  const out: AdaptedInventoryItem[] = [];
+  for (const it of items) {
+    const brand = (it.brand ?? "").trim().toLowerCase();
+    const name = (it.name ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+    if (!brand || !name) {
+      // No reliable key — pass through so we don't accidentally collapse
+      // every nameless item into one.
+      out.push(it);
+      continue;
+    }
+    const key = `${brand}::${name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(it);
+  }
+  return out;
+}
+
 function applySort(
   items: AdaptedInventoryItem[],
   sort: ShopInventoryFilters["sort"],
@@ -596,6 +623,7 @@ export async function loadShopInventory(
   items = filterByFabricTier(items, merged.fabricTiers);
   items = filterBySubColors(items, merged.subColors, ranked);
   items = filterByPatternTokens(items, merged.patterns, ranked);
+  items = dedupByBrandAndName(items);
   items = applySort(items, merged.sort);
 
   const lossRate = dislikeLossRate(preDislike, postDislike);
