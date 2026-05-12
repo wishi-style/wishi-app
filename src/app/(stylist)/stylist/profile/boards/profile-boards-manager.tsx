@@ -181,29 +181,35 @@ export function ProfileBoardsManager({
         <DialogContent className="sm:max-w-md rounded-sm">
           <DialogHeader>
             <DialogTitle className="font-display text-lg">
-              Create from a session
+              What do you want to create?
             </DialogTitle>
             <DialogDescription className="font-body text-sm text-muted-foreground">
-              While you&apos;re styling a client, the save dialog now has a{" "}
-              <span className="font-medium text-foreground">
-                Also feature on my profile
-              </span>{" "}
-              toggle plus a style picker. Looks and moodboards built that way
-              will appear here.
+              Both will be tagged{" "}
+              <span className="font-medium text-foreground">{activeStyle}</span>{" "}
+              and added to your profile.
             </DialogDescription>
           </DialogHeader>
-          <p className="font-body text-xs text-muted-foreground">
-            Standalone creation from this page is coming soon — it&apos;ll launch the
-            same LookCreator and moodboard builder, just without a client
-            attached.
-          </p>
-          <div className="flex justify-end pt-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 pt-1">
             <Link
-              href="/stylist/dashboard"
+              href={`/stylist/profile/boards/new/moodboard?style=${encodeURIComponent(activeStyle ?? "")}`}
+              className="rounded-md border border-muted p-4 transition-colors hover:border-foreground"
               onClick={() => setPickerOpen(false)}
-              className="rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background"
             >
-              Go to dashboard
+              <div className="font-medium text-sm mb-1">Moodboard</div>
+              <p className="text-xs text-muted-foreground">
+                Collage of inspiration images. Good for setting a vibe.
+              </p>
+            </Link>
+            <Link
+              href={`/stylist/profile/boards/new/styleboard?style=${encodeURIComponent(activeStyle ?? "")}`}
+              className="rounded-md border border-muted p-4 transition-colors hover:border-foreground"
+              onClick={() => setPickerOpen(false)}
+            >
+              <div className="font-medium text-sm mb-1">Styleboard</div>
+              <p className="text-xs text-muted-foreground">
+                Shoppable canvas built in the LookCreator. Shows a complete look
+                a client could buy.
+              </p>
             </Link>
           </div>
         </DialogContent>

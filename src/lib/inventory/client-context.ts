@@ -84,8 +84,28 @@ function bucketFromBudgetCategory(
  * check (the SSR page and the API route both 404 in that case).
  */
 export async function loadClientStylingContext(opts: {
-  sessionId: string;
+  sessionId: string | null;
 }): Promise<ClientStylingContext | null> {
+  // Sessionless callers (profile-board styleboard creator) get a zero-state
+  // context. The caller is expected to treat null/empty fields gracefully —
+  // no client likes, no sizes, no budgets, no dislike-filtering.
+  if (!opts.sessionId) {
+    return {
+      clientId: null,
+      firstName: null,
+      gender: null,
+      sizesByCategory: {},
+      budgetsByCategory: {},
+      likedBrandIds: [],
+      likedColors: [],
+      dislikedBrandIds: [],
+      dislikedColors: [],
+      dislikedListingIds: [],
+      stylesLiked: [],
+      bodyTypesLiked: [],
+      occasionsLiked: [],
+    } as unknown as ClientStylingContext;
+  }
   const session = await prisma.session.findUnique({
     where: { id: opts.sessionId },
     select: {

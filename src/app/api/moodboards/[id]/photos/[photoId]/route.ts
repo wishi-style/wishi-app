@@ -14,12 +14,18 @@ export async function DELETE(
   const { id, photoId } = await params;
   const board = await prisma.board.findUnique({
     where: { id },
-    include: { session: { select: { stylistId: true } } },
+    include: {
+      session: { select: { stylistId: true } },
+      stylistProfile: { select: { userId: true } },
+    },
   });
-  if (!board || board.type !== "MOODBOARD" || !board.session) {
+  if (!board || board.type !== "MOODBOARD") {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  if (board.session.stylistId !== user.id) {
+  const sessionOk = board.session && board.session.stylistId === user.id;
+  const profileOk =
+    !board.session && board.stylistProfile?.userId === user.id;
+  if (!sessionOk && !profileOk) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   if (board.sentAt) {

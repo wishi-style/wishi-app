@@ -59,7 +59,11 @@ export type {
  *   8. Apply the stylist's sort preference over the loaded page.
  */
 export interface ShopInventoryRequest extends ShopInventoryFilters {
-  sessionId: string;
+  // Null when called from the sessionless profile-board styleboard creator.
+  // Internally, a null sessionId yields a zero-state ClientStylingContext —
+  // no client likes/dislikes, no sizes, no budgets — so the shop returns a
+  // generic catalog ranked by the stylist's explicit filters alone.
+  sessionId: string | null;
   /** Active chrome category bucket; drives size + budget smart defaults. */
   category?: CategoryBucket;
 
