@@ -157,6 +157,23 @@ test("PLATFORM at intermediate steps does not flip status", () => {
   );
 });
 
+// Profile-boards step (5) is temporarily disabled. advance() must jump 4 → 6
+// without touching status, and a stylist parked on the disabled step in DB
+// must be normalised forward so the wizard never lands on the dead route.
+test("advance from step 4 skips disabled step 5 and lands on step 6", () => {
+  assert.deepEqual(
+    computeNextState({ onboardingStep: 4, onboardingStatus: "IN_PROGRESS", isInHouse: false }),
+    { step: 6, status: "IN_PROGRESS" }
+  );
+});
+
+test("advance from a stylist parked on disabled step 5 still moves forward", () => {
+  assert.deepEqual(
+    computeNextState({ onboardingStep: 5, onboardingStatus: "IN_PROGRESS", isInHouse: false }),
+    { step: 6, status: "IN_PROGRESS" }
+  );
+});
+
 // Regression: a re-invited stylist whose profile is already AWAITING_ELIGIBILITY
 // or ELIGIBLE used to trip the AWAITING_ELIGIBILITY override (and demote
 // ELIGIBLE → PROFILE_CREATED → AWAITING_ELIGIBILITY) when the wizard's Q1
