@@ -141,18 +141,84 @@ function nonEmptyArr(arr: string[] | undefined): string[] | undefined {
  * (fabricTiers, subColors, sort) stay in the orchestration layer and are
  * applied post-fetch.
  */
+// Fabric-tier → primaryFabrics expansion. The tastegraph service exposes
+// `primaryFabrics` (per-product), not `fabric_tier`, as an input filter. To
+// make "Luxury" actually narrow the result set (instead of relying on a
+// post-fetch filter that drops to 0 when the page happens to be premium /
+// synthetic), we expand the tier into its constituent materials and push
+// those to the service. The client-side `filterByFabricTier` stays as a
+// safety net for the case where additional tiers are added but not yet
+// expanded here.
+const FABRIC_TIER_TO_FABRICS: Record<string, string[]> = {
+  luxury: ["cashmere", "silk", "alpaca", "mohair", "angora"],
+  premium: ["wool", "leather", "linen", "down", "fur"],
+  standard: [
+    "cotton",
+    "denim",
+    "canvas",
+    "jersey",
+    "hemp",
+    "bamboo",
+    "flannel",
+    "corduroy",
+    "poplin",
+    "crepe",
+    "ramie",
+    "straw",
+  ],
+  synthetic: [
+    "polyester",
+    "nylon",
+    "acrylic",
+    "viscose",
+    "elastane",
+    "pvc",
+    "faux-leather",
+    "faux-fur",
+    "acetate",
+    "modal",
+    "rubber",
+  ],
+};
+
+function expandFabricTiers(
+  tiers: string[] | undefined,
+  explicit: string[] | undefined,
+): string[] | undefined {
+  if (!tiers || tiers.length === 0) return nonEmptyArr(explicit);
+  const expanded = new Set<string>(explicit ?? []);
+  for (const t of tiers) {
+    const fams = FABRIC_TIER_TO_FABRICS[t.toLowerCase()];
+    if (fams) for (const f of fams) expanded.add(f);
+  }
+  return expanded.size > 0 ? [...expanded] : nonEmptyArr(explicit);
+}
+
 function buildSearchDto(
   filters: ShopInventoryFilters,
   page: number,
   pageSize: number,
 ): SearchQueryDto {
+  // Pre-narrow the catalog using the service's color_families overlap:
+  //  - Pattern selected: focus on patterned products only (color family
+  //    "pattern"). Colours, if also selected, are enforced post-fetch so
+  //    we don't union pattern OR red on the server and end up with mostly
+  //    plain-red items that have no pattern at all.
+  //  - Colour selected (no pattern): send the selected colour families.
+  //  - Neither: no colour filter — let semantic / browse rank surface things.
+  let serverColors: string[] | undefined;
+  if ((filters.patterns?.length ?? 0) > 0) {
+    serverColors = ["pattern"];
+  } else if (filters.colors && filters.colors.length > 0) {
+    serverColors = filters.colors;
+  }
   return {
     merchantIds: nonEmptyArr(filters.merchantIds),
     brandIds: nonEmptyArr(filters.brandIds),
     categoryId: filters.categoryId || undefined,
-    colors: nonEmptyArr(filters.colors),
+    colors: serverColors,
     sizes: nonEmptyArr(filters.sizes),
-    primaryFabrics: nonEmptyArr(filters.primaryFabrics),
+    primaryFabrics: expandFabricTiers(filters.fabricTiers, filters.primaryFabrics),
     excludeLeather: filters.excludeLeather === true ? true : undefined,
     inStockOnly: filters.inStockOnly === true ? true : undefined,
     minPrice: filters.minPrice,
@@ -259,6 +325,80 @@ function filterBySubColors(
   });
 }
 
+// Pattern values from tastegraph's `subColorsByFamily.pattern` facet (leopard,
+// stripe, floral, plaid, paisley, …) are *tokens*, not full strings — actual
+// `available_colors` entries look like "leopard print suede", "midnight
+// stripe", "vintage floral". Exact match drops everything; substring match
+// recovers the long tail.
+function filterByPatternTokens(
+  items: AdaptedInventoryItem[],
+  patterns: string[] | undefined,
+  docs: ProductSearchDoc[],
+): AdaptedInventoryItem[] {
+  if (!patterns || patterns.length === 0) return items;
+  const tokens = patterns
+    .map((p) => p.trim().toLowerCase())
+    .filter((p) => p.length > 0);
+  if (tokens.length === 0) return items;
+  const docById = new Map(docs.map((d) => [d.id, d]));
+  return items.filter((it) => {
+    const doc = docById.get(it.id);
+    if (!doc) return false;
+    const present = (doc.available_colors ?? []).map((c) =>
+      c.trim().toLowerCase(),
+    );
+    return present.some((c) => tokens.some((t) => c.includes(t)));
+  });
+}
+
+// Color-family overlap in the service is too permissive: a multi-color
+// product (e.g. a sneaker available in 12 variants spanning the rainbow)
+// matches every single colour swatch. Stylists clicking "Red" expect items
+// that *look* red, not items that happen to include a red variant.
+//
+// Post-filter heuristic: an item passes when (a) at least one of the
+// selected families is present, and (b) the selected families make up at
+// least half of the product's "real" colour families. Neutrals, plus the
+// metadata families (other / multicolor / pattern), are excluded from the
+// denominator so a navy dress with white trim or a "patterned" classifier
+// doesn't drag the ratio down.
+const ACCENT_FAMILIES = new Set([
+  "black",
+  "white",
+  "grey",
+  "neutral",
+  "metallic",
+  "other",
+  "multicolor",
+  "pattern",
+]);
+
+function filterByDominantColor(
+  items: AdaptedInventoryItem[],
+  colors: string[] | undefined,
+  docs: ProductSearchDoc[],
+): AdaptedInventoryItem[] {
+  if (!colors || colors.length === 0) return items;
+  const selected = new Set(colors.map((c) => c.trim().toLowerCase()));
+  const docById = new Map(docs.map((d) => [d.id, d]));
+  return items.filter((it) => {
+    const doc = docById.get(it.id);
+    if (!doc) return false;
+    const families = (doc.color_families ?? []).map((c) =>
+      c.trim().toLowerCase(),
+    );
+    if (families.length === 0) return false;
+    const hasSelected = families.some((c) => selected.has(c));
+    if (!hasSelected) return false;
+    // Drop accents + metadata families from the denominator so a
+    // black/red/pattern item still reads as "red" when red was picked.
+    const real = families.filter((c) => !ACCENT_FAMILIES.has(c) || selected.has(c));
+    if (real.length === 0) return true; // entirely accents + at least one match → keep
+    const matched = real.filter((c) => selected.has(c)).length;
+    return matched / real.length >= 0.5;
+  });
+}
+
 function applySort(
   items: AdaptedInventoryItem[],
   sort: ShopInventoryFilters["sort"],
@@ -343,9 +483,24 @@ export async function loadShopInventory(
   });
 
   let items = ranked.map(adaptProductDoc);
+  // When the stylist has also picked a pattern, the pattern substring
+  // filter is doing the heavy narrowing — running the strict dominant-
+  // colour check on top wipes out the natural "red leopard" / "blue
+  // floral" combinations because patterned items almost always carry a
+  // multi-colour `color_families`. In that case, fall back to
+  // "color_families overlaps selected" (same semantics the service uses).
+  if (merged.patterns && merged.patterns.length > 0) {
+    items = items.filter((it) => {
+      if (!merged.colors || merged.colors.length === 0) return true;
+      const set = new Set(merged.colors.map((c) => c.toLowerCase()));
+      return (it.colors ?? []).some((c) => set.has(c.toLowerCase()));
+    });
+  } else {
+    items = filterByDominantColor(items, merged.colors, ranked);
+  }
   items = filterByFabricTier(items, merged.fabricTiers);
   items = filterBySubColors(items, merged.subColors, ranked);
-  items = filterBySubColors(items, merged.patterns, ranked);
+  items = filterByPatternTokens(items, merged.patterns, ranked);
   items = applySort(items, merged.sort);
 
   const lossRate = dislikeLossRate(preDislike, postDislike);
