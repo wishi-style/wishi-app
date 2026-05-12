@@ -83,12 +83,12 @@ export function ProductDetailDialog({ open, onOpenChange, product, onAddToCart, 
               <span className="font-normal">{stylistContext?.clientSize ?? "—"}</span>
             </p>
             {sizeAvailable === false && (
-              <span className="text-[10px] uppercase tracking-wide font-body font-semibold text-destructive bg-destructive/10 px-2 py-0.5 rounded">
+              <span className="text-[10px] uppercase tracking-wide font-body font-semibold text-destructive bg-destructive/10 px-2 py-0.5 rounded whitespace-nowrap shrink-0">
                 Not available
               </span>
             )}
             {sizeAvailable === true && (
-              <span className="text-[10px] uppercase tracking-wide font-body font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
+              <span className="text-[10px] uppercase tracking-wide font-body font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded whitespace-nowrap shrink-0">
                 In stock
               </span>
             )}
@@ -122,12 +122,12 @@ export function ProductDetailDialog({ open, onOpenChange, product, onAddToCart, 
               <span className="font-normal">{stylistContext?.budgetLabel ?? "—"}</span>
             </p>
             {overBudget && (
-              <span className="text-[10px] uppercase tracking-wide font-body font-semibold text-destructive bg-destructive/10 px-2 py-0.5 rounded">
+              <span className="text-[10px] uppercase tracking-wide font-body font-semibold text-destructive bg-destructive/10 px-2 py-0.5 rounded whitespace-nowrap shrink-0">
                 Over budget
               </span>
             )}
             {!overBudget && stylistContext?.productPrice != null && (
-              <span className="text-[10px] uppercase tracking-wide font-body font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
+              <span className="text-[10px] uppercase tracking-wide font-body font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded whitespace-nowrap shrink-0">
                 In range
               </span>
             )}
@@ -155,7 +155,7 @@ export function ProductDetailDialog({ open, onOpenChange, product, onAddToCart, 
           "p-0 gap-0 overflow-hidden",
           isMobile
             ? "fixed inset-0 w-full h-full max-w-none max-h-none rounded-none translate-x-0 translate-y-0 top-0 left-0 border-0"
-            : "sm:max-w-3xl"
+            : "sm:max-w-4xl"
         )}
       >
         {isMobile ? (

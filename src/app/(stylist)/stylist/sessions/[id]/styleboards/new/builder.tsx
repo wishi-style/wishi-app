@@ -2122,18 +2122,18 @@ export function StyleboardBuilder({
           const profile = clientProfile;
           // Map inventory category → client profile keys
           const sizeKeyMap: Record<string, string> = {
-            tops: "Tops",
-            bottoms: "Bottoms",
-            outerwear: "Outerwear",
-            shoes: "Shoes",
+            tops: "tops",
+            bottoms: "bottoms",
+            outerwear: "outerwear",
+            shoes: "shoes",
             accessories: "",
           };
           const budgetKeyMap: Record<string, string> = {
-            tops: "Tops",
-            bottoms: "Bottoms",
-            outerwear: "Tops",
-            shoes: "Shoes",
-            accessories: "Accessories",
+            tops: "tops",
+            bottoms: "bottoms",
+            outerwear: "outerwear",
+            shoes: "shoes",
+            accessories: "accessories",
           };
           const sizeKey = sizeKeyMap[pdpItem.category];
           const budgetKey = budgetKeyMap[pdpItem.category];
