@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { sendPushNotification } from "@/lib/web-push";
 import { getKlaviyoClient } from "@/lib/integrations/klaviyo";
+import { sendSmsForEvent } from "./sms";
+import { NOTIFICATION_EVENT_META } from "./event-meta";
+import type { Prisma } from "@/generated/prisma/client";
 
 export type NotificationEvent =
   | "affiliate.purchase_check"
@@ -38,57 +40,70 @@ export interface DispatchInput {
   url?: string;
   /**
    * Extra key-values to attach to the Klaviyo event for template
-   * personalization (order total, plan name, etc.). Push payload is not
-   * extended — push stays minimal by design.
+   * personalization (order total, plan name, etc.) and as the
+   * source of substitution variables for the SMS templates.
    */
   emailProperties?: Record<string, unknown>;
 }
 
 /**
- * Fan a notification out across the channels the user has enabled.
- * `NotificationPreference` is source-of-truth per (userId, channel, category).
- * Channels with no preference row fall back to enabled — transactional events
- * should reach the user by default. Delivery failures are logged but do not
- * abort callers.
+ * Fan a notification out across the channels enabled for this user.
+ *
+ * Order:
+ *   1. Persist Notification row (fail-fast — the in-app surface is the
+ *      catch-up channel and must never be silently lost).
+ *   2. Klaviyo email (best-effort, per-channel .catch).
+ *   3. Twilio SMS for events in the SMS allowlist (best-effort).
+ *
+ * `NotificationPreference` is source-of-truth per (userId, channel,
+ * category). Channels with no preference row default to enabled —
+ * transactional events should reach the user by default.
  */
 export async function dispatchNotification(input: DispatchInput): Promise<void> {
+  const meta = NOTIFICATION_EVENT_META[input.event];
+
+  // 1. In-app row first. Errors propagate.
+  await prisma.notification.create({
+    data: {
+      userId: input.userId,
+      event: input.event,
+      category: meta.category,
+      source: meta.source,
+      title: input.title,
+      body: input.body,
+      href: input.url ?? null,
+      metadata: (input.emailProperties ?? {}) as Prisma.InputJsonValue,
+    },
+  });
+
+  // 2. Resolve per-channel preferences.
   const prefs = await prisma.notificationPreference.findMany({
     where: { userId: input.userId, category: input.event },
     select: { channel: true, isEnabled: true },
   });
-  const enabledChannels = new Set(
-    prefs.filter((p) => p.isEnabled).map((p) => p.channel),
-  );
+  const enabled = new Set(prefs.filter((p) => p.isEnabled).map((p) => p.channel));
   const explicitlyDisabled = new Set(
     prefs.filter((p) => !p.isEnabled).map((p) => p.channel),
   );
-  const shouldSend = (channel: "PUSH" | "EMAIL" | "SMS") =>
-    enabledChannels.has(channel) ||
-    (!explicitlyDisabled.has(channel) && prefs.length === 0);
-  // Mixed case: some prefs exist but not for this channel. Default to on for
-  // transactional events — opt-out is explicit, not silent.
-  const shouldSendWithFallback = (channel: "PUSH" | "EMAIL" | "SMS") =>
-    enabledChannels.has(channel) || !explicitlyDisabled.has(channel);
-
-  const sendPush = shouldSendWithFallback("PUSH");
-  const sendEmail = shouldSend("EMAIL") || shouldSendWithFallback("EMAIL");
+  const shouldSend = (channel: "EMAIL" | "SMS") =>
+    enabled.has(channel) || !explicitlyDisabled.has(channel);
 
   const tasks: Promise<unknown>[] = [];
 
-  if (sendPush) {
+  if (shouldSend("EMAIL")) {
     tasks.push(
-      sendPushNotification(input.userId, {
-        title: input.title,
-        body: input.body,
-        url: input.url,
-      }).catch((err) => {
-        console.warn(`[notifications] push failed for ${input.event}:`, err);
+      sendEmailViaKlaviyo(input).catch((err) => {
+        console.warn(`[notifications] email failed for ${input.event}:`, err);
       }),
     );
   }
 
-  if (sendEmail) {
-    tasks.push(sendEmailViaKlaviyo(input));
+  if (meta.smsEnabled && shouldSend("SMS")) {
+    tasks.push(
+      sendSmsForEvent(input).catch((err) => {
+        console.warn(`[notifications] sms failed for ${input.event}:`, err);
+      }),
+    );
   }
 
   await Promise.all(tasks);
