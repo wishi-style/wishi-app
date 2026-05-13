@@ -80,7 +80,7 @@ type SessionType = "mini" | "major" | "lux";
 
 type LoyaltyTier = "new" | "bronze" | "silver" | "gold" | "vip";
 
-type ActionKind = "navigate" | "approve-end";
+type ActionKind = "navigate";
 
 interface DashboardSessionRow {
   id: string;
@@ -96,11 +96,11 @@ interface DashboardSessionRow {
   boardsTotal: number;
   status: string;
   actionLabel: string;
-  // Server-derived destination for the primary CTA. "navigate" pushes the
-  // href onto the router; "approve-end" fires the existing approveEndSession
-  // handler. Replaces the previous literal-string switch in the click
-  // handlers, which left "Start styling" / "View session" / "Awaiting
-  // approval" as no-op buttons in production.
+  // Server-derived destination for the primary CTA. All kinds are
+  // "navigate" — the button pushes `actionHref` onto the router. When the
+  // stylist has already requested end, the label resolves to "Awaiting
+  // Client" and the href is the chat (no in-place mutation: only the client
+  // can resolve the request via the wrap modal / inline card).
   actionHref: string;
   actionKind: ActionKind;
   loyaltyTier: LoyaltyTier;
@@ -286,6 +286,9 @@ export default function StylistDashboard({
       toast.info("End request already sent", { description: "Awaiting client approval." });
       return;
     }
+    // Optimistic update so the dashboard row + chat header reflect the new
+    // "awaiting client" state immediately. Server is the source of truth —
+    // router.refresh() reconciles after the API call.
     setSessions((prev) =>
       prev.map((s) =>
         s.id === id
@@ -300,69 +303,32 @@ export default function StylistDashboard({
           : s
       )
     );
-    // Post end-request card into the chat
-    const msg: ChatMessage = {
-      id: `end-req-${Date.now()}`,
-      sender: "stylist",
-      text: "Requested to end this session.",
-      timestamp: new Date(),
-      type: "end_request",
-      endRequestId: id,
-    };
-    setMessages((prev) => ({ ...prev, [id]: [...(prev[id] || []), msg] }));
-    toast.success("End-session request sent", {
-      description: "Client must approve before the session is marked completed.",
-    });
-  };
-
-  const approveEndSession = (id: string) => {
-    setSessions((prev) =>
-      prev.map((s) =>
-        s.id === id
-          ? {
-              ...s,
-              endedAt: new Date().toISOString(),
-              priority: "completed" as SessionPriority,
-              status: "Completed",
-              actionLabel: "View Summary",
-              actionHref: `/stylist/dashboard?session=${id}`,
-              actionKind: "navigate" as ActionKind,
-            }
-          : s
-      )
-    );
-    const msg: ChatMessage = {
-      // eslint-disable-next-line react-hooks/purity
-      id: `end-ok-${Date.now()}`,
-      sender: "client",
-      text: "Approved end of session.",
-      timestamp: new Date(),
-      type: "end_approved",
-    };
-    setMessages((prev) => ({ ...prev, [id]: [...(prev[id] || []), msg] }));
-    toast.success("Session completed", {
-      description: "Chat will move to Archive in 24 hours.",
-    });
-  };
-
-  const reopenSession = (id: string) => {
-    setSessions((prev) =>
-      prev.map((s) =>
-        s.id === id
-          ? {
-              ...s,
-              endedAt: undefined,
-              endRequestedAt: undefined,
-              status: "Reopened",
-              actionLabel: "Open Chat",
-              actionHref: `/stylist/dashboard?session=${id}`,
-              actionKind: "navigate" as ActionKind,
-            }
-          : s
-      )
-    );
-    setFolder("inbox");
-    toast.success("Session reopened", { description: "Moved back to Active bookings." });
+    fetch(`/api/sessions/${id}/end/request`, { method: "POST" })
+      .then(async (res) => {
+        if (res.ok) {
+          toast.success("End-session request sent", {
+            description: "Client must approve before the session is marked completed.",
+          });
+          router.refresh();
+          return;
+        }
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        // Roll back the optimistic update on failure.
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === id ? { ...s, endRequestedAt: undefined, status: session.status } : s,
+          ),
+        );
+        toast.error(body.error ?? "Couldn't send end-session request");
+      })
+      .catch(() => {
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === id ? { ...s, endRequestedAt: undefined, status: session.status } : s,
+          ),
+        );
+        toast.error("Couldn't send end-session request");
+      });
   };
 
   const filtered = visibleSessions
@@ -786,11 +752,7 @@ export default function StylistDashboard({
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedId(session.id);
-                          if (session.actionKind === "approve-end") {
-                            approveEndSession(session.id);
-                          } else {
-                            router.push(session.actionHref);
-                          }
+                          router.push(session.actionHref);
                         }}
                         className="flex-1 rounded-sm py-2 text-xs font-body font-medium text-center bg-foreground text-background transition-colors"
                       >
@@ -812,11 +774,7 @@ export default function StylistDashboard({
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedId(session.id);
-                        if (session.actionKind === "approve-end") {
-                          approveEndSession(session.id);
-                        } else {
-                          router.push(session.actionHref);
-                        }
+                        router.push(session.actionHref);
                       }}
                       className={cn(
                         "w-full rounded-sm py-2 text-xs font-body font-medium text-center transition-colors",
@@ -890,47 +848,21 @@ export default function StylistDashboard({
         </div>
         <div className="flex items-center gap-2">
           {selected.endedAt ? (
-            <>
-              <Badge variant="outline" className="rounded-sm text-[10px] font-body bg-muted text-muted-foreground border-muted">
-                <ArchiveIcon className="h-3 w-3 mr-1" />
-                {isArchived(selected) ? "Archived" : "Completed"}
-              </Badge>
-              <Button
-                variant="outline"
-                size="sm"
-                className="font-body text-xs h-8 rounded-sm"
-                onClick={() => reopenSession(selected.id)}
-              >
-                Reopen session
-              </Button>
-            </>
+            <Badge variant="outline" className="rounded-sm text-[10px] font-body bg-muted text-muted-foreground border-muted">
+              <ArchiveIcon className="h-3 w-3 mr-1" />
+              {isArchived(selected) ? "Archived" : "Completed"}
+            </Badge>
           ) : selected.endRequestedAt ? (
-            <>
-              <Badge variant="outline" className="rounded-sm text-[10px] font-body bg-amber-50 text-amber-700 border-amber-200">
-                <ClockIcon className="h-3 w-3 mr-1" />
-                Awaiting client approval
-              </Badge>
-              <Button
-                variant="outline"
-                size="sm"
-                className="font-body text-xs h-8 rounded-sm"
-                onClick={() => approveEndSession(selected.id)}
-              >
-                Simulate approval
-              </Button>
-            </>
+            <Badge variant="outline" className="rounded-sm text-[10px] font-body bg-amber-50 text-amber-700 border-amber-200">
+              <ClockIcon className="h-3 w-3 mr-1" />
+              Awaiting client approval
+            </Badge>
           ) : selected.boardsDelivered >= selected.boardsTotal ? (
             <>
               <Button
                 size="sm"
                 className="font-body text-xs h-8 rounded-sm"
-                onClick={() => {
-                  if (selected.actionKind === "approve-end") {
-                    approveEndSession(selected.id);
-                  } else {
-                    router.push(selected.actionHref);
-                  }
-                }}
+                onClick={() => router.push(selected.actionHref)}
               >
                 {selected.actionLabel}
               </Button>
@@ -948,13 +880,7 @@ export default function StylistDashboard({
               variant="outline"
               size="sm"
               className="font-body text-xs h-8 rounded-sm"
-              onClick={() => {
-                if (selected.actionKind === "approve-end") {
-                  approveEndSession(selected.id);
-                } else {
-                  router.push(selected.actionHref);
-                }
-              }}
+              onClick={() => router.push(selected.actionHref)}
             >
               {selected.actionLabel}
             </Button>

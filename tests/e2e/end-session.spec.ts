@@ -4,6 +4,7 @@ import {
   cleanupE2EUserByEmail,
   cleanupStylistProfile,
   createSessionForClient,
+  createStyleProfileFixture,
   ensureClientUser,
   ensureStylistProfile,
   ensureStylistUser,
@@ -81,7 +82,10 @@ test.afterAll(async () => {
   await disconnectTestDb();
 });
 
-async function setupCtx(prefix: string) {
+async function setupCtx(
+  prefix: string,
+  opts: { withStyleProfile?: boolean; status?: string } = {},
+) {
   const ts = Date.now() + Math.floor(Math.random() * 1000);
   const clientEmail = `${prefix}-c-${ts}@e2e.wishi.test`;
   const stylistEmail = `${prefix}-s-${ts}@e2e.wishi.test`;
@@ -94,6 +98,9 @@ async function setupCtx(prefix: string) {
     firstName: "End",
     lastName: "Client",
   });
+  if (opts.withStyleProfile) {
+    await createStyleProfileFixture(client.id);
+  }
   const stylist = await ensureStylistUser({
     clerkId: stylistClerkId,
     email: stylistEmail,
@@ -104,7 +111,7 @@ async function setupCtx(prefix: string) {
   const session = await createSessionForClient({
     clientId: client.id,
     stylistId: stylist.id,
-    status: "ACTIVE",
+    status: opts.status ?? "ACTIVE",
     planType: "MINI",
   });
   const channelSid = await provisionTwilioConversation(
@@ -236,6 +243,144 @@ test.describe("Phase 4: end-session", () => {
       const endPage = await clientCtx.newPage();
       await endPage.goto(`/sessions/${ctx.session.id}/end-session`);
       await expect(endPage.getByRole("heading", { name: "Wrap up your session" })).toBeVisible();
+
+      await stylistCtx.close();
+      await clientCtx.close();
+    } finally {
+      await ctx.cleanup();
+    }
+  });
+
+  // ----- Wrap modal: the "That's a Wrap" popup that surfaces in the client's
+  // chat once the stylist requests end (Session.status = PENDING_END_APPROVAL).
+  // Each CTA gets a focused test driving the real UI buttons.
+
+  test("wrap modal: I'm Done approves the session and redirects to /end-session", async ({
+    browser,
+  }) => {
+    test.setTimeout(90_000);
+    const ctx = await setupCtx("wrap-done", {
+      withStyleProfile: true,
+      status: "PENDING_END_APPROVAL",
+    });
+    try {
+      // Open the request so the modal predicate is satisfied. We hit the API
+      // directly here — the dashboard-driven path is covered separately below.
+      const stylistCtx = await browser.newContext();
+      const stylistPage = await stylistCtx.newPage();
+      await stylistPage.goto("/sign-in");
+      await stylistPage.getByLabel("Email").fill(ctx.stylist.email);
+      await stylistPage.getByRole("button", { name: "Sign In" }).click();
+      await stylistPage.request.post(`/api/sessions/${ctx.session.id}/end/request`);
+
+      const clientCtx = await browser.newContext();
+      const clientPage = await clientCtx.newPage();
+      await clientPage.goto("/sign-in");
+      await clientPage.getByLabel("Email").fill(ctx.client.email);
+      await clientPage.getByRole("button", { name: "Sign In" }).click();
+      await clientPage.goto(`/sessions/${ctx.session.id}/chat`);
+
+      await expect(
+        clientPage.getByRole("heading", { name: "That's a Wrap" }),
+      ).toBeVisible();
+      await expect(clientPage.getByText("Session Complete")).toBeVisible();
+
+      await clientPage.getByRole("button", { name: "I'm Done" }).click();
+      await expect(clientPage).toHaveURL(
+        new RegExp(`/sessions/${ctx.session.id}/end-session`),
+      );
+
+      const s = await getSession(ctx.session.id);
+      expect(s.status).toBe("COMPLETED");
+
+      await stylistCtx.close();
+      await clientCtx.close();
+    } finally {
+      await ctx.cleanup();
+    }
+  });
+
+  test("wrap modal: Add Looks declines the end request and opens Buy Looks", async ({
+    browser,
+  }) => {
+    test.setTimeout(90_000);
+    const ctx = await setupCtx("wrap-add", {
+      withStyleProfile: true,
+      status: "PENDING_END_APPROVAL",
+    });
+    try {
+      const stylistCtx = await browser.newContext();
+      const stylistPage = await stylistCtx.newPage();
+      await stylistPage.goto("/sign-in");
+      await stylistPage.getByLabel("Email").fill(ctx.stylist.email);
+      await stylistPage.getByRole("button", { name: "Sign In" }).click();
+      await stylistPage.request.post(`/api/sessions/${ctx.session.id}/end/request`);
+
+      const clientCtx = await browser.newContext();
+      const clientPage = await clientCtx.newPage();
+      await clientPage.goto("/sign-in");
+      await clientPage.getByLabel("Email").fill(ctx.client.email);
+      await clientPage.getByRole("button", { name: "Sign In" }).click();
+      await clientPage.goto(`/sessions/${ctx.session.id}/chat`);
+
+      await expect(
+        clientPage.getByRole("heading", { name: "That's a Wrap" }),
+      ).toBeVisible();
+      await clientPage.getByRole("button", { name: "Add Looks" }).click();
+
+      // BuyLooksDialog takes over.
+      await expect(
+        clientPage.getByRole("heading", { name: "Buy More Looks" }),
+      ).toBeVisible();
+
+      // Session was declined back to ACTIVE in the same gesture.
+      await expect
+        .poll(async () => (await getSession(ctx.session.id)).status, {
+          timeout: 5_000,
+        })
+        .toBe("ACTIVE");
+
+      await stylistCtx.close();
+      await clientCtx.close();
+    } finally {
+      await ctx.cleanup();
+    }
+  });
+
+  test("wrap modal: Back to chat dismisses without mutating session state", async ({
+    browser,
+  }) => {
+    test.setTimeout(90_000);
+    const ctx = await setupCtx("wrap-back", {
+      withStyleProfile: true,
+      status: "PENDING_END_APPROVAL",
+    });
+    try {
+      const stylistCtx = await browser.newContext();
+      const stylistPage = await stylistCtx.newPage();
+      await stylistPage.goto("/sign-in");
+      await stylistPage.getByLabel("Email").fill(ctx.stylist.email);
+      await stylistPage.getByRole("button", { name: "Sign In" }).click();
+      await stylistPage.request.post(`/api/sessions/${ctx.session.id}/end/request`);
+
+      const clientCtx = await browser.newContext();
+      const clientPage = await clientCtx.newPage();
+      await clientPage.goto("/sign-in");
+      await clientPage.getByLabel("Email").fill(ctx.client.email);
+      await clientPage.getByRole("button", { name: "Sign In" }).click();
+      await clientPage.goto(`/sessions/${ctx.session.id}/chat`);
+
+      await expect(
+        clientPage.getByRole("heading", { name: "That's a Wrap" }),
+      ).toBeVisible();
+      await clientPage.getByRole("button", { name: "Back to chat" }).click();
+
+      // Heading disappears, session remains PENDING_END_APPROVAL.
+      await expect(
+        clientPage.getByRole("heading", { name: "That's a Wrap" }),
+      ).toBeHidden();
+      const s = await getSession(ctx.session.id);
+      expect(s.status).toBe("PENDING_END_APPROVAL");
 
       await stylistCtx.close();
       await clientCtx.close();

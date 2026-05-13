@@ -223,8 +223,8 @@ test("Review Restyle → styleboards/new?parentBoardId= (PENDING_RESTYLE with bo
   }
 });
 
-test("Approve End → fires approve-end without leaving the dashboard", async ({ page }) => {
-  const seed = await seedSession("approve-end", {
+test("Awaiting Client → navigates to dashboard chat (stylist can't self-approve)", async ({ page }) => {
+  const seed = await seedSession("awaiting-client", {
     moodboardsSent: 1,
     styleboardsSent: 5,
     styleboardsAllowed: 5,
@@ -236,10 +236,10 @@ test("Approve End → fires approve-end without leaving the dashboard", async ({
     await page.goto("/stylist/dashboard");
     await page.waitForLoadState("networkidle");
 
-    const cta = page.getByRole("button", { name: "Approve End" }).first();
+    const cta = page.getByRole("button", { name: "Awaiting Client" }).first();
     await expect(cta).toBeVisible();
-    // Clicking the approve-end CTA fires the existing handler in-place — the
-    // URL must not change to a sessions/* route.
+    // Stylist can't approve their own end-request — clicking just opens the
+    // chat where the awaiting-approval badge surfaces the state.
     await cta.click();
     await expect(page).toHaveURL(/\/stylist\/dashboard/);
   } finally {
