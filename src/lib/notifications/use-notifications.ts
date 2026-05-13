@@ -94,9 +94,14 @@ export function useNotifications() {
   }, []);
 
   useEffect(() => {
-    void refetch();
-    const id = setInterval(() => void refetch(), POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    // Defer initial fetch by a tick so its setState calls don't fire
+    // synchronously inside the effect (cascading-renders lint rule).
+    const initialId = setTimeout(() => void refetch(), 0);
+    const intervalId = setInterval(() => void refetch(), POLL_INTERVAL_MS);
+    return () => {
+      clearTimeout(initialId);
+      clearInterval(intervalId);
+    };
   }, [refetch]);
 
   return { items, unreadCount, markRead, markAllRead, refetch };

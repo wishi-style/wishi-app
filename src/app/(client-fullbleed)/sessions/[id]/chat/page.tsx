@@ -3,7 +3,6 @@ import { redirect, notFound } from "next/navigation";
 import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 import { SessionWorkspace } from "@/components/session/workspace";
 import { getWorkspaceData } from "@/lib/sessions/workspace-query";
-import { PushPermission } from "@/components/chat/push-permission";
 import { hasCompletedStyleQuiz } from "@/lib/quiz/style-quiz-status";
 
 export const dynamic = "force-dynamic";
@@ -119,7 +118,6 @@ export default async function ClientChatPage({ params }: Props) {
         bookCtaHref={bookCtaHref}
         stylistFirstName={session.stylist?.firstName ?? null}
       />
-      <PushPermission />
     </>
   );
 }
