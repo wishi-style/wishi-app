@@ -77,22 +77,24 @@ test("Review Restyle falls back to Create Look when boardId is missing", () => {
   assert.equal(action.href, "/stylist/sessions/sess_test/styleboards/new");
 });
 
-test("Approve End fires when client requested end approval", () => {
+test("Awaiting Client surfaces when stylist requested end approval", () => {
   const action = deriveDashboardAction(
     ctx({
       endRequestedAt: new Date(),
       status: "PENDING_END_APPROVAL",
     }),
   );
-  assert.equal(action.label, "Approve End");
+  assert.equal(action.label, "Awaiting Client");
   assert.equal(action.href, "/stylist/dashboard?session=sess_test");
-  assert.equal(action.kind, "approve-end");
+  // Only the client can approve — the stylist's CTA just opens the chat where
+  // the awaiting-approval badge is visible.
+  assert.equal(action.kind, "navigate");
 });
 
-test("Approve End wins over Create Moodboard when both signals are present", () => {
-  // Edge case: hypothetical session where the client requested end before
-  // the stylist sent the first moodboard. Approve End is the unblocking
-  // action; Create Moodboard would be useless until the end-request resolves.
+test("Awaiting Client wins over Create Moodboard when both signals are present", () => {
+  // Edge case: hypothetical session where the stylist requested end before
+  // sending the first moodboard. The end-request resolution is the unblocking
+  // step; Create Moodboard would be useless until the client decides.
   const action = deriveDashboardAction(
     ctx({
       moodboardsSent: 0,
@@ -100,8 +102,8 @@ test("Approve End wins over Create Moodboard when both signals are present", () 
       status: "PENDING_END_APPROVAL",
     }),
   );
-  assert.equal(action.label, "Approve End");
-  assert.equal(action.kind, "approve-end");
+  assert.equal(action.label, "Awaiting Client");
+  assert.equal(action.kind, "navigate");
 });
 
 test("View Summary fires for COMPLETED sessions", () => {

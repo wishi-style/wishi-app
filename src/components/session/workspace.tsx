@@ -9,6 +9,7 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ChatWindow } from "@/components/chat/chat-window";
 import { BuyLooksDialog } from "@/components/billing/buy-looks-dialog";
+import { EndSessionWrapModal } from "@/components/session/end-session-wrap-modal";
 import type { ViewerRole } from "@/components/chat/message-renderers";
 import { SuggestedReplies } from "./suggested-replies";
 
@@ -563,6 +564,14 @@ export function SessionWorkspace({
         open={buyOpen}
         onOpenChange={setBuyOpen}
       />
+
+      {viewerRole === "CLIENT" &&
+        sessionStatus.toUpperCase() === "PENDING_END_APPROVAL" && (
+          <EndSessionWrapModal
+            sessionId={sessionId}
+            additionalLookDollars={additionalLookDollars}
+          />
+        )}
     </div>
   );
 }

@@ -21,19 +21,20 @@ export type DashboardLoyaltyTier = "new" | "bronze" | "silver" | "gold" | "vip";
 /**
  * What clicking the dashboard's primary CTA should do for a given session.
  *
- * - "navigate" → `actionHref` is a relative path the card/chat-header pushes onto
- *   the router. Covers Create Moodboard / Create Look / Review Restyle / Open
- *   Chat / View Summary.
- * - "approve-end" → fire the existing `approveEndSession` handler. The
- *   `actionHref` still points at `/stylist/dashboard?session=<id>` so screen
- *   readers + middle-click open the right place.
+ * Every CTA navigates — `actionHref` is a relative path the card / chat-header
+ * pushes onto the router. Covers Create Moodboard / Create Look / Review
+ * Restyle / Open Chat / View Summary / Awaiting Client.
  *
  * Replaces the previous Loveable-mirrored vocabulary where every label except
  * Create Moodboard / Create Look was a no-op selector — that surfaced as
  * dead "Start styling" / "View session" / "Awaiting approval" buttons in
  * production once real PendingAction states started flowing in.
+ *
+ * The earlier "approve-end" kind has been retired: only the client can approve
+ * the end-request (the stylist initiated it), so the stylist CTA just
+ * navigates to the chat where the awaiting-approval state is surfaced.
  */
-export type DashboardActionKind = "navigate" | "approve-end";
+export type DashboardActionKind = "navigate";
 
 export interface DashboardSession {
   id: string;
@@ -134,7 +135,9 @@ export interface DashboardAction {
  * sees the action that actually unblocks the session.
  *
  *   1. Completed / cancelled               → View Summary  (chat read-only)
- *   2. End requested by client             → Approve End   (fires existing UI)
+ *   2. End requested by stylist            → Awaiting Client (navigate-only;
+ *      only the client can approve / decline, surfaced via the wrap modal +
+ *      inline EndSessionCard on the client side).
  *   3. No moodboard sent yet               → Create Moodboard
  *   4. Restyle requested on a sent board   → Review Restyle (?parentBoardId=)
  *   5. Looks remain in plan quota          → Create Look
@@ -148,7 +151,7 @@ export function deriveDashboardAction(ctx: DashboardActionContext): DashboardAct
   }
 
   if (ctx.endRequestedAt) {
-    return { label: "Approve End", href: dashboardChat, kind: "approve-end" };
+    return { label: "Awaiting Client", href: dashboardChat, kind: "navigate" };
   }
 
   if (ctx.moodboardsSent === 0) {
