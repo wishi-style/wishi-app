@@ -98,12 +98,15 @@ function writeDismissed(sessionId: string | null, set: Set<SmartDefaultKind>) {
 }
 
 async function fetchShopInventory(
-  sessionId: string,
+  sessionId: string | null,
   inv: FetchInvocation,
   signal: AbortSignal,
 ): Promise<ShopInventoryResponse> {
   const power = inv.power;
   if (power?.kind === "similar") {
+    if (!sessionId) {
+      throw new Error("Power-mode search not available in profile mode");
+    }
     const url = `/api/stylist/sessions/${encodeURIComponent(
       sessionId,
     )}/shop-inventory/similar/${encodeURIComponent(power.productId)}?limit=${inv.pageSize}`;
@@ -112,6 +115,9 @@ async function fetchShopInventory(
     return (await res.json()) as ShopInventoryResponse;
   }
   if (power?.kind === "direction") {
+    if (!sessionId) {
+      throw new Error("Power-mode search not available in profile mode");
+    }
     const url = `/api/stylist/sessions/${encodeURIComponent(
       sessionId,
     )}/shop-inventory/looks-like`;
@@ -137,15 +143,15 @@ async function fetchShopInventory(
     page: inv.page,
     pageSize: inv.pageSize,
   };
-  const res = await fetch(
-    `/api/stylist/sessions/${encodeURIComponent(sessionId)}/shop-inventory`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-      signal,
-    },
-  );
+  const url = sessionId
+    ? `/api/stylist/sessions/${encodeURIComponent(sessionId)}/shop-inventory`
+    : `/api/stylist/profile/shop-inventory`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
   if (!res.ok) throw new Error(`Shop search failed (${res.status})`);
   return (await res.json()) as ShopInventoryResponse;
 }
@@ -216,15 +222,6 @@ export function useShopInventory(opts: UseShopInventoryOpts) {
       inv: FetchInvocation,
       mode: "replace" | "append",
     ): Promise<void> => {
-      // Profile-board mode (sessionless): the SSR-hydrated initial page is
-      // all the Shop tab gets. No refetch, no load-more, no power modes —
-      // those all rely on /api/stylist/sessions/[id]/shop-inventory which
-      // doesn't exist for sessionless boards. Inspiration / Store still work.
-      if (!sessionId) {
-        setStatus("idle");
-        setError(null);
-        return;
-      }
       const key = buildCacheKey(inv);
       const cached = lruRef.current.get(key);
       if (cached) {
