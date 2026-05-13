@@ -1,11 +1,9 @@
 "use client";
 import { useState } from "react";
 import { OnboardingShell } from "@/components/stylist/onboarding-shell";
+import { CANONICAL_STYLES } from "@/lib/stylists/styles";
 
-const STYLES = [
-  "Minimalist", "Classic", "Edgy", "Bohemian", "Preppy", "Streetwear",
-  "Romantic", "Sporty", "Avant-garde", "Eclectic",
-];
+const STYLES = CANONICAL_STYLES;
 const LEVEL_LABELS = { 1: "Terrible", 2: "Pretty Good", 3: "Expert!" } as const;
 
 export function StepThree({

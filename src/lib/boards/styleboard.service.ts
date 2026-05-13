@@ -205,6 +205,13 @@ export interface SendStyleboardInput {
   // only client-side canvas state can save & send in one round-trip without
   // a separate items-persist pass.
   items?: SendStyleboardItemInput[];
+  // Feature on the stylist's public profile in the same write. profileStyle
+  // is required when featureOnProfile is true (free-text or canonical 10).
+  featureOnProfile?: boolean;
+  profileStyle?: string | null;
+  // First-item image snapshot for /stylists/[id] rendering. Caller derives
+  // from the LookCreator canvas to avoid a tastegraph round-trip on send.
+  coverUrl?: string | null;
 }
 
 export async function sendStyleboard(
@@ -286,6 +293,16 @@ export async function sendStyleboard(
     .filter(Boolean)
     .slice(0, 10);
   const itemsToInsert = input.items;
+  const trimmedStyle = input.profileStyle?.trim() || null;
+  const shouldFeature = !!input.featureOnProfile && !!trimmedStyle;
+  if (input.featureOnProfile && !trimmedStyle) {
+    throw new BoardSendError(
+      "PROFILE_STYLE_REQUIRED",
+      "Pick a style label to feature this look on your profile",
+      400,
+    );
+  }
+  const coverUrl = input.coverUrl?.trim() || null;
 
   // Atomic compare-and-set on sentAt: null. If a concurrent send already
   // transitioned the row, `updated` is null and we return without
@@ -330,6 +347,10 @@ export async function sendStyleboard(
         ...(title != null ? { title } : {}),
         ...(description != null ? { description } : {}),
         ...(tags.length > 0 ? { tags } : {}),
+        ...(coverUrl != null ? { coverUrl } : {}),
+        ...(shouldFeature
+          ? { isFeaturedOnProfile: true, profileStyle: trimmedStyle }
+          : {}),
       },
     });
     if (count === 0) return null;

@@ -35,6 +35,8 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     const profileStyle = String(body.profileStyle ?? "").trim();
+    const rawType = String(body.type ?? "MOODBOARD");
+    const type = rawType === "STYLEBOARD" ? "STYLEBOARD" : "MOODBOARD";
     if (!profileStyle) {
       return NextResponse.json({ error: "profileStyle required" }, { status: 400 });
     }
@@ -42,6 +44,7 @@ export async function POST(req: Request) {
     const board = await createProfileBoard({
       stylistUserId: user.id,
       profileStyle,
+      type,
     });
     return NextResponse.json({ board }, { status: 201 });
   } catch (err) {

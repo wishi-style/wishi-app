@@ -12,12 +12,23 @@ export const dynamic = "force-dynamic";
 async function authorize(boardId: string, userId: string) {
   const board = await prisma.board.findUnique({
     where: { id: boardId },
-    include: { session: { select: { stylistId: true } } },
+    include: {
+      session: { select: { stylistId: true } },
+      stylistProfile: { select: { userId: true } },
+    },
   });
-  if (!board || board.type !== "MOODBOARD" || !board.session) return null;
-  if (board.session.stylistId !== userId) return null;
+  if (!board || board.type !== "MOODBOARD") return null;
   if (board.sentAt) return null; // can't edit a sent board
-  return board;
+  // Session-scoped board: stylist of that session can edit.
+  if (board.session) {
+    if (board.session.stylistId !== userId) return null;
+    return board;
+  }
+  // Sessionless profile board: owning stylist can edit.
+  if (board.stylistProfile && board.stylistProfile.userId === userId) {
+    return board;
+  }
+  return null;
 }
 
 export async function POST(

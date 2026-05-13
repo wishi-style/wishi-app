@@ -1361,6 +1361,9 @@ model Board {
   isFeaturedOnProfile Boolean      @default(false) @map("is_featured_on_profile")
   profileStyle        String?      @map("profile_style")
   profileGender       Gender?      @map("profile_gender")
+  // Cover image for /stylists/[id] rendering. Moodboard = first photo URL;
+  // styleboard = first BoardItem's product image. Set on send/publish.
+  coverUrl            String?      @map("cover_url")
   // Moodboard canvas mode: "template" (grid) or "freestyle" (drag-drop x/y).
   canvasMode          String?      @map("canvas_mode")
   parentBoardId       String?      @map("parent_board_id")

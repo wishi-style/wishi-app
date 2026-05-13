@@ -58,6 +58,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { loyaltyConfig } from "@/data/client-profiles";
 import { toast } from "sonner";
+import { FeatureOnProfile } from "@/components/stylist/feature-on-profile";
 import { useShopInventory } from "./use-shop-inventory";
 import { ShopFilterRail } from "./shop-filter-rail";
 import type { CategoryBucket } from "@/lib/inventory/adapt-product-doc";
@@ -190,8 +191,12 @@ interface ClientProfile {
 
 interface StyleboardBuilderProps {
   boardId: string;
-  sessionId: string;
+  /** Null when running in profile mode (sessionless profile-board creator).
+   *  Save flows through /api/profile-boards/[id]/publish; back navigates to
+   *  /stylist/profile/boards; client-scoped tabs are hidden. */
+  sessionId: string | null;
   isRevision: boolean;
+  /** Empty string in profile mode — no client. */
   clientId: string;
   clientName: string;
   clientAvatarUrl: string | null;
@@ -214,6 +219,10 @@ interface StyleboardBuilderProps {
   previousStyleBoardItems: InventoryItem[];
   storeItems: InventoryItem[];
   clientProfile?: ClientProfile;
+  /** Profile mode forks the save dialog, navigation, and hides client tabs. */
+  profileMode?: boolean;
+  /** Default style label in profile mode; gets passed through to publish. */
+  initialProfileStyle?: string | null;
 }
 
 export function StyleboardBuilder({
@@ -232,6 +241,8 @@ export function StyleboardBuilder({
   previousStyleBoardItems,
   storeItems,
   clientProfile,
+  profileMode = false,
+  initialProfileStyle = null,
 }: StyleboardBuilderProps) {
   const router = useRouter();
   const [tab, setTab] = useState<SourceTab>("shop");
@@ -413,6 +424,11 @@ export function StyleboardBuilder({
     fitPreference: "",
     highlights: "",
   });
+  // Feature-on-profile toggle in the save dialog. Same Board row is then
+  // dual-purpose: shipped to the client AND visible on /stylists/[id].
+  // In profile mode the toggle is fixed-on; style is pre-filled from query.
+  const [featureOnProfile, setFeatureOnProfile] = useState(profileMode);
+  const [profileStyle, setProfileStyle] = useState(initialProfileStyle ?? "");
 
   // Retailer chip list is now the canonical merchant facet from the
   // inventory service rather than a derived-from-current-page set. The
@@ -957,23 +973,63 @@ export function StyleboardBuilder({
         else if (c.source === "INSPIRATION_PHOTO") base.inspirationPhotoId = c.refId;
         return base;
       });
-      const res = await fetch(`/api/styleboards/${boardId}/send`, {
+      // Cover image for /stylists/[id] when this look is featured on the
+      // stylist's profile. First canvas item's image is the natural cover —
+      // the LookCreator already shows it as the dominant element.
+      const coverUrl = canvas[0]?.image ?? null;
+      // Profile mode posts to the sessionless publish endpoint (no client,
+      // no chat send, no notifications). Session mode keeps the existing
+      // send-to-client path; the feature toggle decides whether the same
+      // board also surfaces on the public profile.
+      const endpoint = profileMode
+        ? `/api/profile-boards/${boardId}/publish`
+        : `/api/styleboards/${boardId}/send`;
+      const payload = profileMode
+        ? {
+            title: name,
+            description: desc,
+            tags: tagList,
+            items,
+            profileStyle: profileStyle.trim(),
+            coverUrl,
+          }
+        : {
+            title: name,
+            description: desc,
+            tags: tagList,
+            items,
+            featureOnProfile,
+            profileStyle: profileStyle.trim(),
+            coverUrl,
+          };
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title: name, description: desc, tags: tagList, items }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(b.error ?? "Send failed");
       }
-      toast.success(`"${name}" saved & sent to ${clientName}`, {
-        id: toastId,
-        description: "Redirecting to dashboard…",
-      });
+      toast.success(
+        profileMode
+          ? `"${name}" added to your profile`
+          : `"${name}" saved & sent to ${clientName}`,
+        {
+          id: toastId,
+          description: profileMode
+            ? "Returning to profile boards…"
+            : "Redirecting to dashboard…",
+        },
+      );
       setSaveOpen(false);
       // Brief pause so the user sees the success state before routing
       await new Promise((resolve) => setTimeout(resolve, 600));
-      router.push(`/stylist/dashboard?session=${sessionId}`);
+      router.push(
+        profileMode
+          ? `/stylist/profile/boards?style=${encodeURIComponent(profileStyle.trim())}`
+          : `/stylist/dashboard?session=${sessionId}`,
+      );
       router.refresh();
     } catch (err) {
       toast.error("Could not save the look. Please try again.", { id: toastId });
@@ -988,7 +1044,13 @@ export function StyleboardBuilder({
       <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => router.push(`/stylist/dashboard?session=${sessionId}`)}
+            onClick={() =>
+              router.push(
+                profileMode
+                  ? "/stylist/profile/boards"
+                  : `/stylist/dashboard?session=${sessionId}`,
+              )
+            }
             className="text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeftIcon className="h-5 w-5" />
@@ -1033,15 +1095,17 @@ export function StyleboardBuilder({
           })()}
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setClientInfoOpen(true)}
-            className="font-body text-xs h-8 rounded-sm gap-1.5"
-          >
-            <UserIcon className="h-3.5 w-3.5" />
-            Client Profile
-          </Button>
+          {!profileMode && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setClientInfoOpen(true)}
+              className="font-body text-xs h-8 rounded-sm gap-1.5"
+            >
+              <UserIcon className="h-3.5 w-3.5" />
+              Client Profile
+            </Button>
+          )}
           {canvas.length > 0 && (
             <Button
               variant="ghost"
@@ -1061,14 +1125,17 @@ export function StyleboardBuilder({
             className="h-8 rounded-sm bg-foreground text-background hover:bg-foreground/90 font-body text-xs gap-1.5"
           >
             <SendIcon className="h-3.5 w-3.5" />
-            Save & send{canvas.length < MIN_ITEMS_TO_SAVE ? ` (${canvas.length}/${MIN_ITEMS_TO_SAVE})` : ""}
+            {profileMode ? "Publish to profile" : "Save & send"}
+            {canvas.length < MIN_ITEMS_TO_SAVE ? ` (${canvas.length}/${MIN_ITEMS_TO_SAVE})` : ""}
           </Button>
         </div>
       </div>
 
       {/* Source tabs */}
       <div className="flex items-center gap-1 px-5 border-b border-border shrink-0">
-        {tabs.map((t) => {
+        {tabs
+          .filter((t) => !(profileMode && (t.key === "closet" || t.key === "previous")))
+          .map((t) => {
           const Icon = t.icon;
           const active = tab === t.key;
           return (
@@ -2227,9 +2294,13 @@ export function StyleboardBuilder({
       <Dialog open={saveOpen} onOpenChange={(o) => { if (isSaving) return; setSaveOpen(o); if (!o) { setSaveDescTouched(false); setLookNameTouched(false); } }}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="font-display text-2xl text-foreground">Save look for {clientName}</DialogTitle>
+            <DialogTitle className="font-display text-2xl text-foreground">
+              {profileMode ? "Save look to your profile" : `Save look for ${clientName}`}
+            </DialogTitle>
             <DialogDescription className="font-body text-sm text-foreground/70">
-              Name your look, explain why you styled it, and add a few tags to capture what the client asked for.
+              {profileMode
+                ? "Name your look, describe the styling intent, and pick a style label. Clients will see it on your public profile."
+                : "Name your look, explain why you styled it, and add a few tags to capture what the client asked for."}
             </DialogDescription>
           </DialogHeader>
 
@@ -2336,6 +2407,21 @@ export function StyleboardBuilder({
                 </div>
               )}
             </div>
+
+            {/* Profile mode arrives via /stylist/profile/boards/new/styleboard
+                with the style label already chosen in the picker — no need to
+                ask again. Session mode keeps the toggle + style picker so the
+                stylist can decide whether the look also lands on /stylists/[id]
+                while shipping to a client. */}
+            {!profileMode && (
+              <FeatureOnProfile
+                enabled={featureOnProfile}
+                onEnabledChange={setFeatureOnProfile}
+                style={profileStyle}
+                onStyleChange={setProfileStyle}
+                disabled={isSaving}
+              />
+            )}
           </div>
 
           <DialogFooter className="gap-2 sm:gap-2 pt-2">
@@ -2349,7 +2435,12 @@ export function StyleboardBuilder({
             </Button>
             <Button
               onClick={confirmSave}
-              disabled={isSaving || !saveDescription.trim() || !lookName.trim()}
+              disabled={
+                isSaving ||
+                !saveDescription.trim() ||
+                !lookName.trim() ||
+                (featureOnProfile && !profileStyle.trim())
+              }
               className="font-body text-sm gap-1.5 bg-foreground text-background hover:bg-foreground/90"
             >
               {isSaving ? (
@@ -2360,7 +2451,7 @@ export function StyleboardBuilder({
               ) : (
                 <>
                   <SendIcon className="h-4 w-4" />
-                  Save & send
+                  {profileMode ? "Publish to profile" : "Save & send"}
                 </>
               )}
             </Button>

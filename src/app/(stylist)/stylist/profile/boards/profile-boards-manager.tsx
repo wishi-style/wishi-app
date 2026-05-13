@@ -1,28 +1,72 @@
 "use client";
 
+// Stylist's profile-boards manager. Lists featured boards bucketed by style
+// and provides two creation entry points via the +New board picker:
+//   1. Moodboard — inspiration-image collage
+//   2. Styleboard — shoppable canvas built from the LookCreator
+// Both creation paths land at sessionless variants of the existing builders.
+
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+
+type BoardType = "MOODBOARD" | "STYLEBOARD";
 
 type Board = {
   id: string;
+  type: BoardType;
   profileStyle: string | null;
   isFeaturedOnProfile: boolean;
   coverUrl: string | null;
+  // Up to 4 thumbnails for the card collage. Moodboards: BoardPhoto URLs.
+  // Styleboards: resolved BoardItem images (tastegraph product photos for
+  // INVENTORY items, raw URLs for closet/web/inspiration).
+  thumbnailUrls: string[];
   createdAt: string;
 };
 
 export function ProfileBoardsManager({
   styles,
   initialBoards,
+  focusStyle,
 }: {
   styles: string[];
   initialBoards: Board[];
+  focusStyle?: string | null;
 }) {
   const router = useRouter();
-  const [boards, setBoards] = useState<Board[]>(initialBoards);
-  const [activeStyle, setActiveStyle] = useState<string | null>(styles[0] ?? null);
+  // Local optimistic overlay for unfeature actions. Keyed by id; the prop
+  // remains the source of truth so router.refresh() reflects new boards
+  // created via the picker without a stale `useState(initialBoards)` lock.
+  const [unfeaturedLocally, setUnfeaturedLocally] = useState<Set<string>>(
+    new Set(),
+  );
+  // focusStyle (from ?style= on the URL) wins on first render so post-publish
+  // redirects land the stylist on the just-published bucket. Fall back to the
+  // first claimed specialty.
+  const initialActive =
+    (focusStyle && styles.includes(focusStyle) ? focusStyle : null) ??
+    styles[0] ??
+    null;
+  const [activeStyle, setActiveStyle] = useState<string | null>(initialActive);
   const [error, setError] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+
+  const boards = useMemo(
+    () =>
+      initialBoards.map((b) =>
+        unfeaturedLocally.has(b.id) ? { ...b, isFeaturedOnProfile: false } : b,
+      ),
+    [initialBoards, unfeaturedLocally],
+  );
 
   const grouped = useMemo(() => {
     const bucket = new Map<string, Board[]>();
@@ -36,23 +80,6 @@ export function ProfileBoardsManager({
     return bucket;
   }, [boards, styles]);
 
-  function addBoard(style: string) {
-    setError(null);
-    startTransition(async () => {
-      const res = await fetch("/api/stylist/profile/boards", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileStyle: style }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.error ?? "Failed to create board");
-        return;
-      }
-      router.refresh();
-    });
-  }
-
   function removeBoard(boardId: string) {
     setError(null);
     startTransition(async () => {
@@ -63,7 +90,12 @@ export function ProfileBoardsManager({
         setError("Failed to remove");
         return;
       }
-      setBoards((prev) => prev.map((b) => (b.id === boardId ? { ...b, isFeaturedOnProfile: false } : b)));
+      setUnfeaturedLocally((prev) => {
+        const next = new Set(prev);
+        next.add(boardId);
+        return next;
+      });
+      router.refresh();
     });
   }
 
@@ -106,20 +138,52 @@ export function ProfileBoardsManager({
             <button
               type="button"
               disabled={isPending || (grouped.get(activeStyle)?.length ?? 0) >= 10}
-              onClick={() => addBoard(activeStyle)}
+              onClick={() => setPickerOpen(true)}
               className="rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background disabled:opacity-50"
             >
-              {isPending ? "Adding…" : "+ New board"}
+              + New board
             </button>
           </div>
 
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            {(grouped.get(activeStyle) ?? []).map((b) => (
+            {(grouped.get(activeStyle) ?? []).map((b) => {
+              // Both moodboards (photo collage) and styleboards (item
+              // collage) render up to 4 thumbnails — for styleboards the
+              // images are resolved from BoardItems server-side so the
+              // card reflects the actual canvas, not just a single cover.
+              const thumbs = b.thumbnailUrls.slice(0, 4);
+              const single =
+                thumbs.length === 1 ? thumbs[0] : b.coverUrl;
+              const altLabel =
+                b.type === "STYLEBOARD" ? "styleboard piece" : "moodboard photo";
+              return (
               <div key={b.id} className="overflow-hidden rounded-lg border border-muted">
-                {b.coverUrl ? (
+                {thumbs.length > 1 ? (
+                  <div
+                    className={
+                      thumbs.length >= 4
+                        ? "grid aspect-square w-full grid-cols-2 grid-rows-2 gap-px bg-muted"
+                        : "grid aspect-square w-full grid-cols-2 gap-px bg-muted"
+                    }
+                  >
+                    {thumbs.map((url, i) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={`${b.id}-${i}`}
+                        src={url}
+                        alt={`${activeStyle} ${altLabel} ${i + 1}`}
+                        className={
+                          thumbs.length === 3 && i === 0
+                            ? "col-span-2 h-full w-full object-cover"
+                            : "h-full w-full object-cover"
+                        }
+                      />
+                    ))}
+                  </div>
+                ) : single ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={b.coverUrl}
+                    src={single}
                     alt={`${activeStyle} board`}
                     className="aspect-square w-full object-cover"
                   />
@@ -129,9 +193,14 @@ export function ProfileBoardsManager({
                   </div>
                 )}
                 <div className="flex items-center justify-between p-3 text-xs">
-                  <span className="text-muted-foreground">
-                    {new Date(b.createdAt).toLocaleDateString()}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {b.type === "STYLEBOARD" ? "Look" : "Moodboard"}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {new Date(b.createdAt).toLocaleDateString()}
+                    </span>
+                  </div>
                   <button
                     type="button"
                     onClick={() => removeBoard(b.id)}
@@ -141,7 +210,8 @@ export function ProfileBoardsManager({
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
 
           {(grouped.get(activeStyle)?.length ?? 0) < 3 && (
@@ -152,6 +222,44 @@ export function ProfileBoardsManager({
           )}
         </div>
       )}
+
+      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
+        <DialogContent className="sm:max-w-md rounded-sm">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg">
+              What do you want to create?
+            </DialogTitle>
+            <DialogDescription className="font-body text-sm text-muted-foreground">
+              Both will be tagged{" "}
+              <span className="font-medium text-foreground">{activeStyle}</span>{" "}
+              and added to your profile.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 pt-1">
+            <Link
+              href={`/stylist/profile/boards/new/moodboard?style=${encodeURIComponent(activeStyle ?? "")}`}
+              className="rounded-md border border-muted p-4 transition-colors hover:border-foreground"
+              onClick={() => setPickerOpen(false)}
+            >
+              <div className="font-medium text-sm mb-1">Moodboard</div>
+              <p className="text-xs text-muted-foreground">
+                Collage of inspiration images. Good for setting a vibe.
+              </p>
+            </Link>
+            <Link
+              href={`/stylist/profile/boards/new/styleboard?style=${encodeURIComponent(activeStyle ?? "")}`}
+              className="rounded-md border border-muted p-4 transition-colors hover:border-foreground"
+              onClick={() => setPickerOpen(false)}
+            >
+              <div className="font-medium text-sm mb-1">Styleboard</div>
+              <p className="text-xs text-muted-foreground">
+                Shoppable canvas built in the LookCreator. Shows a complete look
+                a client could buy.
+              </p>
+            </Link>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

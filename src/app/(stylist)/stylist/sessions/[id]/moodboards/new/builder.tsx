@@ -31,6 +31,7 @@ import {
   type FreestyleItem,
 } from "@/components/stylist/moodboard-freestyle";
 import { SendMoodBoardDialog } from "@/components/stylist/send-moodboard-dialog";
+import { PublishMoodboardDialog } from "@/components/stylist/publish-moodboard-dialog";
 import ClientDetailPanel from "@/components/stylist/client-detail-panel";
 import { toast } from "sonner";
 
@@ -49,18 +50,48 @@ interface MoodBoardCreatorProps {
   clientId?: string | null;
   initialImages?: string[];
   onBack: () => void;
-  onSend?: (images: string[], note: string) => void;
+  onSend?: (
+    images: string[],
+    note: string,
+    feature: { featureOnProfile: boolean; profileStyle: string },
+  ) => void;
   onPhotoAdded?: (input: { url: string; s3Key: string; inspirationPhotoId: string }) => Promise<boolean>;
   onPhotoRemoved?: (url: string) => Promise<void>;
+  /** Profile-board mode (sessionless). Top-right CTA becomes "Publish to
+   *  profile"; the AI-drafted-note send dialog is replaced by a
+   *  title/description/tags publish dialog handled by the shell. */
+  profileMode?: boolean;
+  /** Style label preset from the picker (e.g. "Classic"). Passed through
+   *  to onProfileSave so the publish call lands in the right bucket. */
+  profileStyle?: string | null;
+  onProfileSave?: (input: {
+    images: string[];
+    title: string;
+    description: string;
+    tags: string[];
+  }) => Promise<void>;
 }
 
-export function MoodboardBuilder({ clientName, sessionId, clientId, initialImages, onBack, onSend, onPhotoAdded, onPhotoRemoved }: MoodBoardCreatorProps) {
+export function MoodboardBuilder({
+  clientName,
+  sessionId,
+  clientId,
+  initialImages,
+  onBack,
+  onSend,
+  onPhotoAdded,
+  onPhotoRemoved,
+  profileMode = false,
+  profileStyle = null,
+  onProfileSave,
+}: MoodBoardCreatorProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [genderFilter, setGenderFilter] = useState("female");
   const [canvasImages, setCanvasImages] = useState<string[]>(initialImages || []);
   const [canvasMode, setCanvasMode] = useState<"template" | "freestyle">("template");
   const [freestyleItems, setFreestyleItems] = useState<FreestyleItem[]>([]);
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false);
   const [clientInfoOpen, setClientInfoOpen] = useState(false);
   const [inspirations, setInspirations] = useState<InspirationPhoto[]>([]);
 
@@ -150,12 +181,16 @@ export function MoodboardBuilder({ clientName, sessionId, clientId, initialImage
     toast.success("Draft saved");
   };
 
-  const handleSend = (images: string[], note: string) => {
+  const handleSend = (
+    images: string[],
+    note: string,
+    feature: { featureOnProfile: boolean; profileStyle: string },
+  ) => {
     toast.success("Mood board sent to " + clientName, {
       description: "Redirecting to dashboard…",
     });
     setTimeout(() => {
-      onSend?.(images, note);
+      onSend?.(images, note, feature);
     }, 900);
   };
 
@@ -173,20 +208,22 @@ export function MoodboardBuilder({ clientName, sessionId, clientId, initialImage
           <div>
             <h1 className="font-display text-base font-semibold">Create mood board</h1>
             <p className="font-body text-xs text-muted-foreground">
-              for {clientName}
+              {profileMode ? "for your profile" : `for ${clientName}`}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setClientInfoOpen(true)}
-            className="font-body text-xs h-8 rounded-sm gap-1.5"
-          >
-            <UserIcon className="h-3.5 w-3.5" />
-            Client Profile
-          </Button>
+          {!profileMode && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setClientInfoOpen(true)}
+              className="font-body text-xs h-8 rounded-sm gap-1.5"
+            >
+              <UserIcon className="h-3.5 w-3.5" />
+              Client Profile
+            </Button>
+          )}
           {canvasImages.length > 0 && (
             <>
               <Button
@@ -211,13 +248,15 @@ export function MoodboardBuilder({ clientName, sessionId, clientId, initialImage
 
           )}
           <Button
-            onClick={() => setSendDialogOpen(true)}
+            onClick={() =>
+              profileMode ? setPublishDialogOpen(true) : setSendDialogOpen(true)
+            }
             disabled={canvasImages.length === 0}
             size="sm"
             className="h-8 rounded-sm bg-foreground text-background hover:bg-foreground/90 font-body text-xs gap-1.5"
           >
             <SendIcon className="h-3.5 w-3.5" />
-            Save & send
+            {profileMode ? "Publish to profile" : "Save & send"}
           </Button>
         </div>
       </div>
@@ -380,6 +419,17 @@ export function MoodboardBuilder({ clientName, sessionId, clientId, initialImage
           </div>
         </div>
       </div>
+
+      <PublishMoodboardDialog
+        open={publishDialogOpen}
+        onOpenChange={setPublishDialogOpen}
+        profileStyle={profileStyle}
+        onPublish={async ({ title, description, tags }) => {
+          if (!onProfileSave) return;
+          await onProfileSave({ images: canvasImages, title, description, tags });
+          setPublishDialogOpen(false);
+        }}
+      />
 
       <SendMoodBoardDialog
         open={sendDialogOpen}

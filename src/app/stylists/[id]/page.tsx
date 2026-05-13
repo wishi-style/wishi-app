@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getServerAuth } from "@/lib/auth/server-auth";
 import { cosmeticMatchScore } from "@/lib/matching/score";
@@ -12,6 +13,7 @@ import { SiteFooter } from "@/components/primitives/site-footer";
 import { ContinueWithStylistButton } from "./continue-with-stylist-button";
 import { PlanPicker } from "./plan-picker";
 import { getPlanPricesForUi } from "@/lib/plans";
+import { resolveThumbnailsForBoards } from "@/lib/boards/board-thumbnails";
 import {
   StarIcon,
   ClockIcon,
@@ -104,9 +106,35 @@ export default async function StylistProfilePage({ params }: Props) {
       user: {
         select: { firstName: true, lastName: true, avatarUrl: true },
       },
+      // Featured boards now include both session-scoped looks that the
+      // stylist opted to feature via the save dialog AND sessionless boards
+      // built standalone from /stylist/profile/boards. We pull enough photos
+      // + items per board to render a 2×2 collage; INVENTORY items resolve
+      // their image via tastegraph in `resolveThumbnailsForBoards`.
       profileBoards: {
-        where: { isFeaturedOnProfile: true, sessionId: null },
-        include: { photos: { orderBy: { orderIndex: "asc" }, take: 1 } },
+        where: { isFeaturedOnProfile: true },
+        select: {
+          id: true,
+          type: true,
+          profileStyle: true,
+          coverUrl: true,
+          photos: {
+            orderBy: { orderIndex: "asc" },
+            take: 4,
+            select: { url: true },
+          },
+          items: {
+            orderBy: { orderIndex: "asc" },
+            take: 8,
+            select: {
+              source: true,
+              inventoryProductId: true,
+              webItemImageUrl: true,
+              closetItem: { select: { url: true } },
+              inspirationPhoto: { select: { url: true } },
+            },
+          },
+        },
         orderBy: { createdAt: "desc" },
         take: 12,
       },
@@ -121,7 +149,19 @@ export default async function StylistProfilePage({ params }: Props) {
     `${stylist.user.firstName?.[0] ?? ""}${stylist.user.lastName?.[0] ?? ""}`.toUpperCase() ||
     name.charAt(0);
 
-  const heroImage = stylist.profileBoards[0]?.photos[0]?.url ?? null;
+  // Resolve up to 4 thumbnails per board for the "Styled by" collage.
+  // INVENTORY items go through tastegraph; closet/web/inspiration use the
+  // URL on the BoardItem row directly. Falls back to coverUrl if nothing
+  // resolves (e.g. tastegraph down). Plain `<img>` tags below because
+  // retailer CDNs aren't in Next/Image's remotePatterns allowlist.
+  const thumbsByBoardId = await resolveThumbnailsForBoards(stylist.profileBoards, 4);
+  function firstThumb(boardId: string): string | null {
+    return thumbsByBoardId.get(boardId)?.[0] ?? null;
+  }
+  function thumbsFor(boardId: string): string[] {
+    return thumbsByBoardId.get(boardId) ?? [];
+  }
+  const heroImage = stylist.profileBoards[0] ? firstThumb(stylist.profileBoards[0].id) : null;
   const styledLooks = stylist.profileBoards.slice(heroImage ? 1 : 0).slice(0, 4);
 
   let matchScore: number | null = null;
@@ -273,14 +313,13 @@ export default async function StylistProfilePage({ params }: Props) {
           <div className="flex flex-col md:flex-row gap-8 md:gap-12 items-center">
             <div className="w-full md:w-[465px] shrink-0 overflow-hidden rounded-lg bg-muted">
               {heroImage ? (
-                <Image
+                // Plain <img> — board hero may be a retailer CDN URL that
+                // isn't in Next/Image's remotePatterns allowlist.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
                   src={heroImage}
                   alt={`${name} portfolio`}
-                  width={930}
-                  height={930}
-                  sizes="(min-width: 768px) 465px, 100vw"
                   className="aspect-square h-auto w-full object-cover"
-                  priority
                 />
               ) : stylist.user.avatarUrl ? (
                 <Image
@@ -458,6 +497,51 @@ export default async function StylistProfilePage({ params }: Props) {
                   const caption = look.profileStyle
                     ? look.profileStyle.toString().toLowerCase()
                     : "";
+                  const thumbs = thumbsFor(look.id);
+                  // Styleboards open the full canvas via the public
+                  // SharedBoard route. Moodboards stay non-interactive
+                  // (TODO: in-page lightbox follow-up).
+                  const isStyleboard = look.type === "STYLEBOARD";
+                  const inner = (
+                    <div className="aspect-square overflow-hidden group cursor-pointer bg-muted">
+                      {thumbs.length > 1 ? (
+                        <div
+                          className={
+                            thumbs.length >= 4
+                              ? "grid h-full w-full grid-cols-2 grid-rows-2 gap-px"
+                              : "grid h-full w-full grid-cols-2 gap-px"
+                          }
+                        >
+                          {thumbs.slice(0, 4).map((src, i) => (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img
+                              key={`${look.id}-${i}`}
+                              src={src}
+                              alt={`${caption || "styled look"} ${i + 1}`}
+                              className={
+                                thumbs.length === 3 && i === 0
+                                  ? "col-span-2 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                                  : "h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                              }
+                              loading="lazy"
+                            />
+                          ))}
+                        </div>
+                      ) : thumbs[0] ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={thumbs[0]}
+                          alt={caption || "styled look"}
+                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+                          {caption}
+                        </div>
+                      )}
+                    </div>
+                  );
                   return (
                     <div key={look.id} className="w-[450px] max-w-full">
                       {caption ? (
@@ -465,23 +549,13 @@ export default async function StylistProfilePage({ params }: Props) {
                           {caption}
                         </p>
                       ) : null}
-                      <div className="aspect-square overflow-hidden group cursor-pointer">
-                        {look.photos[0]?.url ? (
-                          <Image
-                            src={look.photos[0].url}
-                            alt={caption || "styled look"}
-                            width={450}
-                            height={450}
-                            sizes="(min-width: 768px) 450px, 100vw"
-                            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                            loading="lazy"
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center bg-muted text-xs text-muted-foreground">
-                            {caption}
-                          </div>
-                        )}
-                      </div>
+                      {isStyleboard ? (
+                        <Link href={`/board/${look.id}`} aria-label={caption || "open look"}>
+                          {inner}
+                        </Link>
+                      ) : (
+                        inner
+                      )}
                     </div>
                   );
                 })}

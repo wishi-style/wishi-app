@@ -1,10 +1,14 @@
 "use client";
 
-// Save & send dialog for the LookCreator. Mirrors LookCreator.tsx@19f4732
-// :2107-2241 — required `lookName` (max 80) + required `description`
-// (max 600), optional Event / Body type / Fit / Highlights tag inputs
-// with a live chip preview. Title text "Save look for {clientName}",
-// footer button "Save & send".
+// Profile-mode save dialog for moodboards. Mirrors SaveLookDialog (title +
+// description + tag inputs) so moodboards published to a stylist's profile
+// carry the same metadata shape as styleboards.
+//
+// Used by MoodboardBuilder when `profileMode={true}` — no AI-drafted note
+// (that's for the client-facing send flow), no feature toggle (the stylist
+// is already on /stylist/profile/boards/new/moodboard), no style picker
+// (the style label was chosen on the prior picker and travels via the
+// query string).
 
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -22,18 +26,16 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { SendIcon, Loader2Icon } from "lucide-react";
-import { FeatureOnProfile } from "@/components/stylist/feature-on-profile";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  clientName: string;
-  onSend: (input: {
+  /** Style label this board will be filed under on the public profile. */
+  profileStyle: string | null;
+  onPublish: (input: {
     title: string;
     description: string;
     tags: string[];
-    featureOnProfile: boolean;
-    profileStyle: string;
   }) => Promise<void>;
 }
 
@@ -41,7 +43,12 @@ const NAME_MAX = 80;
 const DESC_MAX = 600;
 const TAG_MAX = 60;
 
-export function SaveLookDialog({ open, onOpenChange, clientName, onSend }: Props) {
+export function PublishMoodboardDialog({
+  open,
+  onOpenChange,
+  profileStyle,
+  onPublish,
+}: Props) {
   const [title, setTitle] = useState("");
   const [titleTouched, setTitleTouched] = useState(false);
   const [description, setDescription] = useState("");
@@ -50,16 +57,12 @@ export function SaveLookDialog({ open, onOpenChange, clientName, onSend }: Props
   const [bodyType, setBodyType] = useState("");
   const [fitPreference, setFitPreference] = useState("");
   const [highlights, setHighlights] = useState("");
-  const [sending, setSending] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [featureOnProfile, setFeatureOnProfile] = useState(false);
-  const [profileStyle, setProfileStyle] = useState("");
 
   const nameValid = title.trim().length > 0;
   const descValid = description.trim().length > 0;
-  const featureValid = !featureOnProfile || profileStyle.trim().length > 0;
 
-  // Live tag chip preview — exactly the values we'll persist.
   const tagChips = useMemo(
     () =>
       [event, bodyType, fitPreference, highlights]
@@ -68,29 +71,27 @@ export function SaveLookDialog({ open, onOpenChange, clientName, onSend }: Props
     [event, bodyType, fitPreference, highlights],
   );
 
-  async function handleSend() {
+  async function handlePublish() {
     setError(null);
     setTitleTouched(true);
     setDescriptionTouched(true);
-    if (!nameValid || !descValid || !featureValid) return;
-    setSending(true);
+    if (!nameValid || !descValid) return;
+    setPublishing(true);
     try {
-      await onSend({
+      await onPublish({
         title: title.trim(),
         description: description.trim(),
         tags: tagChips,
-        featureOnProfile,
-        profileStyle: profileStyle.trim(),
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Send failed");
+      setError(e instanceof Error ? e.message : "Publish failed");
     } finally {
-      setSending(false);
+      setPublishing(false);
     }
   }
 
   function close(value: boolean) {
-    if (!sending) onOpenChange(value);
+    if (!publishing) onOpenChange(value);
   }
 
   const showNameError = titleTouched && !nameValid;
@@ -101,28 +102,35 @@ export function SaveLookDialog({ open, onOpenChange, clientName, onSend }: Props
       <DialogContent className="sm:max-w-[520px] rounded-sm">
         <DialogHeader>
           <DialogTitle className="font-display text-lg">
-            Save look for {clientName}
+            Publish moodboard to your profile
           </DialogTitle>
           <DialogDescription className="font-body text-sm text-muted-foreground">
-            Give this look a name and a short note. Tags are optional but
-            help the client understand your direction.
+            {profileStyle ? (
+              <>
+                Filed under{" "}
+                <span className="font-medium text-foreground">{profileStyle}</span>{" "}
+                on your public stylist page.
+              </>
+            ) : (
+              "Visible on your public stylist page."
+            )}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <div>
-            <Label htmlFor="lc-name" className="font-body text-xs mb-1.5">
-              Look name
+            <Label htmlFor="mb-name" className="font-body text-xs mb-1.5">
+              Title
               <span className="text-red-600 ml-0.5" aria-hidden>
                 *
               </span>
             </Label>
             <Input
-              id="lc-name"
+              id="mb-name"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               onBlur={() => setTitleTouched(true)}
-              placeholder="e.g. Sunday brunch capsule"
+              placeholder="e.g. Coastal grandma summer"
               maxLength={NAME_MAX}
               aria-invalid={showNameError || undefined}
               className={cn(
@@ -133,7 +141,7 @@ export function SaveLookDialog({ open, onOpenChange, clientName, onSend }: Props
             <div className="flex items-center justify-between mt-1">
               {showNameError ? (
                 <p className="font-body text-[11px] text-red-600">
-                  Look name is required.
+                  Title is required.
                 </p>
               ) : (
                 <span />
@@ -145,18 +153,18 @@ export function SaveLookDialog({ open, onOpenChange, clientName, onSend }: Props
           </div>
 
           <div>
-            <Label htmlFor="lc-desc" className="font-body text-xs mb-1.5">
+            <Label htmlFor="mb-desc" className="font-body text-xs mb-1.5">
               Description
               <span className="text-red-600 ml-0.5" aria-hidden>
                 *
               </span>
             </Label>
             <Textarea
-              id="lc-desc"
+              id="mb-desc"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               onBlur={() => setDescriptionTouched(true)}
-              placeholder="Why this look? What's the occasion or mood?"
+              placeholder="What's the mood? What kind of client is this for?"
               maxLength={DESC_MAX}
               aria-invalid={showDescError || undefined}
               className={cn(
@@ -180,24 +188,24 @@ export function SaveLookDialog({ open, onOpenChange, clientName, onSend }: Props
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label htmlFor="lc-event" className="font-body text-xs mb-1.5">
+              <Label htmlFor="mb-event" className="font-body text-xs mb-1.5">
                 Event / occasion
               </Label>
               <Input
-                id="lc-event"
+                id="mb-event"
                 value={event}
                 onChange={(e) => setEvent(e.target.value)}
-                placeholder="e.g. brunch"
+                placeholder="e.g. beach trip"
                 maxLength={TAG_MAX}
                 className="rounded-sm font-body text-sm"
               />
             </div>
             <div>
-              <Label htmlFor="lc-body" className="font-body text-xs mb-1.5">
+              <Label htmlFor="mb-body" className="font-body text-xs mb-1.5">
                 Body type
               </Label>
               <Input
-                id="lc-body"
+                id="mb-body"
                 value={bodyType}
                 onChange={(e) => setBodyType(e.target.value)}
                 placeholder="e.g. pear"
@@ -206,11 +214,11 @@ export function SaveLookDialog({ open, onOpenChange, clientName, onSend }: Props
               />
             </div>
             <div>
-              <Label htmlFor="lc-fit" className="font-body text-xs mb-1.5">
+              <Label htmlFor="mb-fit" className="font-body text-xs mb-1.5">
                 Fit preference
               </Label>
               <Input
-                id="lc-fit"
+                id="mb-fit"
                 value={fitPreference}
                 onChange={(e) => setFitPreference(e.target.value)}
                 placeholder="e.g. relaxed"
@@ -219,14 +227,14 @@ export function SaveLookDialog({ open, onOpenChange, clientName, onSend }: Props
               />
             </div>
             <div>
-              <Label htmlFor="lc-high" className="font-body text-xs mb-1.5">
+              <Label htmlFor="mb-high" className="font-body text-xs mb-1.5">
                 Highlights
               </Label>
               <Input
-                id="lc-high"
+                id="mb-high"
                 value={highlights}
                 onChange={(e) => setHighlights(e.target.value)}
-                placeholder="e.g. waistline"
+                placeholder="e.g. layering"
                 maxLength={TAG_MAX}
                 className="rounded-sm font-body text-sm"
               />
@@ -250,14 +258,6 @@ export function SaveLookDialog({ open, onOpenChange, clientName, onSend }: Props
             </div>
           )}
 
-          <FeatureOnProfile
-            enabled={featureOnProfile}
-            onEnabledChange={setFeatureOnProfile}
-            style={profileStyle}
-            onStyleChange={setProfileStyle}
-            disabled={sending}
-          />
-
           {error && <p className="font-body text-xs text-red-600">{error}</p>}
         </div>
 
@@ -267,21 +267,22 @@ export function SaveLookDialog({ open, onOpenChange, clientName, onSend }: Props
             size="sm"
             onClick={() => close(false)}
             className="font-body text-xs h-8 rounded-sm"
+            disabled={publishing}
           >
             Keep editing
           </Button>
           <Button
-            onClick={handleSend}
-            disabled={sending || !featureValid}
+            onClick={handlePublish}
+            disabled={publishing}
             size="sm"
             className="h-8 rounded-sm bg-foreground text-background hover:bg-foreground/90 font-body text-xs gap-1.5"
           >
-            {sending ? (
+            {publishing ? (
               <Loader2Icon className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <SendIcon className="h-3.5 w-3.5" />
             )}
-            {sending ? "Sending…" : "Save & send"}
+            {publishing ? "Publishing…" : "Publish to profile"}
           </Button>
         </DialogFooter>
       </DialogContent>

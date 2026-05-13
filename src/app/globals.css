@@ -130,13 +130,17 @@
   --user-bubble: hsl(30 5% 52%);
   --user-bubble-foreground: hsl(0 0% 100%);
 
-  --sidebar: hsl(0 0% 98%);
+  /* Sidebar reads as part of the same warm-cream page (background-aligned)
+     rather than a cool-gray rail. Active item uses the cream → warm-beige
+     transition that the brand uses for selected pills, so the sidebar
+     melts into the page. */
+  --sidebar: hsl(36 100% 98%);
   --sidebar-foreground: hsl(0 0% 0%);
   --sidebar-primary: hsl(0 0% 0%);
   --sidebar-primary-foreground: hsl(0 0% 100%);
-  --sidebar-accent: hsl(36 52% 94%);
-  --sidebar-accent-foreground: hsl(28 10% 40%);
-  --sidebar-border: hsl(0 0% 90%);
+  --sidebar-accent: hsl(25 30% 87%);
+  --sidebar-accent-foreground: hsl(28 20% 30%);
+  --sidebar-border: hsl(36 30% 88%);
   --sidebar-ring: hsl(183 59% 30%);
 }
 

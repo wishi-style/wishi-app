@@ -13,13 +13,18 @@ import {
 import { MoodBoardGrid } from "@/components/stylist/moodboard-grid";
 import { SendIcon, SparklesIcon, Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
+import { FeatureOnProfile } from "@/components/stylist/feature-on-profile";
 
 interface SendMoodBoardDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   images: string[];
   clientName: string;
-  onSend: (images: string[], note: string) => void;
+  onSend: (
+    images: string[],
+    note: string,
+    feature: { featureOnProfile: boolean; profileStyle: string },
+  ) => void;
 }
 
 const aiSuggestions = [
@@ -37,6 +42,8 @@ export function SendMoodBoardDialog({
 }: SendMoodBoardDialogProps) {
   const [note, setNote] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [featureOnProfile, setFeatureOnProfile] = useState(false);
+  const [profileStyle, setProfileStyle] = useState("");
 
   // Auto-generate AI suggestion when dialog opens
   useEffect(() => {
@@ -62,13 +69,26 @@ export function SendMoodBoardDialog({
       toast.error("Add a personal note before sending");
       return;
     }
-    onSend(images, note.trim());
+    if (featureOnProfile && !profileStyle.trim()) {
+      toast.error("Pick a style label to feature this on your profile");
+      return;
+    }
+    onSend(images, note.trim(), {
+      featureOnProfile,
+      profileStyle: profileStyle.trim(),
+    });
     setNote("");
+    setFeatureOnProfile(false);
+    setProfileStyle("");
     onOpenChange(false);
   };
 
   const handleClose = (value: boolean) => {
-    if (!value) setNote("");
+    if (!value) {
+      setNote("");
+      setFeatureOnProfile(false);
+      setProfileStyle("");
+    }
     onOpenChange(value);
   };
 
@@ -123,6 +143,16 @@ export function SendMoodBoardDialog({
           </div>
         </div>
 
+        {/* Feature on profile */}
+        <div className="px-6 pb-4">
+          <FeatureOnProfile
+            enabled={featureOnProfile}
+            onEnabledChange={setFeatureOnProfile}
+            style={profileStyle}
+            onStyleChange={setProfileStyle}
+          />
+        </div>
+
         {/* Actions */}
         <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border bg-muted/30">
           <Button
@@ -135,7 +165,11 @@ export function SendMoodBoardDialog({
           </Button>
           <Button
             onClick={handleSend}
-            disabled={!note.trim() || isGenerating}
+            disabled={
+              !note.trim() ||
+              isGenerating ||
+              (featureOnProfile && !profileStyle.trim())
+            }
             size="sm"
             className="h-8 rounded-sm bg-foreground text-background hover:bg-foreground/90 font-body text-xs gap-1.5"
           >

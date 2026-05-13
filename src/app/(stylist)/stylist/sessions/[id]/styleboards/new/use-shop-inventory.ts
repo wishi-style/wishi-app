@@ -40,7 +40,10 @@ const DISMISSED_STORAGE_KEY = (sessionId: string) =>
 type Status = "idle" | "loading" | "loading-more" | "error";
 
 interface UseShopInventoryOpts {
-  sessionId: string;
+  // Null in profile-board mode (sessionless styleboard creator). Refetch /
+  // filter / load-more / power modes all short-circuit; the stylist uses the
+  // SSR-hydrated initial page (~120 items) plus Inspiration / Store tabs.
+  sessionId: string | null;
   initial: ShopInventoryResponse;
   facets: FilterValuesResponse;
   context: ClientStylingContextSummary | null;
@@ -68,7 +71,8 @@ function buildCacheKey(inv: FetchInvocation): string {
   return JSON.stringify(inv);
 }
 
-function readDismissed(sessionId: string): Set<SmartDefaultKind> {
+function readDismissed(sessionId: string | null): Set<SmartDefaultKind> {
+  if (!sessionId) return new Set();
   if (typeof window === "undefined") return new Set();
   try {
     const raw = window.sessionStorage.getItem(DISMISSED_STORAGE_KEY(sessionId));
@@ -80,7 +84,8 @@ function readDismissed(sessionId: string): Set<SmartDefaultKind> {
   }
 }
 
-function writeDismissed(sessionId: string, set: Set<SmartDefaultKind>) {
+function writeDismissed(sessionId: string | null, set: Set<SmartDefaultKind>) {
+  if (!sessionId) return;
   if (typeof window === "undefined") return;
   try {
     window.sessionStorage.setItem(
@@ -211,6 +216,15 @@ export function useShopInventory(opts: UseShopInventoryOpts) {
       inv: FetchInvocation,
       mode: "replace" | "append",
     ): Promise<void> => {
+      // Profile-board mode (sessionless): the SSR-hydrated initial page is
+      // all the Shop tab gets. No refetch, no load-more, no power modes —
+      // those all rely on /api/stylist/sessions/[id]/shop-inventory which
+      // doesn't exist for sessionless boards. Inspiration / Store still work.
+      if (!sessionId) {
+        setStatus("idle");
+        setError(null);
+        return;
+      }
       const key = buildCacheKey(inv);
       const cached = lruRef.current.get(key);
       if (cached) {

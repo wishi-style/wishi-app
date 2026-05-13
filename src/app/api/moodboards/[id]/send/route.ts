@@ -23,12 +23,20 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   let note: string | undefined;
+  let featureOnProfile = false;
+  let profileStyle: string | undefined;
   if (req.headers.get("content-type")?.includes("application/json")) {
-    const body = (await req.json().catch(() => ({}))) as { note?: string };
+    const body = (await req.json().catch(() => ({}))) as {
+      note?: string;
+      featureOnProfile?: boolean;
+      profileStyle?: string;
+    };
     note = body.note;
+    featureOnProfile = !!body.featureOnProfile;
+    profileStyle = body.profileStyle;
   }
   try {
-    const sent = await sendMoodboard(id, { note });
+    const sent = await sendMoodboard(id, { note, featureOnProfile, profileStyle });
     return NextResponse.json(sent);
   } catch (e) {
     if (e instanceof BoardSendError) {
