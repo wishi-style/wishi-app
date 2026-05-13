@@ -1,5 +1,11 @@
 import Link from "next/link";
 import Image from "next/image";
+import {
+  actionHref,
+  actionLabel,
+  deriveStatus,
+  messagePreview,
+} from "@/lib/sessions/session-card-action";
 
 interface SessionData {
   id: string;
@@ -18,14 +24,6 @@ interface SessionData {
   boards: { id: string; type: string; isRevision?: boolean }[];
 }
 
-type CardStatus =
-  | "new_board"
-  | "awaiting_reply"
-  | "in_progress"
-  | "completed"
-  | "booked"
-  | "closed";
-
 const planLabel: Record<string, string> = {
   MINI: "Mini",
   MAJOR: "Major",
@@ -36,53 +34,6 @@ const planBadgeClass = (plan: string) =>
   plan === "LUX"
     ? "bg-warm-beige text-dark-taupe"
     : "bg-secondary text-secondary-foreground";
-
-function deriveStatus(session: SessionData): CardStatus {
-  if (session.boards.length > 0) return "new_board";
-  // Only an explicit stylist end-request (PENDING_END_APPROVAL) routes to
-  // the end-session flow. PENDING_END is a worker-set "stale" hint that
-  // doesn't yet allow approveEnd to fire — keep it in_progress so the
-  // card lands in chat instead of a 409 from /end-session.
-  if (session.status === "PENDING_END_APPROVAL") return "awaiting_reply";
-  if (session.status === "BOOKED") return "booked";
-  if (
-    session.status === "ACTIVE" ||
-    session.status === "PENDING_END" ||
-    session.status === "END_DECLINED"
-  ) {
-    return "in_progress";
-  }
-  if (session.status === "COMPLETED") return "completed";
-  // CANCELLED / FROZEN / REASSIGNED — terminal-or-paused but not a happy
-  // path. Don't surface a "Book again" CTA; the detail page is the right
-  // landing spot.
-  return "closed";
-}
-
-function actionLabel(
-  status: CardStatus,
-  session: SessionData,
-  stylistFirstName: string,
-): string {
-  switch (status) {
-    case "new_board": {
-      const board = session.boards[0];
-      if (board?.type === "MOODBOARD") return "Review Moodboard";
-      if (board?.isRevision) return "Review Revised Look";
-      return "Review Styleboard";
-    }
-    case "awaiting_reply":
-      return "Approve End";
-    case "in_progress":
-      return "Open Chat";
-    case "booked":
-      return "Continue";
-    case "completed":
-      return `Book ${stylistFirstName} Again`;
-    case "closed":
-      return "View Details";
-  }
-}
 
 function formatRelativeTime(dateStr: Date): string {
   const date = new Date(dateStr);
@@ -95,52 +46,6 @@ function formatRelativeTime(dateStr: Date): string {
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d ago`;
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function messagePreview(session: SessionData): string {
-  const latest = session.messages[0];
-  if (latest?.text) return latest.text;
-  if (latest?.kind === "MOODBOARD") return "Sent you a moodboard.";
-  if (latest?.kind === "STYLEBOARD") return "Sent you a style board.";
-  switch (session.status) {
-    case "BOOKED":
-      return "Booked — your stylist will reach out shortly.";
-    case "COMPLETED":
-      return "Session completed.";
-    case "CANCELLED":
-      return "Session cancelled.";
-    case "FROZEN":
-      return "Session paused.";
-    case "REASSIGNED":
-      return "Reassigned to another stylist.";
-    case "PENDING_END_APPROVAL":
-      return "Your stylist requested to wrap up.";
-    default:
-      return "Session in progress.";
-  }
-}
-
-function actionHref(status: CardStatus, session: SessionData): string {
-  switch (status) {
-    case "new_board":
-    case "in_progress":
-    case "booked":
-      // Always route to the chat page. The chat surface renders the
-      // moodboard / styleboard / restyle inline as a card with rating +
-      // RestyleWizard pills, which is what the "Review …" CTA wants. There
-      // is no standalone /sessions/[id]/{moodboards,styleboards}/[boardId]
-      // viewer in the client tree — only /chat, /end-session, and
-      // /style-quiz live under (client-fullbleed)/sessions/[id]/.
-      return `/sessions/${session.id}/chat`;
-    case "awaiting_reply":
-      return `/sessions/${session.id}/end-session`;
-    case "completed":
-      return session.stylist?.stylistProfile
-        ? `/stylists/${session.stylist.stylistProfile.id}`
-        : `/sessions/${session.id}`;
-    case "closed":
-      return `/sessions/${session.id}`;
-  }
 }
 
 export function SessionCard({ session }: { session: SessionData }) {
