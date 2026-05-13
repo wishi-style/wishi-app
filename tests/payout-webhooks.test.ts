@@ -31,6 +31,7 @@ afterEach(async () => {
     await cleanupE2EUserByEmail(`pwh-client-${client.id}@example.com`);
   }
   if (stylist?.id) {
+    await getPool().query("DELETE FROM notifications WHERE user_id = $1", [stylist.id]);
     await getPool().query("DELETE FROM stylist_profiles WHERE user_id = $1", [stylist.id]);
     await cleanupE2EUserByEmail(`pwh-stylist-${stylist.id}@example.com`);
   }
@@ -181,6 +182,19 @@ test("tip payment_intent.succeeded writes Payment(type=TIP) + Session.tipInCents
   ).rows;
   assert.equal(sRows[0].tip_in_cents, 2600);
   assert.equal(sRows[0].stripe_tip_payment_id, piId);
+
+  // Notification row landed on the stylist's bell.
+  const nRows = (
+    await getPool().query(
+      `SELECT id, category, source, title FROM notifications
+       WHERE user_id = $1 AND event = 'tip.received' ORDER BY created_at DESC LIMIT 1`,
+      [stylist.id],
+    )
+  ).rows;
+  assert.equal(nRows.length, 1, "expected Notification row for tip.received");
+  assert.equal(nRows[0].category, "TIP");
+  assert.equal(nRows[0].source, "CLIENT");
+  assert.match(nRows[0].title, /tip/i);
 });
 
 test("payment_intent without purpose=tip is ignored", async () => {

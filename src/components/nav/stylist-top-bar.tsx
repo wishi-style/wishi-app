@@ -13,7 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { NotificationsPopover } from "@/components/stylist/NotificationsPopover";
+import { NotificationsPopover } from "@/components/notifications/notifications-popover";
 
 interface Props {
   stylistInitials: string;
@@ -48,7 +48,7 @@ export function StylistTopBar({ stylistInitials }: Props) {
         >
           <Calendar className="h-5 w-5" />
         </Button>
-        <NotificationsPopover />
+        <NotificationsPopover counterpartyLabel="Clients" />
         <Button
           variant="ghost"
           size="icon"
