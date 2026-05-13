@@ -11,7 +11,7 @@ Styling marketplace rebuilt as a single Next.js 16 monolith on AWS ECS Fargate.
 | Database | RDS Postgres 16 + RDS Proxy + Prisma 7 |
 | Auth | Clerk (Google + Apple + Email) with RBAC |
 | Payments | Stripe (one-time + subscription checkout, webhooks, billing portal) |
-| Chat | Twilio Conversations (real-time messaging, media, Web Push) |
+| Chat | Twilio Conversations (real-time messaging, media) |
 | Compute | AWS ECS Fargate behind ALB |
 | CDN | CloudFront (pending) |
 | CI/CD | GitHub Actions with OIDC auth to AWS |
@@ -21,7 +21,7 @@ Styling marketplace rebuilt as a single Next.js 16 monolith on AWS ECS Fargate.
 
 ```bash
 cp .env.example .env
-# Fill in DATABASE_URL, Clerk, Stripe, Twilio, VAPID, S3, Klaviyo, EasyPost
+# Fill in DATABASE_URL, Clerk, Stripe, Twilio (incl. TWILIO_SMS_FROM), S3, Klaviyo, EasyPost
 npm install
 npx prisma generate
 npx prisma migrate dev
@@ -142,7 +142,7 @@ Full deploy + rollback + incident-response procedures: [`docs/runbook.md`](./doc
     │   ├── sign-in/      Clerk sign-in
     │   └── sign-up/      Clerk sign-up
     ├── components/       nav/, profile/, quiz/, stylist/, session/, booking/, chat/, board/, closet/, ui/
-    ├── lib/              prisma.ts, stripe.ts, stripe-connect.ts, twilio.ts, web-push.ts, auth/, payments/, payouts/, promotions/, loyalty/, orders/, cart/, collections/, closet/, quiz/, matching/, sessions/, services/, chat/, boards/, inventory/, pending-actions/, notifications/, stylists/, workers/, audit/, s3.ts, plans.ts
+    ├── lib/              prisma.ts, stripe.ts, stripe-connect.ts, twilio.ts, auth/, payments/, payouts/, promotions/, loyalty/, orders/, cart/, collections/, closet/, quiz/, matching/, sessions/, services/, chat/, boards/, inventory/, pending-actions/, notifications/, stylists/, workers/, audit/, s3.ts, plans.ts
     ├── workers/          waitlist-notify.ts, payout-reconcile.ts, loyalty-recalc.ts (HTTP endpoints at /api/workers/*)
     └── generated/        Prisma client (gitignored)
 ```
