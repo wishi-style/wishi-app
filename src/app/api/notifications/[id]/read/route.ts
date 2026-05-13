@@ -22,16 +22,30 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // updateMany with userId guard makes this idempotent + ownership-checked.
-  // Returns 0 either when the row doesn't exist or when it isn't ours.
+  // Only flip readAt on the first call so it represents the genuine
+  // first-read timestamp. updateMany with userId + readAt: null guards
+  // both ownership and idempotency.
   const result = await prisma.notification.updateMany({
-    where: { id, userId: user.id },
+    where: { id, userId: user.id, readAt: null },
     data: { readAt: new Date() },
   });
+
+  // result.count === 0 has two meanings: (a) the row exists but was
+  // already read, or (b) it doesn't exist or isn't ours. Disambiguate.
   if (result.count === 0) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const existing = await prisma.notification.findFirst({
+      where: { id, userId: user.id },
+      select: { readAt: true },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    return NextResponse.json({ readAt: existing.readAt });
   }
 
-  const after = await prisma.notification.findUnique({ where: { id } });
+  const after = await prisma.notification.findUnique({
+    where: { id },
+    select: { readAt: true },
+  });
   return NextResponse.json({ readAt: after?.readAt ?? null });
 }

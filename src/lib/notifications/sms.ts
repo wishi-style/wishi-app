@@ -9,7 +9,10 @@ import type { DispatchInput } from "./dispatcher";
  * No-ops silently when:
  *   - the user has no phone number on file
  *   - the event has no SMS template / is not in the SMS allowlist
- *   - TWILIO_SMS_FROM is not configured
+ *
+ * Logs a warning + no-ops when TWILIO_SMS_FROM is not configured (it's
+ * an ops misconfiguration, not a per-user state, so the warning helps
+ * catch it in CloudWatch).
  *
  * Failures from Twilio are caught by the dispatcher's per-channel
  * `.catch`, so they never abort the caller.

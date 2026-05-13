@@ -7,8 +7,20 @@ import type { Notification } from "@/generated/prisma/client";
 
 const POLL_INTERVAL_MS = 10_000;
 
+/**
+ * Wire-format Notification — Date columns arrive as strings after JSON
+ * round-trip. The Notification type from Prisma carries `Date` for
+ * those, which is misleading on the client. Define the DTO explicitly
+ * so consumers know to wrap with `new Date(…)` before doing date math.
+ */
+export interface NotificationDTO
+  extends Omit<Notification, "createdAt" | "readAt"> {
+  createdAt: string;
+  readAt: string | null;
+}
+
 interface FetchResponse {
-  items: Notification[];
+  items: NotificationDTO[];
   unreadCount: number;
   latestId: string | null;
 }
@@ -19,22 +31,36 @@ interface FetchResponse {
  *
  * The first successful fetch establishes a baseline — no toast fires for
  * the backlog. Subsequent polls toast for any notification with an id
- * greater than the previously seen `latestId`.
+ * greater than the previously seen `latestId`. Lex comparison on CUIDs
+ * is intentional: Prisma's @default(cuid()) IDs are designed to sort
+ * lexicographically by creation time, so id-newer-than maps exactly to
+ * created-after for our schema.
  */
 export function useNotifications() {
   const router = useRouter();
-  const [items, setItems] = useState<Notification[]>([]);
+  const [items, setItems] = useState<NotificationDTO[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const itemsRef = useRef<NotificationDTO[]>([]);
   const baselineEstablishedRef = useRef(false);
   const lastSeenIdRef = useRef<string | null>(null);
 
+  // Keep a ref in sync with items so callbacks can inspect current state
+  // without depending on `items` (which would invalidate `useCallback`
+  // identity on every render).
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
   const markRead = useCallback(async (id: string) => {
-    setItems((prev) =>
-      prev.map((n) =>
-        n.id === id && !n.readAt ? { ...n, readAt: new Date() } : n,
-      ),
-    );
-    setUnreadCount((c) => Math.max(0, c - 1));
+    const target = itemsRef.current.find((n) => n.id === id);
+    const wasUnread = !!target && !target.readAt;
+    if (wasUnread) {
+      const nowIso = new Date().toISOString();
+      setItems((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, readAt: nowIso } : n)),
+      );
+      setUnreadCount((c) => Math.max(0, c - 1));
+    }
     try {
       await fetch(`/api/notifications/${id}/read`, { method: "POST" });
     } catch (err) {
@@ -82,8 +108,10 @@ export function useNotifications() {
   }, [router, markRead]);
 
   const markAllRead = useCallback(async () => {
+    if (unreadCount === 0) return;
+    const nowIso = new Date().toISOString();
     setItems((prev) =>
-      prev.map((n) => (n.readAt ? n : { ...n, readAt: new Date() })),
+      prev.map((n) => (n.readAt ? n : { ...n, readAt: nowIso })),
     );
     setUnreadCount(0);
     try {
@@ -91,7 +119,7 @@ export function useNotifications() {
     } catch (err) {
       console.warn("[notifications] markAllRead failed:", err);
     }
-  }, []);
+  }, [unreadCount]);
 
   useEffect(() => {
     // Defer initial fetch by a tick so its setState calls don't fire

@@ -85,13 +85,15 @@ export function NotificationsPopover({ counterpartyLabel }: Props) {
             <div className="font-medium">Notifications</div>
             <div className="text-xs text-muted-foreground">{unreadCount} unread</div>
           </div>
-          <button
-            type="button"
-            onClick={() => void markAllRead()}
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Mark all read
-          </button>
+          {unreadCount > 0 && (
+            <button
+              type="button"
+              onClick={() => void markAllRead()}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Mark all read
+            </button>
+          )}
         </div>
         <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
           <TabsList className="w-full justify-start rounded-none border-b border-border bg-transparent px-4">
