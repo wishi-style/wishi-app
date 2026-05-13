@@ -7,7 +7,6 @@ import { getServerAuth } from "@/lib/auth/server-auth";
 import { cosmeticMatchScore } from "@/lib/matching/score";
 import { WaitlistButton } from "@/components/stylist/waitlist-button";
 import { listStylistReviews } from "@/lib/stylists/review.service";
-import { WriteReviewDialog } from "@/components/stylist/write-review-dialog";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
 import { ContinueWithStylistButton } from "./continue-with-stylist-button";
@@ -165,7 +164,6 @@ export default async function StylistProfilePage({ params }: Props) {
   const styledLooks = stylist.profileBoards.slice(heroImage ? 1 : 0).slice(0, 4);
 
   let matchScore: number | null = null;
-  let canReview = false;
   const { userId: clerkId } = await getServerAuth().catch(() => ({
     userId: null as string | null,
   }));
@@ -177,25 +175,13 @@ export default async function StylistProfilePage({ params }: Props) {
         select: { id: true },
       });
       if (user) {
-        const [quizResult, completedCount] = await Promise.all([
-          prisma.matchQuizResult
-            .findFirst({
-              where: { userId: user.id },
-              orderBy: { completedAt: "desc" },
-            })
-            .catch(() => null),
-          prisma.session
-            .count({
-              where: {
-                clientId: user.id,
-                stylistId: stylist.userId,
-                status: "COMPLETED",
-              },
-            })
-            .catch(() => 0),
-        ]);
+        const quizResult = await prisma.matchQuizResult
+          .findFirst({
+            where: { userId: user.id },
+            orderBy: { completedAt: "desc" },
+          })
+          .catch(() => null);
         if (quizResult) matchScore = cosmeticMatchScore(stylist, quizResult);
-        canReview = completedCount > 0;
       }
     } catch (err) {
       console.error("[stylists/[id]] authed enrichment failed", err);
@@ -621,12 +607,6 @@ export default async function StylistProfilePage({ params }: Props) {
                     </span>
                   </div>
                 ) : null}
-                {canReview ? (
-                  <WriteReviewDialog
-                    stylistProfileId={stylist.id}
-                    stylistFirstName={firstName}
-                  />
-                ) : null}
               </div>
             </div>
 
@@ -670,7 +650,6 @@ export default async function StylistProfilePage({ params }: Props) {
             ) : (
               <p className="font-body text-sm text-muted-foreground">
                 No reviews yet.
-                {canReview ? " Be the first to share your experience." : ""}
               </p>
             )}
 

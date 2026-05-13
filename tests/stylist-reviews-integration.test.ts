@@ -1,6 +1,11 @@
 // Integration test for src/lib/stylists/review.service.ts. Verifies the
-// eligibility gate, the StylistReview + Session.reviewText aggregation,
-// and the averageRating recompute that runs in the create-review tx.
+// StylistReview + Session.reviewText aggregation and the averageRating
+// recompute that runs against both sources.
+//
+// Note: new explicit-review writes are no longer a thing — clients can only
+// review through the end-session flow, which writes Session.rating +
+// Session.reviewText. The legacy `StylistReview` table still exists for
+// historical rows; these tests seed it via raw SQL.
 
 import assert from "node:assert/strict";
 import test, { afterEach } from "node:test";
@@ -16,8 +21,6 @@ import {
   getPool,
 } from "./e2e/db";
 import {
-  canUserReviewStylist,
-  createStylistReview,
   listStylistReviews,
   recomputeAverageRating,
 } from "@/lib/stylists/review.service";
@@ -85,73 +88,30 @@ async function completeSessionWithRating(opts: {
   return session;
 }
 
-test("canUserReviewStylist returns false with zero COMPLETED sessions", async () => {
-  const { client, profile } = await setupTrio();
-  assert.equal(await canUserReviewStylist(client.id, profile.id), false);
-});
-
-test("canUserReviewStylist returns true after a COMPLETED session", async () => {
-  const { client, profile, stylistUser } = await setupTrio();
-  await completeSessionWithRating({
-    clientId: client.id,
-    stylistUserId: stylistUser.id,
-    rating: 5,
-    reviewText: null,
-  });
-  assert.equal(await canUserReviewStylist(client.id, profile.id), true);
-});
-
-test("createStylistReview throws without a COMPLETED session", async () => {
-  const { client, profile } = await setupTrio();
-  await assert.rejects(
-    createStylistReview({
-      userId: client.id,
-      stylistProfileId: profile.id,
-      rating: 5,
-      reviewText: "great!",
-    }),
-    /completed a session/i,
+async function seedLegacyStylistReview(opts: {
+  userId: string;
+  stylistProfileId: string;
+  rating: number;
+  reviewText: string;
+}) {
+  await getPool().query(
+    `INSERT INTO stylist_reviews (id, user_id, stylist_profile_id, rating, review_text, created_at, updated_at)
+     VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW(), NOW())`,
+    [opts.userId, opts.stylistProfileId, opts.rating, opts.reviewText],
   );
-});
-
-test("createStylistReview persists + recomputes averageRating", async () => {
-  const { client, profile, stylistUser } = await setupTrio();
-  await completeSessionWithRating({
-    clientId: client.id,
-    stylistUserId: stylistUser.id,
-    rating: 5,
-    reviewText: null,
-  });
-
-  const review = await createStylistReview({
-    userId: client.id,
-    stylistProfileId: profile.id,
-    rating: 4,
-    reviewText: "really enjoyed it",
-  });
-  assert.equal(review.rating, 4);
-  assert.equal(review.reviewText, "really enjoyed it");
-
-  const { rows } = await getPool().query(
-    `SELECT average_rating FROM stylist_profiles WHERE id = $1`,
-    [profile.id],
-  );
-  // Explicit (4) overrides the session rating (5) for the same user, so
-  // the average over {client → 4} is 4.
-  assert.equal(Number(rows[0].average_rating), 4);
-});
+}
 
 test("listStylistReviews aggregates explicit + session, de-duped per user", async () => {
   const { client, other, profile, stylistUser } = await setupTrio();
-  // client has both a session rating AND an explicit review; the explicit
-  // one should win and the session entry shouldn't appear.
+  // client has both a session rating AND a legacy explicit review; the
+  // explicit one should win and the session entry shouldn't appear.
   await completeSessionWithRating({
     clientId: client.id,
     stylistUserId: stylistUser.id,
     rating: 3,
     reviewText: "session rating",
   });
-  await createStylistReview({
+  await seedLegacyStylistReview({
     userId: client.id,
     stylistProfileId: profile.id,
     rating: 5,
@@ -230,7 +190,7 @@ test("recomputeAverageRating uses dedup math (explicit overrides session)", asyn
     rating: 2,
     reviewText: null,
   });
-  await createStylistReview({
+  await seedLegacyStylistReview({
     userId: client.id,
     stylistProfileId: profile.id,
     rating: 5,

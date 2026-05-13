@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { DomainError, NotFoundError } from "@/lib/errors/domain-error";
-import type { Prisma, StylistReview } from "@/generated/prisma/client";
+import { NotFoundError } from "@/lib/errors/domain-error";
+import type { Prisma } from "@/generated/prisma/client";
 
 export interface ReviewListItem {
   id: string;
@@ -250,102 +250,6 @@ export async function listFeaturedReviews(options: {
     .slice(0, limit);
 }
 
-export interface CreateReviewInput {
-  userId: string;
-  stylistProfileId: string;
-  rating: number;
-  reviewText: string;
-  sessionId?: string;
-}
-
-export const REVIEW_TEXT_MIN = 5;
-export const REVIEW_TEXT_MAX = 5000;
-
-/**
- * Validate rating + text shape. Pure function so it can be unit-tested
- * without a database. Returns the trimmed text on success; throws
- * DomainError otherwise.
- */
-export function validateReviewInput(input: {
-  rating: number;
-  reviewText: string;
-}): string {
-  if (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5) {
-    throw new DomainError("Rating must be an integer 1–5");
-  }
-  const text = input.reviewText.trim();
-  if (text.length < REVIEW_TEXT_MIN) {
-    throw new DomainError("Review text too short");
-  }
-  if (text.length > REVIEW_TEXT_MAX) {
-    throw new DomainError("Review text too long");
-  }
-  return text;
-}
-
-/**
- * Write an explicit review. Caller must have ≥1 COMPLETED session with this
- * stylist; that gate is enforced here so workers/scripts can't bypass the
- * route check. Recomputes `StylistProfile.averageRating` in the same
- * transaction so the cosmetic rating chip on stylist cards is accurate.
- */
-export async function createStylistReview(
-  input: CreateReviewInput,
-): Promise<StylistReview> {
-  const text = validateReviewInput({
-    rating: input.rating,
-    reviewText: input.reviewText,
-  });
-
-  const profile = await prisma.stylistProfile.findUnique({
-    where: { id: input.stylistProfileId },
-    select: { userId: true },
-  });
-  if (!profile) throw new NotFoundError("Stylist not found");
-
-  const completed = await prisma.session.count({
-    where: {
-      clientId: input.userId,
-      stylistId: profile.userId,
-      status: "COMPLETED",
-    },
-  });
-  if (completed === 0) {
-    // Caller (route) is expected to gate via canUserReviewStylist and return
-    // 403 first; this is a defense-in-depth check for direct service callers.
-    throw new DomainError(
-      "You can only review stylists you have completed a session with",
-    );
-  }
-
-  return prisma.$transaction(async (tx) => {
-    const review = await tx.stylistReview.upsert({
-      where: {
-        userId_stylistProfileId: {
-          userId: input.userId,
-          stylistProfileId: input.stylistProfileId,
-        },
-      },
-      create: {
-        userId: input.userId,
-        stylistProfileId: input.stylistProfileId,
-        sessionId: input.sessionId ?? null,
-        rating: input.rating,
-        reviewText: text,
-      },
-      update: {
-        rating: input.rating,
-        reviewText: text,
-        sessionId: input.sessionId ?? null,
-      },
-    });
-
-    await recomputeAverageRating(input.stylistProfileId, tx);
-
-    return review;
-  });
-}
-
 /**
  * Recompute `StylistProfile.averageRating` from BOTH explicit reviews and
  * session ratings (de-duped per user — explicit wins). Defensive worker
@@ -402,25 +306,3 @@ export async function recomputeAverageRating(
   return rounded;
 }
 
-/**
- * Has this user completed at least one session with this stylist? Used by
- * the UI to decide whether to render the Write a Review button.
- */
-export async function canUserReviewStylist(
-  userId: string,
-  stylistProfileId: string,
-): Promise<boolean> {
-  const profile = await prisma.stylistProfile.findUnique({
-    where: { id: stylistProfileId },
-    select: { userId: true },
-  });
-  if (!profile) return false;
-  const count = await prisma.session.count({
-    where: {
-      clientId: userId,
-      stylistId: profile.userId,
-      status: "COMPLETED",
-    },
-  });
-  return count > 0;
-}
