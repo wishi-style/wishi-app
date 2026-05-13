@@ -13,8 +13,23 @@ import {
 import { listDeliveredStyleboardsForClient } from "@/lib/profile/delivered-styleboards.service";
 
 const emails: string[] = [];
+const sessionIds: string[] = [];
 
 afterEach(async () => {
+  const pool = getPool();
+  // boards.session_id is ON DELETE SET NULL — deleting sessions leaves
+  // orphan boards (+ cascaded board_items) behind. Drop them by sessionId
+  // BEFORE the user-cleanup deletes the sessions themselves.
+  if (sessionIds.length > 0) {
+    await pool.query(
+      `DELETE FROM board_items WHERE board_id IN (SELECT id FROM boards WHERE session_id = ANY($1::text[]))`,
+      [sessionIds],
+    );
+    await pool.query(`DELETE FROM boards WHERE session_id = ANY($1::text[])`, [
+      sessionIds,
+    ]);
+    sessionIds.length = 0;
+  }
   while (emails.length > 0) {
     const email = emails.pop()!;
     await cleanupE2EUserByEmail(email);
@@ -51,6 +66,7 @@ test("listDeliveredStyleboardsForClient returns every delivered styleboard newes
     status: "COMPLETED",
     planType: "MAJOR",
   });
+  sessionIds.push(session.id);
 
   const older = await createBoardFixture({
     sessionId: session.id,
@@ -81,6 +97,7 @@ test("listDeliveredStyleboardsForClient excludes moodboards", async () => {
     status: "ACTIVE",
     planType: "MINI",
   });
+  sessionIds.push(session.id);
 
   await createBoardFixture({
     sessionId: session.id,
@@ -106,6 +123,7 @@ test("listDeliveredStyleboardsForClient excludes unsent (draft) styleboards", as
     status: "ACTIVE",
     planType: "MINI",
   });
+  sessionIds.push(session.id);
 
   const draftId = "drft_" + Math.random().toString(36).slice(2, 12);
   await getPool().query(
@@ -128,12 +146,14 @@ test("listDeliveredStyleboardsForClient only returns boards for this client", as
     status: "COMPLETED",
     planType: "MAJOR",
   });
+  sessionIds.push(sessionA.id);
   const sessionB = await createSessionForClient({
     clientId: seedB.client.id,
     stylistId: seedB.stylist.id,
     status: "COMPLETED",
     planType: "MAJOR",
   });
+  sessionIds.push(sessionB.id);
 
   await createBoardFixture({ sessionId: sessionA.id, type: "STYLEBOARD" });
   await createBoardFixture({ sessionId: sessionB.id, type: "STYLEBOARD" });

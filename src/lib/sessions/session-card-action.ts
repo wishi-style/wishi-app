@@ -2,7 +2,6 @@ export type CardStatus =
   | "new_board"
   | "awaiting_reply"
   | "in_progress"
-  | "completed"
   | "booked"
   | "terminal";
 
@@ -61,8 +60,6 @@ export function actionLabel(
       return "Open Chat";
     case "booked":
       return "Continue";
-    case "completed":
-      return `Book ${stylistFirstName} Again`;
     case "terminal":
       return `Rebook ${stylistFirstName}`;
   }
@@ -76,10 +73,6 @@ export function actionHref(status: CardStatus, session: SessionCardInput): strin
       return `/sessions/${session.id}/chat`;
     case "awaiting_reply":
       return `/sessions/${session.id}/end-session`;
-    case "completed":
-      return session.stylist?.stylistProfile
-        ? `/stylists/${session.stylist.stylistProfile.id}`
-        : `/sessions/${session.id}`;
     case "terminal":
       return session.stylist?.stylistProfile
         ? `/stylists/${session.stylist.stylistProfile.id}`

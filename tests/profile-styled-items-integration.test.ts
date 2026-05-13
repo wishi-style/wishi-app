@@ -13,7 +13,22 @@ import {
 import { listStyledInventoryItemsForUser } from "@/lib/profile/styled-items.service";
 
 const emails: string[] = [];
+const sessionIds: string[] = [];
+
 afterEach(async () => {
+  const pool = getPool();
+  // boards.session_id is ON DELETE SET NULL — drop boards + board_items
+  // BEFORE user cleanup so they don't accumulate as orphans.
+  if (sessionIds.length > 0) {
+    await pool.query(
+      `DELETE FROM board_items WHERE board_id IN (SELECT id FROM boards WHERE session_id = ANY($1::text[]))`,
+      [sessionIds],
+    );
+    await pool.query(`DELETE FROM boards WHERE session_id = ANY($1::text[])`, [
+      sessionIds,
+    ]);
+    sessionIds.length = 0;
+  }
   while (emails.length > 0) {
     const email = emails.pop()!;
     await cleanupE2EUserByEmail(email);
@@ -62,6 +77,7 @@ test("listStyledInventoryItemsForUser returns one row per unique inventoryProduc
     status: "ACTIVE",
     planType: "MAJOR",
   });
+  sessionIds.push(session.id);
 
   const older = await createBoardFixture({
     sessionId: session.id,
@@ -97,12 +113,14 @@ test("listStyledInventoryItemsForUser excludes moodboards, drafts, and other use
     status: "ACTIVE",
     planType: "MAJOR",
   });
+  sessionIds.push(sessionA.id);
   const sessionB = await createSessionForClient({
     clientId: setupB.client.id,
     stylistId: setupB.stylist.id,
     status: "ACTIVE",
     planType: "MAJOR",
   });
+  sessionIds.push(sessionB.id);
 
   const mood = await createBoardFixture({
     sessionId: sessionA.id,

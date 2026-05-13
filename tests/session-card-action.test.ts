@@ -69,10 +69,6 @@ test("actionLabel: new_board label varies by board kind", () => {
   assert.equal(actionLabel("new_board", restyle, "Maya"), "Review Revised Look");
 });
 
-test("actionLabel: completed → Book {first} Again", () => {
-  assert.equal(actionLabel("completed", base(), "Maya"), "Book Maya Again");
-});
-
 test("actionLabel: terminal → Rebook {first}", () => {
   assert.equal(actionLabel("terminal", base(), "Matthew"), "Rebook Matthew");
 });
@@ -106,14 +102,6 @@ test("messagePreview: terminal statuses ignore latest message text", () => {
     });
     assert.equal(messagePreview(s), expected, status);
   }
-});
-
-test("actionHref: completed → stylist profile when present, session detail otherwise", () => {
-  assert.equal(actionHref("completed", base()), "/stylists/sp_1");
-  const noProfile = base({
-    stylist: { firstName: "Maya", stylistProfile: null },
-  });
-  assert.equal(actionHref("completed", noProfile), "/sessions/s_1");
 });
 
 test("messagePreview: latest message text wins on non-terminal sessions", () => {
