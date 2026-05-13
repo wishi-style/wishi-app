@@ -71,7 +71,7 @@ import ClientDetailPanel from "@/components/stylist/client-detail-panel";
 import { DashboardChatPanel } from "@/components/stylist/dashboard-chat-panel";
 import { toast } from "sonner";
 import { ArchiveIcon, InboxIcon } from "lucide-react";
-import { NotificationsPopover } from "@/components/stylist/NotificationsPopover";
+import { NotificationsPopover } from "@/components/notifications/notifications-popover";
 
 
 /* ─── Types ─── */
@@ -933,7 +933,7 @@ export default function StylistDashboard({
           <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
             <CalendarIcon className="h-5 w-5" />
           </Button>
-          <NotificationsPopover />
+          <NotificationsPopover counterpartyLabel="Clients" />
           <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
             <SettingsIcon className="h-5 w-5" />
           </Button>

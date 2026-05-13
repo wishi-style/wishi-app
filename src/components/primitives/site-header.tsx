@@ -7,6 +7,7 @@ import { SiteHeaderNav } from "./site-header-nav";
 import { SiteHeaderMobileMenu } from "./site-header-mobile-menu";
 import { SiteHeaderUserMenu } from "./site-header-user-menu";
 import { MyStyleSessionsLink } from "./site-header-my-sessions-link";
+import { NotificationsPopover } from "@/components/notifications/notifications-popover";
 
 async function getCartCountForClerkUser(clerkId: string): Promise<number> {
   try {
@@ -51,6 +52,7 @@ export async function SiteHeader() {
           {signedIn ? (
             <>
               <MyStyleSessionsLink />
+              <NotificationsPopover counterpartyLabel="Stylists" />
               <Link
                 href="/cart"
                 aria-label="Cart"
