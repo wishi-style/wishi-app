@@ -385,8 +385,8 @@ model User {
   matchedStylistHistory SessionMatchHistory[] @relation("ClientMatchHistory")
 
   // Relations — Domain 5: Chat & Notifications
-  messages          Message[]
-  pushSubscriptions PushSubscription[]
+  messages      Message[]
+  notifications Notification[]
 
   // Relations — Domain 6: Boards & Closet
   closetItems    ClosetItem[]
@@ -1269,6 +1269,47 @@ model NotificationPreference {
   @@map("notification_preferences")
 }
 
+model Notification {
+  id        String               @id @default(cuid())
+  userId    String               @map("user_id")
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  event     String
+  category  NotificationCategory
+  source    NotificationSource
+
+  title     String
+  body      String
+  href      String?
+  metadata  Json?
+
+  readAt    DateTime?            @map("read_at")
+  createdAt DateTime             @default(now()) @map("created_at")
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, readAt])
+  @@map("notifications")
+}
+
+enum NotificationCategory {
+  TIP
+  BOOKING
+  MESSAGE
+  SESSION
+  REVIEW
+  PAYOUT
+  ORDER
+  SUBSCRIPTION
+  STYLIST_AVAILABILITY
+  AFFILIATE
+  PLATFORM
+}
+
+enum NotificationSource {
+  CLIENT
+  PLATFORM
+}
+
 // ─── Domain 11: Admin / CMS (Quiz Builder) ────────────────
 
 model Quiz {
@@ -1335,20 +1376,6 @@ model Message {
   @@index([sessionId, kind])
   @@index([boardId])
   @@map("messages")
-}
-
-model PushSubscription {
-  id        String   @id @default(cuid())
-  userId    String   @map("user_id")
-  endpoint  String   @unique
-  p256dh    String
-  auth      String
-  createdAt DateTime @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@map("push_subscriptions")
 }
 
 // ─── Domain 6: Boards, Closet & Favorites ────────────────
