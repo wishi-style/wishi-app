@@ -17,8 +17,8 @@ import {
  *    status-aware action CTA
  *  - ACTIVE sessions link straight to `/sessions/[id]/chat`
  *  - PENDING_END_APPROVAL CTA points at `/end-session`
- *  - COMPLETED sessions surface a "Book {stylist} Again" CTA pointing at the
- *    stylist's public profile
+ *  - Terminal sessions (COMPLETED / CANCELLED / FROZEN / REASSIGNED) surface
+ *    a "Rebook {stylist}" CTA pointing at the stylist's public profile
  *  - An unrated sent board flips the card into a high-priority "Review …"
  *    CTA. Label varies by board kind:
  *      MOODBOARD                → "Review Moodboard"
@@ -35,7 +35,7 @@ test.afterAll(async () => {
 });
 
 async function signIn(page: import("@playwright/test").Page, email: string) {
-  await page.goto("/sign-in");
+  await page.goto("/sign-in?e2e=1");
   await page.getByLabel("Email").fill(email);
   await page.getByRole("button", { name: "Sign In" }).click();
   await expect(page).not.toHaveURL(/\/sign-in/);
@@ -112,7 +112,7 @@ test("sessions list renders Loveable cards with status-aware CTAs", async ({ pag
     await expect(page.getByRole("link", { name: "Open Chat" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Approve End" })).toBeVisible();
     await expect(
-      page.getByRole("link", { name: "Book Maya Again" }),
+      page.getByRole("link", { name: "Rebook Maya" }),
     ).toBeVisible();
 
     // Active session card jumps straight to /chat, not the /sessions/[id]
@@ -129,10 +129,10 @@ test("sessions list renders Loveable cards with status-aware CTAs", async ({ pag
     expect(approveHref).toBe(`/sessions/${awaiting.id}/end-session`);
 
     // COMPLETED uses the stylist's public profile id, not the user id.
-    const bookAgainHref = await page
-      .getByRole("link", { name: "Book Maya Again" })
+    const rebookHref = await page
+      .getByRole("link", { name: "Rebook Maya" })
       .getAttribute("href");
-    expect(bookAgainHref).toBe(`/stylists/${stylistProfile.id}`);
+    expect(rebookHref).toBe(`/stylists/${stylistProfile.id}`);
   } finally {
     await pool.query(
       `DELETE FROM session_pending_actions WHERE session_id IN ($1,$2,$3)`,
