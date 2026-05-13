@@ -4,11 +4,12 @@ import { MoreVerticalIcon } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { listClosetItems } from "@/lib/boards/closet.service";
-import { listFavoriteBoards } from "@/lib/boards/favorite.service";
-import { listCollections } from "@/lib/collections/collection.service";
+import { listDeliveredStyleboardsForClient } from "@/lib/profile/delivered-styleboards.service";
+import { listStyledInventoryItemsForUser } from "@/lib/profile/styled-items.service";
+import { getProduct } from "@/lib/inventory/inventory-client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { LoyaltyTier } from "@/generated/prisma/client";
-import { ProfilePageClient } from "./client";
+import { ProfilePageClient, type ShopItem, type Look } from "./client";
 
 export const dynamic = "force-dynamic";
 
@@ -28,64 +29,49 @@ export default async function ProfilePage() {
   const user = await getCurrentUser();
   if (!user) unauthorized();
 
-  const [closetItems, favoriteBoards, collections] = await Promise.all([
+  const [closetItems, deliveredLooks, styledIds] = await Promise.all([
     listClosetItems({ userId: user.id }),
-    listFavoriteBoards(user.id),
-    listCollections(user.id),
+    listDeliveredStyleboardsForClient(user.id),
+    listStyledInventoryItemsForUser(user.id),
   ]);
 
-  // Surface only styleboards in the Looks tab — moodboards aren't user-facing
-  // saved looks. Map to a serializable shape with a thumbnail (first board
-  // photo, or first board-item web image).
-  const styleboardFavorites = favoriteBoards.filter(
-    (fb) => fb.board.type === "STYLEBOARD",
+  // Resolve inventory DTOs in parallel — getProduct is 5-min cached so a
+  // repeat profile load is essentially free.
+  const productDocs = await Promise.all(
+    styledIds.map((s) => getProduct(s.inventoryProductId)),
   );
+  const shopItems: ShopItem[] = styledIds.flatMap((styled, i) => {
+    const doc = productDocs[i];
+    if (!doc) return [];
+    return [
+      {
+        inventoryProductId: styled.inventoryProductId,
+        sourceBoardId: styled.sourceBoardId,
+        title: doc.canonical_name ?? null,
+        designer: doc.brand_name ?? null,
+        priceDollars: Number.isFinite(doc.min_price)
+          ? Math.round(doc.min_price)
+          : null,
+        imageUrl: doc.primary_image_url ?? doc.image_urls?.[0] ?? null,
+        productUrl: doc.listings?.[0]?.product_url ?? null,
+        category: doc.category_slug ?? null,
+        colors: doc.color_families ?? doc.available_colors ?? [],
+      },
+    ];
+  });
 
-  const boardIds = styleboardFavorites.map((fb) => fb.board.id);
-  const [photos, items] = await Promise.all([
-    boardIds.length > 0
-      ? prisma.boardPhoto.findMany({
-          where: { boardId: { in: boardIds } },
-          select: { boardId: true, url: true, orderIndex: true },
-          orderBy: [{ boardId: "asc" }, { orderIndex: "asc" }],
-        })
-      : Promise.resolve([]),
-    boardIds.length > 0
-      ? prisma.boardItem.findMany({
-          where: { boardId: { in: boardIds }, webItemImageUrl: { not: null } },
-          select: { boardId: true, webItemImageUrl: true, orderIndex: true },
-          orderBy: [{ boardId: "asc" }, { orderIndex: "asc" }],
-        })
-      : Promise.resolve([]),
-  ]);
-
-  const photoByBoard = new Map<string, string>();
-  for (const p of photos) {
-    if (!photoByBoard.has(p.boardId)) photoByBoard.set(p.boardId, p.url);
-  }
-  const itemImageByBoard = new Map<string, string>();
-  for (const i of items) {
-    if (!itemImageByBoard.has(i.boardId) && i.webItemImageUrl) {
-      itemImageByBoard.set(i.boardId, i.webItemImageUrl);
-    }
-  }
-
-  const looks = styleboardFavorites.map((fb) => ({
-    id: fb.id,
-    boardId: fb.board.id,
-    sessionId: fb.board.sessionId,
-    title: fb.board.title,
-    thumbnailUrl:
-      photoByBoard.get(fb.board.id) ?? itemImageByBoard.get(fb.board.id) ?? null,
-    stylistName: fb.board.session?.stylist
-      ? `${fb.board.session.stylist.firstName} ${fb.board.session.stylist.lastName}`.trim()
-      : null,
+  const looks: Look[] = deliveredLooks.map((l) => ({
+    boardId: l.boardId,
+    sessionId: l.sessionId,
+    title: l.title,
+    thumbnailUrl: l.thumbnailUrl,
+    stylistName: `${l.stylistFirstName} ${l.stylistLastName}`.trim(),
+    sentAt: l.sentAt.toISOString(),
   }));
 
   // "In N Outfits" carousel inside ClosetItemDialog. For each closet item,
-  // collect the styleboards it appears on (boardItems → board) and pick the
-  // first available thumbnail. Single batched query covers every item, so
-  // opening a tile is instant — no per-open round-trip.
+  // collect the styleboards it appears on (boardItems → board) and pick
+  // the first available thumbnail.
   const closetIds = closetItems.map((c) => c.id);
   const outfitsByItemId: Record<
     string,
@@ -121,8 +107,6 @@ export default async function ProfilePage() {
     for (const link of itemBoardLinks) {
       if (!link.closetItemId || !link.board) continue;
       const list = outfitsByItemId[link.closetItemId] ?? [];
-      // De-dup by board id — a closet item can be added multiple times to
-      // the same board via repeat BoardItems.
       if (list.some((o) => o.id === link.board.id)) continue;
       const image =
         link.board.photos[0]?.url ?? link.board.items[0]?.webItemImageUrl ?? null;
@@ -170,8 +154,8 @@ export default async function ProfilePage() {
         </header>
         <ProfilePageClient
           initialItems={closetItems}
+          shopItems={shopItems}
           looks={looks}
-          collections={collections}
           outfitsByItemId={outfitsByItemId}
         />
       </div>

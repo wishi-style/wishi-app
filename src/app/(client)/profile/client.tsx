@@ -11,8 +11,6 @@ import {
   ChevronRight,
   Grid3X3Icon,
   LayoutGridIcon,
-  SlidersHorizontalIcon,
-  XIcon,
 } from "lucide-react";
 import {
   Tabs,
@@ -30,7 +28,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { ClosetItem } from "@/generated/prisma/client";
-import type { CollectionWithPreview } from "@/lib/collections/collection.service";
 import {
   computeClosetFacets,
   filterClosetItems,
@@ -39,13 +36,25 @@ import {
 } from "@/lib/closet/filter";
 import { ClosetItemDialog } from "./closet-item-dialog";
 
-interface Look {
-  id: string;
+export interface Look {
   boardId: string;
   sessionId: string | null;
   title: string | null;
   thumbnailUrl: string | null;
-  stylistName: string | null;
+  stylistName: string;
+  sentAt: string;
+}
+
+export interface ShopItem {
+  inventoryProductId: string;
+  sourceBoardId: string;
+  title: string | null;
+  designer: string | null;
+  priceDollars: number | null;
+  imageUrl: string | null;
+  productUrl: string | null;
+  category: string | null;
+  colors: string[];
 }
 
 interface OutfitPreview {
@@ -56,8 +65,8 @@ interface OutfitPreview {
 
 interface Props {
   initialItems: ClosetItem[];
+  shopItems: ShopItem[];
   looks: Look[];
-  collections: CollectionWithPreview[];
   outfitsByItemId: Record<string, OutfitPreview[]>;
 }
 
@@ -101,18 +110,14 @@ const MOBILE_CHIP_KEYS = ["season", "color"] as const satisfies readonly Exclude
 
 export function ProfilePageClient({
   initialItems,
+  shopItems,
   looks,
-  collections: initialCollections,
   outfitsByItemId,
 }: Props) {
   const [items, setItems] = useState(initialItems);
-  const [collections, setCollections] = useState(initialCollections);
   const [filters, setFilters] = useState<ClosetFilters>({});
   const [openFilter, setOpenFilter] = useState<FilterKey | null>("category");
   const [addOpen, setAddOpen] = useState(false);
-  const [looksTab, setLooksTab] = useState<"styleboards" | "favorites">(
-    "styleboards",
-  );
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [gridSize, setGridSize] = useState<"normal" | "compact">("normal");
@@ -121,28 +126,83 @@ export function ProfilePageClient({
     new Set(),
   );
 
-  const facets = useMemo(() => computeClosetFacets(items), [items]);
-  const filteredItems = useMemo(
-    () => filterClosetItems(items, filters),
-    [items, filters],
-  );
+  // Items tab is a union of (a) user closet items (uploaded or order-arrived)
+  // and (b) inventory products from delivered styleboards. Each row carries
+  // its `source` so the chip + click behavior differentiate.
+  type GridRow =
+    | { source: "closet"; key: string; closet: ClosetItem }
+    | { source: "shop"; key: string; shop: ShopItem };
+
+  const gridRows: GridRow[] = useMemo(() => {
+    const closetRows: GridRow[] = items.map((c) => ({
+      source: "closet" as const,
+      key: `closet:${c.id}`,
+      closet: c,
+    }));
+    const shopRows: GridRow[] = shopItems.map((s) => ({
+      source: "shop" as const,
+      key: `shop:${s.inventoryProductId}`,
+      shop: s,
+    }));
+    return [...closetRows, ...shopRows];
+  }, [items, shopItems]);
+
+  const facets = useMemo(() => {
+    const closetFacets = computeClosetFacets(items);
+    const designers = new Set(closetFacets.designer ?? []);
+    const colors = new Set(closetFacets.color ?? []);
+    const categories = new Set(closetFacets.category ?? []);
+    for (const s of shopItems) {
+      if (s.designer) designers.add(s.designer);
+      for (const c of s.colors) colors.add(c);
+      if (s.category) categories.add(s.category);
+    }
+    return {
+      ...closetFacets,
+      designer: Array.from(designers).sort(),
+      color: Array.from(colors).sort(),
+      category: Array.from(categories).sort(),
+    };
+  }, [items, shopItems]);
+
+  const filteredRows = useMemo(() => {
+    return gridRows.filter((row) => {
+      if (row.source === "closet") {
+        return filterClosetItems([row.closet], filters).length === 1;
+      }
+      const shop = row.shop;
+      const cats = filters.category ?? [];
+      if (cats.length > 0 && (!shop.category || !cats.includes(shop.category))) {
+        return false;
+      }
+      const designers = filters.designer ?? [];
+      if (
+        designers.length > 0 &&
+        (!shop.designer || !designers.includes(shop.designer))
+      ) {
+        return false;
+      }
+      const colorsFilter = filters.color ?? [];
+      if (
+        colorsFilter.length > 0 &&
+        !shop.colors.some((c) => colorsFilter.includes(c))
+      ) {
+        return false;
+      }
+      // Season is closet-only; shop rows pass through.
+      return true;
+    });
+  }, [gridRows, filters]);
 
   const looksStylists = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          looks.map((l) => l.stylistName).filter((s): s is string => Boolean(s)),
-        ),
-      ).sort(),
+    () => Array.from(new Set(looks.map((l) => l.stylistName))).sort(),
     [looks],
   );
   const filteredLooks = useMemo(
     () =>
       looksStylistFilter.size === 0
         ? looks
-        : looks.filter(
-            (l) => l.stylistName && looksStylistFilter.has(l.stylistName),
-          ),
+        : looks.filter((l) => looksStylistFilter.has(l.stylistName)),
     [looks, looksStylistFilter],
   );
 
@@ -219,31 +279,6 @@ export function ProfilePageClient({
     setAddOpen(false);
   }
 
-  async function createCollection(name: string): Promise<void> {
-    const res = await fetch("/api/collections", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(body.error ?? "Couldn't create collection");
-    }
-    const created = (await res.json()) as { id: string; name: string };
-    setCollections((p) => [
-      {
-        id: created.id,
-        name: created.name,
-        coverImageUrl: null,
-        itemCount: 0,
-        previewImages: [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      ...p,
-    ]);
-  }
-
   return (
     <>
       <Tabs defaultValue="items" className="w-full">
@@ -259,12 +294,6 @@ export function ProfilePageClient({
             className="rounded-none border-b-2 border-transparent px-0 pb-3 text-base data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none"
           >
             Looks
-          </TabsTrigger>
-          <TabsTrigger
-            value="collections"
-            className="rounded-none border-b-2 border-transparent px-0 pb-3 text-base data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-          >
-            Collections
           </TabsTrigger>
         </TabsList>
 
@@ -456,8 +485,8 @@ export function ProfilePageClient({
                 </button>
                 <div className="flex items-center gap-4">
                   <span className="font-body text-sm uppercase tracking-wider text-muted-foreground">
-                    {filteredItems.length}{" "}
-                    {filteredItems.length === 1 ? "Item" : "Items"}
+                    {filteredRows.length}{" "}
+                    {filteredRows.length === 1 ? "Item" : "Items"}
                   </span>
                   {selectMode ? (
                     <div className="flex items-center gap-3">
@@ -524,10 +553,10 @@ export function ProfilePageClient({
                 </div>
               )}
 
-              {filteredItems.length === 0 ? (
+              {filteredRows.length === 0 ? (
                 <p className="py-16 text-center text-sm text-muted-foreground">
-                  {items.length === 0
-                    ? "Your closet is empty. Add an item to get started."
+                  {gridRows.length === 0
+                    ? "No items yet. Items styled for you and uploads will appear here."
                     : "No items match the current filters."}
                 </p>
               ) : (
@@ -539,51 +568,83 @@ export function ProfilePageClient({
                       : "grid-cols-4 md:grid-cols-5",
                   )}
                 >
-                  {filteredItems.map((item) => {
-                    const isSelected = selected.has(item.id);
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          if (selectMode) toggleItemSelect(item.id);
-                          else setDetailItem(item);
-                        }}
-                        className={cn(
-                          "relative overflow-hidden rounded-xl border bg-card text-left transition-all",
-                          isSelected
-                            ? "border-foreground ring-2 ring-foreground"
-                            : "border-border",
-                          selectMode && "cursor-pointer",
-                        )}
-                      >
-                        {selectMode && (
-                          <div
-                            className={cn(
-                              "absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border-2",
-                              isSelected
-                                ? "border-foreground bg-foreground"
-                                : "border-muted-foreground/40 bg-background/80",
-                            )}
-                          >
-                            {isSelected && (
-                              <div className="h-2 w-2 rounded-full bg-background" />
-                            )}
+                  {filteredRows.map((row) => {
+                    if (row.source === "closet") {
+                      const item = row.closet;
+                      const isSelected = selected.has(item.id);
+                      return (
+                        <button
+                          key={row.key}
+                          type="button"
+                          onClick={() => {
+                            if (selectMode) toggleItemSelect(item.id);
+                            else setDetailItem(item);
+                          }}
+                          className={cn(
+                            "relative overflow-hidden rounded-xl border bg-card text-left transition-all",
+                            isSelected
+                              ? "border-foreground ring-2 ring-foreground"
+                              : "border-border",
+                            selectMode && "cursor-pointer",
+                          )}
+                        >
+                          {selectMode && (
+                            <div
+                              className={cn(
+                                "absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border-2",
+                                isSelected
+                                  ? "border-foreground bg-foreground"
+                                  : "border-muted-foreground/40 bg-background/80",
+                              )}
+                            >
+                              {isSelected && (
+                                <div className="h-2 w-2 rounded-full bg-background" />
+                              )}
+                            </div>
+                          )}
+                          <span className="absolute right-2 top-2 z-10 rounded-full bg-warm-beige/90 px-2 py-0.5 font-body text-[10px] font-medium uppercase tracking-widest text-dark-taupe">
+                            Closet
+                          </span>
+                          <div className="aspect-square bg-muted">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={item.url}
+                              alt={item.name ?? ""}
+                              className="h-full w-full object-cover"
+                              loading="lazy"
+                            />
                           </div>
-                        )}
+                          <p className="truncate px-2 pb-2 pt-5 font-body text-xs text-foreground">
+                            {item.designer ?? item.name ?? "—"}
+                          </p>
+                        </button>
+                      );
+                    }
+                    const shop = row.shop;
+                    return (
+                      <Link
+                        key={row.key}
+                        href={`/board/${shop.sourceBoardId}`}
+                        className="relative overflow-hidden rounded-xl border border-border bg-card text-left transition-all hover:shadow-md"
+                      >
+                        <span className="absolute right-2 top-2 z-10 rounded-full bg-foreground/90 px-2 py-0.5 font-body text-[10px] font-medium uppercase tracking-widest text-background">
+                          Shop
+                        </span>
                         <div className="aspect-square bg-muted">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={item.url}
-                            alt={item.name ?? ""}
-                            className="h-full w-full object-cover"
-                            loading="lazy"
-                          />
+                          {shop.imageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={shop.imageUrl}
+                              alt={shop.title ?? ""}
+                              className="h-full w-full object-cover"
+                              loading="lazy"
+                            />
+                          ) : null}
                         </div>
                         <p className="truncate px-2 pb-2 pt-5 font-body text-xs text-foreground">
-                          {item.designer ?? item.name ?? "—"}
+                          {shop.designer ?? shop.title ?? "—"}
                         </p>
-                      </button>
+                      </Link>
                     );
                   })}
                 </div>
@@ -592,52 +653,12 @@ export function ProfilePageClient({
           </div>
         </TabsContent>
 
-        {/* Looks tab — favorited styleboards */}
+        {/* Looks tab — every styleboard delivered to this client across all
+            sessions, newest first. Favorited state is no longer the gate;
+            users can't get back into the closed chat so this view is the
+            only durable access. Each card links to the public SharedBoard
+            view at /board/[boardId]. */}
         <TabsContent value="looks" className="mt-6">
-          {/* Pill sub-tabs + mobile filter button — Loveable Profile.tsx:1042-1064.
-              Loveable's desktop sidebar (Stylist/Occasion/Season/Style) and
-              filter chip row are deferred — the data needs to be enriched on
-              the Look type from the Board → Session → StylistProfile chain
-              + Board.occasion / season / style fields that don't exist yet.
-              Tracked under Track C1 in WISHI-LAUNCH-PREP.md. */}
-          <div className="mb-4 flex items-center gap-3">
-            <button
-              type="button"
-              aria-label="Open filters"
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-border transition-colors hover:bg-muted/50 lg:hidden"
-            >
-              <SlidersHorizontalIcon className="h-4 w-4 text-muted-foreground" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setLooksTab("styleboards")}
-              className={cn(
-                "rounded-full px-5 py-2 font-body text-sm font-medium transition-colors",
-                looksTab === "styleboards"
-                  ? "bg-foreground text-background"
-                  : "bg-muted text-foreground hover:bg-muted/80",
-              )}
-            >
-              Style boards
-            </button>
-            <button
-              type="button"
-              onClick={() => setLooksTab("favorites")}
-              className={cn(
-                "rounded-full px-5 py-2 font-body text-sm font-medium transition-colors",
-                looksTab === "favorites"
-                  ? "bg-foreground text-background"
-                  : "bg-muted text-foreground hover:bg-muted/80",
-              )}
-            >
-              Favorites
-            </button>
-          </div>
-
-          {/* Stylist filter chips — Loveable Profile.tsx:1066-1100 has a four-
-              facet row (Stylist/Occasion/Season/Style). Stylist is the only
-              one we can derive without new schema fields, so we ship that
-              chip row now and leave the rest as Phase-11 polish. */}
           {looksStylists.length > 0 && (
             <div className="mb-4 flex flex-wrap items-center gap-2">
               <span className="mr-1 font-body text-xs uppercase tracking-widest text-muted-foreground">
@@ -681,17 +702,15 @@ export function ProfilePageClient({
           {filteredLooks.length === 0 ? (
             <p className="py-20 text-center text-sm text-muted-foreground">
               {looks.length === 0
-                ? "No saved looks yet. Tap the heart on a styleboard to save it here."
+                ? "No looks yet. Looks delivered by your stylist will appear here."
                 : "No looks match the current filters."}
             </p>
           ) : (
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-3">
               {filteredLooks.map((look) => (
                 <Link
-                  key={look.id}
-                  href={
-                    look.sessionId ? `/sessions/${look.sessionId}` : `/profile`
-                  }
+                  key={look.boardId}
+                  href={`/board/${look.boardId}`}
                   className="group relative block overflow-hidden rounded-2xl border border-border bg-card transition-shadow hover:shadow-md"
                 >
                   <div className="aspect-square overflow-hidden bg-muted">
@@ -705,73 +724,19 @@ export function ProfilePageClient({
                       />
                     ) : null}
                   </div>
+                  <p className="truncate px-3 pb-3 pt-2 font-body text-xs text-muted-foreground">
+                    Styled by {look.stylistName} ·{" "}
+                    {new Date(look.sentAt).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </p>
                 </Link>
               ))}
             </div>
           )}
         </TabsContent>
 
-        {/* Collections tab — preview grid + create */}
-        <TabsContent value="collections" className="mt-6">
-          <div className="mb-5 flex items-center justify-between">
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">
-              {collections.length}{" "}
-              {collections.length === 1 ? "Collection" : "Collections"}
-            </p>
-            <CreateCollectionButton onCreate={createCollection} />
-          </div>
-          {collections.length === 0 ? (
-            <p className="py-20 text-center text-sm text-muted-foreground">
-              No collections yet. Create one to group items by occasion or
-              season.
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 md:grid-cols-3">
-              {collections.map((c) => (
-                <Link
-                  key={c.id}
-                  href={`/collections/${c.id}`}
-                  className="group block overflow-hidden rounded-2xl border border-border bg-card transition-shadow hover:shadow-md"
-                >
-                  <div className="grid grid-cols-4 gap-1.5 p-3 pb-0">
-                    {Array.from({ length: 4 }).map((_, i) => {
-                      const url = c.previewImages[i];
-                      return (
-                        <div
-                          key={i}
-                          className="aspect-[3/4] overflow-hidden rounded-md bg-muted"
-                        >
-                          {url && (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={url}
-                              alt=""
-                              className="h-full w-full object-cover"
-                            />
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="flex items-end justify-between p-4 pt-3">
-                    <div>
-                      <p className="font-display text-base text-foreground">
-                        {c.name}
-                      </p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {c.itemCount}{" "}
-                        {c.itemCount === 1 ? "item" : "items"}
-                      </p>
-                    </div>
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full transition-colors group-hover:bg-muted">
-                      <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-                    </span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </TabsContent>
       </Tabs>
 
       {/* Floating Add Item button — Loveable Profile.tsx:1214-1220 */}
@@ -974,62 +939,3 @@ function AddItemDialog({ open, onOpenChange, onItemCreated }: AddDialogProps) {
   );
 }
 
-function CreateCollectionButton({
-  onCreate,
-}: {
-  onCreate: (name: string) => Promise<void>;
-}) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit() {
-    if (!name.trim()) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await onCreate(name.trim());
-      setOpen(false);
-      setName("");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't create collection");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <>
-      <Button size="sm" className="rounded-full" onClick={() => setOpen(true)}>
-        <Plus className="h-4 w-4" /> New Collection
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="font-display text-xl">
-              New Collection
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Spring Capsule"
-              maxLength={80}
-              autoFocus
-            />
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button
-              className="w-full"
-              onClick={submit}
-              disabled={busy || !name.trim()}
-            >
-              {busy ? "Creating…" : "Create"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
