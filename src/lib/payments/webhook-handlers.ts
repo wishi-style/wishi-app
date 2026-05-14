@@ -106,6 +106,8 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
     return;
   }
 
+  const promoCodeId = session.metadata?.promoCodeId ?? null;
+
   const plan = await getPlanByType(planType as PlanType);
   if (!plan) {
     console.error("[stripe] Unknown plan type", planType);
@@ -149,6 +151,7 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
           styleboardsAllowed: plan.styleboards,
           moodboardsAllowed: plan.moodboards,
           stripePaymentIntentId: paymentIntentId,
+          promoCodeId: promoCodeId ?? null,
         },
         select: { id: true, status: true, stylistId: true },
       });
@@ -160,6 +163,17 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
           sessionId: createdSession.id,
           tx,
           userId,
+          promoCodeId: promoCodeId ?? null,
+        });
+      }
+
+      if (promoCodeId) {
+        // Atomic bump — Stripe's at-least-once webhook semantics could
+        // redeliver, but `recoveryPlan.shouldCreateSession` only fires once
+        // per paymentIntent so the bump is exactly-once in practice.
+        await tx.promoCode.update({
+          where: { id: promoCodeId },
+          data: { usedCount: { increment: 1 } },
         });
       }
 
@@ -172,6 +186,7 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
       sessionId: localSession.id,
       tx: prisma,
       userId,
+      promoCodeId: promoCodeId ?? null,
     });
   }
 
@@ -480,12 +495,14 @@ async function createOrUpdatePaymentRecord({
   sessionId,
   tx,
   userId,
+  promoCodeId,
 }: {
   amountInCents: number;
   paymentIntentId: string | null;
   sessionId: string;
   tx: { payment: typeof prisma.payment };
   userId: string;
+  promoCodeId?: string | null;
 }) {
   if (paymentIntentId) {
     await tx.payment.upsert({
@@ -496,6 +513,7 @@ async function createOrUpdatePaymentRecord({
         status: "SUCCEEDED",
         type: "SESSION",
         userId,
+        promoCodeId: promoCodeId ?? undefined,
       },
       create: {
         userId,
@@ -504,6 +522,7 @@ async function createOrUpdatePaymentRecord({
         status: "SUCCEEDED",
         amountInCents,
         stripePaymentIntentId: paymentIntentId,
+        promoCodeId: promoCodeId ?? null,
       },
     });
     return;
@@ -517,6 +536,7 @@ async function createOrUpdatePaymentRecord({
       status: "SUCCEEDED",
       amountInCents,
       stripePaymentIntentId: null,
+      promoCodeId: promoCodeId ?? null,
     },
   });
 }

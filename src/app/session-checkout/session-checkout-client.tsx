@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { ChevronLeftIcon } from "lucide-react";
@@ -29,8 +29,12 @@ export interface SessionCheckoutClientProps {
  * but the Pay CTA is wired to the existing `createCheckout` server action.
  * Stripe collects the card on stripe.com and redirects to /bookings/success.
  *
- * Promo code field is visual-only — applying real promos is wired through
- * Stripe Coupons on the Hosted Checkout page itself, not here.
+ * Promo code field validates against the PromoCode table via POST
+ * /api/promo/validate and threads the canonical code through the hidden
+ * `promoCode` form field. `runCheckout` re-validates server-side, looks up
+ * the Stripe Coupon ID, attaches it to the Checkout Session's `discounts`,
+ * and the checkout.session.completed webhook bumps PromoCode.usedCount +
+ * sets Session.promoCodeId.
  */
 export function SessionCheckoutClient({
   stylist,
@@ -49,8 +53,12 @@ export function SessionCheckoutClient({
   const [email, setEmail] = useState(defaultEmail);
   const [promoOpen, setPromoOpen] = useState(false);
   const [promoCode, setPromoCode] = useState("");
-  const [appliedPromo, setAppliedPromo] = useState<string | null>(null);
+  const [appliedPromo, setAppliedPromo] = useState<{
+    code: string;
+    amountInCents: number;
+  } | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
+  const [promoPending, startPromoTransition] = useTransition();
 
   // Subscription pricing is roughly 90% of one-time per Loveable's planData.
   // Real per-plan monthly prices come from the Plan table; Stripe applies the
@@ -59,18 +67,46 @@ export function SessionCheckoutClient({
   const monthlyDollars = Math.round(oneTimeDollars * 0.9);
 
   const basePrice = frequency === "monthly" ? monthlyDollars : oneTimeDollars;
-  const discount = appliedPromo === "WISHI" ? basePrice : 0;
-  const total = Math.max(0, basePrice - discount);
+  const basePriceCents = basePrice * 100;
+  const discountCents = appliedPromo
+    ? Math.min(appliedPromo.amountInCents, basePriceCents)
+    : 0;
+  const totalCents = Math.max(0, basePriceCents - discountCents);
+  const discount = discountCents / 100;
+  const total = totalCents / 100;
 
   function applyPromo() {
-    const code = promoCode.trim().toUpperCase();
-    if (code === "WISHI") {
-      setAppliedPromo("WISHI");
-      setPromoError(null);
-    } else {
-      setAppliedPromo(null);
-      setPromoError("Invalid promo code");
-    }
+    const code = promoCode.trim();
+    if (!code) return;
+    setPromoError(null);
+    startPromoTransition(async () => {
+      try {
+        const res = await fetch("/api/promo/validate", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ code }),
+        });
+        const data = (await res.json()) as
+          | { ok: true; code: string; amountInCents: number }
+          | { ok: false; reason: string };
+        if (data.ok) {
+          setAppliedPromo({ code: data.code, amountInCents: data.amountInCents });
+          setPromoCode(data.code);
+        } else {
+          setAppliedPromo(null);
+          setPromoError(
+            data.reason === "expired"
+              ? "This code has expired"
+              : data.reason === "exhausted"
+                ? "This code has been fully redeemed"
+                : "Invalid promo code",
+          );
+        }
+      } catch {
+        setAppliedPromo(null);
+        setPromoError("Couldn't verify the code. Please try again.");
+      }
+    });
   }
 
   function removePromo() {
@@ -226,7 +262,7 @@ export function SessionCheckoutClient({
                 <div className="flex items-center justify-between font-body text-sm">
                   <span className="flex items-center gap-2">
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                      {appliedPromo}
+                      {appliedPromo.code}
                     </span>
                     <span className="text-muted-foreground">applied</span>
                     <button
@@ -261,9 +297,10 @@ export function SessionCheckoutClient({
                     <button
                       type="button"
                       onClick={applyPromo}
-                      className="rounded-md border border-border px-4 py-2 font-body text-sm transition-colors hover:bg-muted/50"
+                      disabled={promoPending}
+                      className="rounded-md border border-border px-4 py-2 font-body text-sm transition-colors hover:bg-muted/50 disabled:opacity-60"
                     >
-                      Apply
+                      {promoPending ? "Checking…" : "Apply"}
                     </button>
                   </div>
                   {promoError && (
@@ -317,6 +354,9 @@ export function SessionCheckoutClient({
                 name="isSubscription"
                 value={frequency === "monthly" ? "true" : "false"}
               />
+              {appliedPromo && (
+                <input type="hidden" name="promoCode" value={appliedPromo.code} />
+              )}
               <PayButton total={total} />
             </form>
 

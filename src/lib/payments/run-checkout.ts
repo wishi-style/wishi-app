@@ -6,6 +6,7 @@ import {
 } from "@/lib/payments/checkout";
 import { provisionSessionForE2E } from "@/lib/payments/e2e-provision-session";
 import { hasActiveSessionWithStylist } from "@/lib/sessions/queries";
+import { validateForCheckout } from "@/lib/promotions/promo-code.service";
 import type { PlanType } from "@/generated/prisma/client";
 
 export type CheckoutOutcome =
@@ -61,12 +62,30 @@ export async function runCheckout({
   const stylistProfileId =
     (formData.get("stylistId") as string) || undefined;
   const isSubscription = formData.get("isSubscription") === "true";
+  const promoCodeRaw = (formData.get("promoCode") as string | null) ?? "";
 
   if (!planType || !["MINI", "MAJOR", "LUX"].includes(planType)) {
     throw new Error("Invalid plan type");
   }
   if (isSubscription && planType === "LUX") {
     throw new Error("Lux plan is one-time only");
+  }
+
+  // Re-validate the promo server-side immediately before creating the Stripe
+  // session — the client-side Apply call could be stale or tampered. A
+  // silent drop here is safe: the user already saw the discount visually,
+  // and a code that's since expired/exhausted simply doesn't apply.
+  let promo:
+    | { promoCodeId: string; stripeCouponId: string }
+    | null = null;
+  if (promoCodeRaw.trim()) {
+    const validation = await validateForCheckout(promoCodeRaw);
+    if (validation.ok && validation.stripeCouponId) {
+      promo = {
+        promoCodeId: validation.promoCodeId,
+        stripeCouponId: validation.stripeCouponId,
+      };
+    }
   }
 
   let stylistUserId: string | undefined;
@@ -103,6 +122,7 @@ export async function runCheckout({
     stylistUserId,
     successUrl: `${appUrl}/bookings/success?session_id={CHECKOUT_SESSION_ID}`,
     cancelUrl: `${appUrl}/bookings/new${stylistProfileId ? `?stylistId=${stylistProfileId}` : ""}`,
+    promo,
   };
 
   const oneTime = deps?.createOneTimeCheckout ?? createOneTimeCheckout;

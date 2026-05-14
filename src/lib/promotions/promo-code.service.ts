@@ -144,6 +144,69 @@ export async function deactivatePromoCode(
   return promo;
 }
 
+export type ValidateForCheckoutResult =
+  | {
+      ok: true;
+      promoCodeId: string;
+      code: string;
+      amountInCents: number;
+      stripeCouponId: string | null;
+    }
+  | {
+      ok: false;
+      reason: "not_found" | "inactive" | "expired" | "exhausted" | "wrong_type";
+    };
+
+/**
+ * Look up a SESSION-type promo code for use at session checkout. Returns the
+ * canonical code (always uppercase), the discount in cents, and the Stripe
+ * Coupon ID so the caller can thread it into stripe.checkout.sessions.create.
+ *
+ * Used by:
+ *   - `/api/promo/validate` (the in-page Apply button) — client-facing.
+ *   - `runCheckout` server action — re-validates server-side immediately
+ *     before creating the Stripe Checkout Session so a stale/tampered code
+ *     can't slip through if the user paused between Apply and Pay.
+ */
+export async function validateForCheckout(
+  rawCode: string,
+): Promise<ValidateForCheckoutResult> {
+  const code = rawCode.trim().toUpperCase();
+  if (!code) return { ok: false, reason: "not_found" };
+  const promo = await prisma.promoCode.findUnique({ where: { code } });
+  if (!promo) return { ok: false, reason: "not_found" };
+  if (!promo.isActive) return { ok: false, reason: "inactive" };
+  if (promo.expiresAt && promo.expiresAt.getTime() < Date.now()) {
+    return { ok: false, reason: "expired" };
+  }
+  if (promo.usageLimit !== null && promo.usedCount >= promo.usageLimit) {
+    return { ok: false, reason: "exhausted" };
+  }
+  // SHOPPING-type codes redeem at direct-sale checkout, not session checkout;
+  // their Wishi-local credit isn't a Stripe Coupon and can't apply here.
+  if (promo.creditType !== "SESSION") return { ok: false, reason: "wrong_type" };
+  return {
+    ok: true,
+    promoCodeId: promo.id,
+    code: promo.code,
+    amountInCents: promo.amountInCents,
+    stripeCouponId: promo.stripeCouponId,
+  };
+}
+
+/**
+ * Increment `PromoCode.usedCount` after a Stripe Checkout Session with the
+ * coupon attached completes successfully. Atomic via a conditional updateMany
+ * so concurrent webhook redeliveries (Stripe's at-least-once semantics) can't
+ * double-bump.
+ */
+export async function recordPromoUsage(promoCodeId: string): Promise<void> {
+  await prisma.promoCode.update({
+    where: { id: promoCodeId },
+    data: { usedCount: { increment: 1 } },
+  });
+}
+
 async function createStripeCoupon(input: {
   code: string;
   amountInCents: number;
