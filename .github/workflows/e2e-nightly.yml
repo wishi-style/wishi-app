@@ -28,16 +28,48 @@ jobs:
           --health-retries=5
 
     env:
+      # --- ephemeral postgres on the runner ---
       DATABASE_URL: postgresql://wishi:password@localhost:5432/wishi_p5?sslmode=disable
       DIRECT_DATABASE_URL: postgresql://wishi:password@localhost:5432/wishi_p5?sslmode=disable
+
+      # --- e2e harness ---
       E2E_AUTH_MODE: "true"
-      # Twilio envs referenced by end-session.spec.ts. Real provisioning
-      # only runs if TWILIO_ACCOUNT_SID is set; otherwise affected specs skip.
+      APP_URL: http://localhost:3001
+
+      # --- non-secret config (matches infra/modules/service/main.tf + infra/staging.tfvars) ---
+      AWS_REGION: us-east-1
+      S3_UPLOADS_BUCKET: wishi-uploads-staging
+      INVENTORY_SERVICE_URL: https://inventory.stg.mira.prepx.ai
+
+      # --- Clerk (staging test keys) ---
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+      CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+      CLERK_WEBHOOK_SIGNING_SECRET: ${{ secrets.CLERK_WEBHOOK_SIGNING_SECRET }}
+
+      # --- Stripe (staging test keys) ---
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${{ vars.STRIPE_PUBLISHABLE_KEY }}
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+
+      # --- Twilio (real provisioning fires when these are set) ---
       TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
       TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
       TWILIO_API_KEY_SID: ${{ secrets.TWILIO_API_KEY_SID }}
       TWILIO_API_KEY_SECRET: ${{ secrets.TWILIO_API_KEY_SECRET }}
       TWILIO_CONVERSATIONS_SERVICE_SID: ${{ secrets.TWILIO_CONVERSATIONS_SERVICE_SID }}
+
+      # --- email + shipping providers ---
+      KLAVIYO_API_KEY: ${{ secrets.KLAVIYO_API_KEY }}
+      EASYPOST_API_KEY: ${{ secrets.EASYPOST_API_KEY }}
+      EASYPOST_WEBHOOK_SECRET: ${{ secrets.EASYPOST_WEBHOOK_SECRET }}
+
+      # --- worker auth (admin "Run worker" button + scheduled invocations) ---
+      WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
+
+    permissions:
+      id-token: write
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
@@ -46,6 +78,19 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      # `@huggingface/transformers` → `onnxruntime-node` ships a prebuilt
+      # libonnxruntime.so.1 that the runner can't find without these.
+      - name: Install onnxruntime system deps
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgomp1
+
+      # OIDC into AWS so the S3 presign roundtrip in /api/uploads/presign
+      # has working credentials. The role is the same one CD uses.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_ROLE_ARN }}
+          aws-region: us-east-1
 
       - run: npm ci
 
