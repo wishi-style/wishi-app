@@ -41,86 +41,8 @@ function InstagramIcon({ className }: { className?: string }) {
     </svg>
   );
 }
-import { loyaltyConfig, mockClientProfiles } from "@/data/client-profiles";
-
-const s1 = {
-  fullName: "Feizhen Li",
-  initials: "FL",
-  gender: "Female",
-  location: "Los Angeles, CA",
-  loyaltyTier: "gold",
-  totalSessions: 8,
-  stylingGoal: "A workwear wardrobe",
-  bodyIssues: ["Stomach", "Something else"],
-  bodyIssueNotes: "Post partum and I have a large stomach I'd like to hide",
-  bodyType: "Pear",
-  highlightAreas: ["Shoulders", "Waist"],
-  style: ["Classic", "Minimalist", "Polished"],
-  styleIcons: ["Meghan Markle", "Amal Clooney"],
-  comfortZone: "A little outside",
-  typicallyWears: "Mostly jeans and pants",
-  sizes: { Tops: "M", Bottoms: "8", Dresses: "8", Shoes: "7.5", Outerwear: "M" },
-  budgets: { Tops: "$50–$100", Bottoms: "$60–$120", Dresses: "$100–$200", Shoes: "$80–$150", Accessories: "$30–$80" },
-  fitPreferences: { top: "Relaxed", bottom: "Straight" },
-  occupation: "Marketing Manager",
-  dressCode: "Denim Friendly",
-  colorsLike: ["Navy", "Black", "White", "Camel", "Olive"],
-  colorsDislike: ["Neon", "Hot Pink", "Orange"],
-  fabricsDislike: ["Polyester", "Sequins"],
-  patternsDislike: ["Large florals", "Animal print"],
-  denimFit: ["Straight", "Wide Leg"],
-  dressStyles: ["Midi", "Wrap"],
-  heelPreference: "Never",
-  jewelryType: ["Gold"],
-  socialLinks: { instagram: "@feizhen.style", pinterest: "feizhen_d", facebook: "" },
-  favoriteLooks: ["Work Chic Board #2 — Look 3", "Weekend Casual — Look 1"],
-  previousBoards: [
-    { name: "Work Chic Moodboard", type: "mood" },
-    { name: "Work Chic Style Board #1", type: "style" },
-    { name: "Work Chic Style Board #2", type: "style" },
-  ],
-  photos: [],
-  notes: "Prefers shopping from Nordstrom and Revolve. Has a capsule wardrobe mindset. Doesn't like oversized fits on top.",
-};
-
-const s2 = {
-  fullName: "Crystal Stokey",
-  initials: "CS",
-  gender: "Female",
-  location: "Los Angeles, CA",
-  loyaltyTier: "silver",
-  totalSessions: 4,
-  stylingGoal: "Date night and weekend outfits",
-  bodyIssues: ["Arms"],
-  bodyIssueNotes: "Prefers sleeves or structured shoulders",
-  bodyType: "Hourglass",
-  highlightAreas: ["Waist", "Legs"],
-  style: ["Bohemian", "Romantic"],
-  styleIcons: ["Sienna Miller", "Vanessa Hudgens"],
-  comfortZone: "Stay close",
-  typicallyWears: "Dresses and skirts",
-  sizes: { Tops: "S", Bottoms: "4", Dresses: "4", Shoes: "8", Outerwear: "S" },
-  budgets: { Tops: "$40–$80", Bottoms: "$50–$100", Dresses: "$80–$160", Shoes: "$60–$120", Accessories: "$20–$60" },
-  fitPreferences: { top: "Fitted", bottom: "Slim" },
-  occupation: "Freelance Photographer",
-  dressCode: "Casual Creative",
-  colorsLike: ["Burnt Orange", "Olive", "Warm Brown", "Rust"],
-  colorsDislike: ["Cool Gray", "Bright Blue"],
-  fabricsDislike: ["Leather"],
-  patternsDislike: ["Stripes"],
-  denimFit: ["Skinny", "Flare"],
-  dressStyles: ["Maxi", "Mini"],
-  heelPreference: "Sometimes — low block heels",
-  jewelryType: ["Gold", "Mixed metals"],
-  socialLinks: { instagram: "@crystal.stokey", pinterest: "cstokey" },
-  favoriteLooks: ["Boho Date Night — Look 2"],
-  previousBoards: [
-    { name: "Boho Date Night Moodboard", type: "mood" },
-    { name: "Weekend Vibes Board", type: "style" },
-  ],
-  photos: [],
-  notes: "Loves earthy tones. Very specific about arm coverage.",
-};
+import { loyaltyConfig } from "@/lib/loyalty/ui-config";
+import type { ClientProfileView } from "@/lib/stylists/client-profile";
 
 /* ─── Helpers ─── */
 function Detail({ label, value }: { label: string; value: React.ReactNode }) {
@@ -154,17 +76,19 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 /* ─── Component ─── */
-type ClientProfileType = (typeof mockClientProfiles)[string];
+type ClientProfileType = ClientProfileView;
 
 interface ClientDetailPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sessionId: string | null;
-  /** When provided, panel fetches the real client profile from /api/stylist/clients/[clientId]/profile. */
+  /** Required to fetch the real client profile from
+   * /api/stylist/clients/[clientId]/profile. When null the panel shows an
+   * empty state — there is no mock fallback. */
   clientId?: string | null;
 }
 
-export default function ClientDetailPanel({ open, onOpenChange, sessionId, clientId }: ClientDetailPanelProps) {
+export default function ClientDetailPanel({ open, onOpenChange, clientId }: ClientDetailPanelProps) {
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState("");
   const [fetchedProfile, setFetchedProfile] = useState<ClientProfileType | null>(null);
@@ -188,33 +112,40 @@ export default function ClientDetailPanel({ open, onOpenChange, sessionId, clien
     }
   };
 
-  // Lazy-fetch real client profile when sheet opens with a real clientId.
-  // Falls back to mockClientProfiles[sessionId] for legacy callers (the
-  // LookCreator builder + dashboard pre-real-data calls).
+  // Lazy-fetch the real client profile when the sheet opens with a real
+  // clientId. When the API returns 401/403/404 the panel surfaces an empty
+  // state — there is no mock fallback. Every caller passes the real
+  // Session.clientId, so a null clientId here means the dashboard hasn't
+  // selected a session yet (sheet shouldn't be open in that state anyway).
   useEffect(() => {
     if (!open || !clientId) return;
     let cancelled = false;
     fetch(`/api/stylist/clients/${clientId}/profile`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((data: { profile?: ClientProfileType } | null) => {
-        if (cancelled || !data?.profile) return;
-        setFetchedProfile(data.profile);
+        if (cancelled) return;
+        setFetchedProfile(data?.profile ?? null);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setFetchedProfile(null);
+      });
     return () => {
       cancelled = true;
     };
   }, [open, clientId]);
 
-  const profile =
-    fetchedProfile ?? (sessionId ? mockClientProfiles[sessionId] : null);
+  const profile = fetchedProfile;
 
   if (!profile) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent side="right" className="w-[400px] sm:w-[440px] p-0">
           <div className="flex items-center justify-center h-full">
-            <p className="font-body text-sm text-muted-foreground">No client profile available</p>
+            <p className="font-body text-sm text-muted-foreground">
+              {clientId
+                ? "Loading client profile…"
+                : "No client profile available"}
+            </p>
           </div>
         </SheetContent>
       </Sheet>

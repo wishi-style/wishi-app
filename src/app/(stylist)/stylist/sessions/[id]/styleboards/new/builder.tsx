@@ -56,7 +56,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { loyaltyConfig } from "@/data/client-profiles";
+import { loyaltyConfig } from "@/lib/loyalty/ui-config";
 import { toast } from "sonner";
 import { FeatureOnProfile } from "@/components/stylist/feature-on-profile";
 import { useShopInventory } from "./use-shop-inventory";
