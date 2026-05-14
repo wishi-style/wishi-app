@@ -1,15 +1,25 @@
 import Link from "next/link";
 import Image from "next/image";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { ArrowRightIcon, MessageCircleIcon, SparklesIcon, ShoppingBagIcon } from "lucide-react";
 import { stripe } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { getServerAuth } from "@/lib/auth/server-auth";
+import {
+  CLERK_RECOVERY_MARKER,
+  CLERK_RECOVERY_MARKER_VALUE,
+  buildClerkRecoveryUrl,
+} from "@/lib/auth/clerk-recovery";
+import { resolveAppUrl } from "@/lib/app-url";
 import { hasCompletedStyleQuiz } from "@/lib/quiz/style-quiz-status";
 
 export const dynamic = "force-dynamic";
 
 interface SearchParams {
   session_id?: string;
+  __clerk_recovery?: string;
 }
 
 interface ResolvedStylist {
@@ -55,12 +65,42 @@ export default async function BookingSuccessPage(props: {
 }) {
   const params = await props.searchParams;
 
-  // Don't require Clerk auth here. Stripe redirects land on the HTTP staging
-  // ALB and Clerk's Secure session cookie doesn't always come along, which
-  // historically threw the user into a session-refresh loop. The Stripe
-  // `session_id` (unforgeable, server-to-server retrieve) is sufficient
-  // proof of the booking — fall back to the userId on its metadata when
-  // there is no signed-in user.
+  // Auto-recovery: Clerk's session can be missing here even on HTTPS staging.
+  // The most common driver is the new-signup race — the Clerk frontend SDK
+  // hasn't fully persisted the long-lived refresh cookie before the modal
+  // closes and `forceRedirectUrl` kicks off the booking flow. By the time the
+  // browser bounces back from Stripe (1–3 minutes later), the short-lived JWT
+  // is expired and there's nothing for Clerk's middleware to refresh from.
+  //
+  // The Stripe `session_id` is server-side, unforgeable proof of identity:
+  // we look up the paying user via its metadata, mint a one-shot Clerk
+  // sign-in token, and bounce through `/sign-in?__clerk_ticket=...` so the
+  // <SignIn> component re-establishes the session and lands the user back
+  // here authed. The `CLERK_RECOVERY_MARKER` query param is the loop guard
+  // for the rare case where ticket consumption fails — second time through,
+  // we skip recovery and render the generic confirmation below.
+  const { userId: clerkId } = await getServerAuth();
+  if (!clerkId && params[CLERK_RECOVERY_MARKER] !== CLERK_RECOVERY_MARKER_VALUE) {
+    const appUrl = resolveAppUrl({
+      envAppUrl: process.env.APP_URL,
+      headers: await headers(),
+    });
+    const sessionIdParam = params.session_id
+      ? `?session_id=${encodeURIComponent(params.session_id)}`
+      : "";
+    const recoveryUrl = await buildClerkRecoveryUrl({
+      stripeSessionId: params.session_id,
+      appUrl,
+      returnPath: `/bookings/success${sessionIdParam}`,
+    });
+    if (recoveryUrl) redirect(recoveryUrl);
+  }
+
+  // Even after recovery (or when no Clerk session exists and recovery wasn't
+  // possible — direct visit, expired ticket, missing metadata), the Stripe
+  // `session_id` keeps the page functional: it's server-to-server retrievable
+  // proof of who paid, so we degrade to a generic confirmation rather than
+  // 401ing.
   const signedInUser = await getCurrentUser().catch(() => null);
   const { stylist, userId: checkoutUserId } = await resolveFromCheckout(params.session_id);
   const userId = signedInUser?.id ?? checkoutUserId;
