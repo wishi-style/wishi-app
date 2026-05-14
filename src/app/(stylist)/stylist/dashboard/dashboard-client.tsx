@@ -958,13 +958,7 @@ export default function StylistDashboard({
               <DropdownMenuItem onClick={() => router.push("/stylist/profile")}>
                 My Profile
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push("/stylist/dressing-room")}>
-                My Dressing Room
-              </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => router.push("/stylist/settings")}>
-                Settings
-              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => router.push("/logout")}>
                 Logout
               </DropdownMenuItem>

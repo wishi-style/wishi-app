@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Calendar, Settings } from "lucide-react";
+import { Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -49,15 +49,6 @@ export function StylistTopBar({ stylistInitials }: Props) {
           <Calendar className="h-5 w-5" />
         </Button>
         <NotificationsPopover counterpartyLabel="Clients" />
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Settings"
-          onClick={() => router.push("/stylist/settings")}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <Settings className="h-5 w-5" />
-        </Button>
         <button
           type="button"
           onClick={() => router.push("/stylist/bookings")}
@@ -85,15 +76,7 @@ export function StylistTopBar({ stylistInitials }: Props) {
             <DropdownMenuItem onClick={() => router.push("/stylist/profile")}>
               My Profile
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => router.push("/stylist/dressing-room")}
-            >
-              My Dressing Room
-            </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => router.push("/stylist/settings")}>
-              Settings
-            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push("/logout")}>
               Logout
             </DropdownMenuItem>
