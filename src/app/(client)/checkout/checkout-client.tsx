@@ -6,8 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe, type Stripe, type StripeElementsOptions } from "@stripe/stripe-js";
-import { ArrowLeftIcon, CheckIcon, CreditCardIcon, LockIcon, PlusIcon, ShieldCheckIcon } from "lucide-react";
-import { toast } from "sonner";
+import { ArrowLeftIcon, CreditCardIcon, LockIcon, PlusIcon, ShieldCheckIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface CheckoutItem {
@@ -601,16 +600,8 @@ function ConfirmationStep({
   onView: () => void;
   onCloset: () => void;
 }) {
-  const [addedToCloset, setAddedToCloset] = useState(false);
-  function handleAddToCloset() {
-    // Toast-only — matches Loveable contract literally. Closet auto-creates
-    // ClosetItem rows when the Order reaches ARRIVED via the existing
-    // `closet/auto-create.ts` hook.
-    toast.success(
-      `${items.length} ${items.length === 1 ? "item" : "items"} will appear in your closet when delivered`,
-    );
-    setAddedToCloset(true);
-  }
+  // Closet auto-creates ClosetItem rows when the Order reaches ARRIVED via
+  // `closet/auto-create.ts`. The user takes no action here.
   return (
     <div className="mx-auto max-w-lg px-4 py-20 text-center">
       <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-foreground">
@@ -669,31 +660,12 @@ function ConfirmationStep({
             <PlusIcon className="h-4 w-4 text-secondary-foreground" />
           </div>
           <div className="flex-1">
-            <p className="mb-0.5 font-body text-sm font-medium">Add to Your Closet</p>
+            <p className="mb-0.5 font-body text-sm font-medium">Closet</p>
             <p className="font-body text-xs text-muted-foreground">
-              Save these items for outfit planning and styling sessions.
+              {items.length === 1 ? "This item" : "These items"} will appear in
+              your closet once delivered.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={handleAddToCloset}
-            disabled={addedToCloset}
-            className={cn(
-              "flex-shrink-0 rounded-lg px-4 py-2 font-body text-sm font-medium transition-colors",
-              addedToCloset
-                ? "cursor-default bg-secondary text-secondary-foreground"
-                : "bg-foreground text-background hover:bg-foreground/90",
-            )}
-          >
-            {addedToCloset ? (
-              <span className="flex items-center gap-1.5">
-                <CheckIcon className="h-4 w-4" />
-                Added
-              </span>
-            ) : (
-              "Add All"
-            )}
-          </button>
         </div>
       </div>
 
