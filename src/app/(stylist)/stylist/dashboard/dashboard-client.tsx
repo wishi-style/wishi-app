@@ -107,6 +107,7 @@ interface DashboardSessionRow {
   totalSessions: number;
   endedAt?: string; // ISO timestamp when client APPROVED end (session completed)
   endRequestedAt?: string; // ISO timestamp when stylist requested to end the session
+  isMembership: boolean;
 }
 
 interface ChatAttachment {
@@ -340,8 +341,9 @@ export default function StylistDashboard({
       const matchesPending = pendingActionFilter === "all" ||
         (pendingActionFilter === "needs_board" && s.boardsDelivered < s.boardsTotal) ||
         (pendingActionFilter === "awaiting_feedback" && s.boardsDelivered > 0);
-      const matchesPlanModel = planModelFilter === "all" ||
-        (planModelFilter === "one_time" ? true : false); // mock: all are one-time for now
+      const matchesPlanModel =
+        planModelFilter === "all" ||
+        (planModelFilter === "subscription" ? s.isMembership : !s.isMembership);
       return matchesSearch && matchesPriority && matchesType && matchesStatus && matchesPending && matchesPlanModel;
     })
     .sort((a, b) => {
