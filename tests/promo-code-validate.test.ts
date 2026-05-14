@@ -118,7 +118,7 @@ test("validate rejects exhausted code", async () => {
   assert.match(json.reason, /redeemed/i);
 });
 
-test("validate rejects unknown code without leaking existence", async () => {
+test("validate rejects unknown code with not-found reason", async () => {
   const res = await POST(jsonReq({
     code: "DEFINITELY-NOT-A-REAL-CODE",
     creditType: "SESSION",

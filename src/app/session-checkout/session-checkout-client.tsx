@@ -20,6 +20,12 @@ export interface SessionCheckoutClientProps {
   defaultEmail: string;
 }
 
+/** "$60" for whole dollars, "$19.80" otherwise. Matches Stripe's display. */
+function formatDollars(cents: number): string {
+  if (cents % 100 === 0) return `$${cents / 100}`;
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
 interface AppliedPromo {
   code: string;
   discountInCents: number;
@@ -86,8 +92,12 @@ export function SessionCheckoutClient({
       ? Math.floor((basePriceInCents * appliedPromo.discountValue) / 100)
       : Math.min(appliedPromo.discountValue, basePriceInCents)
     : 0;
-  const discountDollars = Math.round(liveDiscountInCents / 100);
-  const total = Math.max(0, basePrice - discountDollars);
+  // Keep totals in cents so percent-off discounts that produce non-whole
+  // dollar amounts (e.g. 33% off $60 = $19.80) match what Stripe charges.
+  // formatDollars drops the decimals when whole, otherwise shows two.
+  const totalInCents = Math.max(0, basePriceInCents - liveDiscountInCents);
+  const totalDisplay = formatDollars(totalInCents);
+  const discountDisplay = formatDollars(liveDiscountInCents);
 
   async function applyPromo() {
     const code = promoCodeInput.trim().toUpperCase();
@@ -138,10 +148,12 @@ export function SessionCheckoutClient({
 
   const stylistFirstName = stylist?.firstName ?? "your stylist";
 
+  // Chip describes the *code itself* (e.g. "$25 off" or "25% off"), not the
+  // applied amount on this line item. discountValue for AMOUNT is cents.
   const promoChip = appliedPromo
     ? appliedPromo.discountType === "PERCENT"
       ? `${appliedPromo.discountValue}% off`
-      : `$${(appliedPromo.discountValue / 100).toFixed(0)} off`
+      : `${formatDollars(appliedPromo.discountValue)} off`
     : null;
 
   return (
@@ -263,7 +275,7 @@ export function SessionCheckoutClient({
             <p className="mb-1 font-body text-sm text-muted-foreground">
               Pay Wishi Fashion, Inc.
             </p>
-            <p className="mb-6 font-display text-4xl">${total}</p>
+            <p className="mb-6 font-display text-4xl">{totalDisplay}</p>
 
             <div className="space-y-4">
               <div className="flex justify-between font-body text-sm">
@@ -301,7 +313,7 @@ export function SessionCheckoutClient({
                       Remove
                     </button>
                   </span>
-                  <span className="text-emerald-700">−${discountDollars}</span>
+                  <span className="text-emerald-700">−{discountDisplay}</span>
                 </div>
               ) : (
                 <div className="space-y-1.5">
@@ -342,7 +354,7 @@ export function SessionCheckoutClient({
               <div className="border-t border-border" />
               <div className="flex justify-between font-body text-sm font-semibold">
                 <span>Total due</span>
-                <span>${total}</span>
+                <span>{totalDisplay}</span>
               </div>
             </div>
           </div>
@@ -387,7 +399,7 @@ export function SessionCheckoutClient({
                 name="promoCode"
                 value={appliedPromo?.code ?? ""}
               />
-              <PayButton total={total} />
+              <PayButton totalDisplay={totalDisplay} />
             </form>
 
             <p className="mt-3 text-center font-body text-[10px] leading-relaxed text-muted-foreground">
@@ -402,7 +414,7 @@ export function SessionCheckoutClient({
   );
 }
 
-function PayButton({ total }: { total: number }) {
+function PayButton({ totalDisplay }: { totalDisplay: string }) {
   const { pending } = useFormStatus();
   return (
     <button
@@ -410,7 +422,7 @@ function PayButton({ total }: { total: number }) {
       disabled={pending}
       className="w-full rounded-lg bg-foreground py-4 font-body text-sm font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-60"
     >
-      {pending ? "Loading…" : `Pay $${total}`}
+      {pending ? "Loading…" : `Pay ${totalDisplay}`}
     </button>
   );
 }

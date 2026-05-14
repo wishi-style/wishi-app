@@ -149,6 +149,52 @@ test("PERCENT promo code applies percentage to total on /session-checkout", asyn
   }
 });
 
+test("PERCENT code with non-whole-dollar discount renders cents accurately", async ({ page }) => {
+  const ts = Date.now();
+  const clientEmail = `promo-pct-cents-${ts}@e2e.wishi.test`;
+  const stylistEmail = `promo-pct-cents-s-${ts}@e2e.wishi.test`;
+  const code = `PCTCENTS${ts}`;
+
+  await ensureClientUser({
+    clerkId: `e2e_promo_pctc_c_${ts}`,
+    email: clientEmail,
+    firstName: "Promo",
+    lastName: "Cents",
+  });
+  const stylist = await ensureStylistUser({
+    clerkId: `e2e_promo_pctc_s_${ts}`,
+    email: stylistEmail,
+    firstName: "Sasha",
+    lastName: "Stylist",
+  });
+  const profile = await ensureStylistProfile({ userId: stylist.id });
+  const promoId = await seedPromo({
+    code,
+    discountType: "PERCENT",
+    discountValue: 33, // 33% off $60 = $19.80 discount → $40.20 total (non-whole)
+  });
+
+  try {
+    await signInAsClient(page, clientEmail);
+    await page.goto(`/session-checkout?plan=mini&stylistId=${profile.id}`);
+    await page.waitForLoadState("networkidle");
+
+    await page.getByRole("button", { name: "Add promotion code" }).click();
+    await page.getByPlaceholder("Promo code").fill(code);
+    await page.getByRole("button", { name: "Apply" }).click();
+
+    // Discount line shows $19.80 with two decimals, NOT a rounded $20.
+    await expect(page.getByText("−$19.80")).toBeVisible();
+    // Pay CTA shows the matching $40.20 so it agrees with what Stripe charges.
+    await expect(page.getByRole("button", { name: /^Pay \$40\.20$/ })).toBeVisible();
+  } finally {
+    await deletePromo(promoId);
+    await cleanupStylistProfile(stylist.id);
+    await cleanupE2EUserByEmail(clientEmail);
+    await cleanupE2EUserByEmail(stylistEmail);
+  }
+});
+
 test("Invalid promo code surfaces a rejection message", async ({ page }) => {
   const ts = Date.now();
   const clientEmail = `promo-bad-${ts}@e2e.wishi.test`;

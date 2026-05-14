@@ -204,6 +204,62 @@ test("handleCheckoutCompleted redeems promo code in metadata + links Session/Pay
   await prisma.promoCode.delete({ where: { id: promo.id } });
 });
 
+test("handleCheckoutCompleted reconciles a Stripe-typed coupon back to PromoCode when metadata empty", async () => {
+  const suffix = randomUUID().slice(0, 8);
+  const buyer = await ensureClientUser({
+    clerkId: `rt_recon_${suffix}`,
+    email: `rt-recon-${suffix}@example.com`,
+    firstName: "Recon",
+    lastName: "Booker",
+  });
+  teardown.push(buyer as User);
+
+  const stripeCouponId = `STRP-${suffix.toUpperCase()}`;
+  const promo = await prisma.promoCode.create({
+    data: {
+      code: stripeCouponId,
+      creditType: "SESSION",
+      discountType: "AMOUNT",
+      discountValue: 1000,
+      stripeCouponId,
+      isActive: true,
+      usageLimit: 1,
+    },
+  });
+
+  const paymentIntentId = `pi_rt_recon_${suffix}`;
+  await handleCheckoutCompleted({
+    id: `cs_test_recon_${suffix}`,
+    payment_intent: paymentIntentId,
+    amount_total: 5000,
+    currency: "usd",
+    customer_details: { name: null },
+    metadata: {
+      userId: buyer.id,
+      planType: "MINI",
+      // promoCodeId intentionally absent — simulates the allow_promotion_codes
+      // path where a code is typed on Stripe's hosted page.
+    },
+    total_details: { amount_discount: 1000 },
+    discounts: [{ coupon: stripeCouponId }],
+  } as unknown as Stripe.Checkout.Session);
+
+  const session = await prisma.session.findFirstOrThrow({
+    where: { clientId: buyer.id },
+    select: { id: true, promoCodeId: true },
+  });
+  assert.equal(session.promoCodeId, promo.id);
+
+  const refreshed = await prisma.promoCode.findUniqueOrThrow({
+    where: { id: promo.id },
+    select: { usedCount: true },
+  });
+  assert.equal(refreshed.usedCount, 1, "Stripe-typed redemption must increment usedCount");
+
+  await prisma.session.deleteMany({ where: { id: session.id } });
+  await prisma.promoCode.delete({ where: { id: promo.id } });
+});
+
 test("handleCheckoutCompleted does not overwrite an existing name", async () => {
   const suffix = randomUUID().slice(0, 8);
   const user = await ensureClientUser({
