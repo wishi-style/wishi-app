@@ -21,6 +21,12 @@ function fmtMoney(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+function fmtDiscount(row: AdminPromoCodeRow) {
+  return row.discountType === "PERCENT"
+    ? `${row.discountValue}%`
+    : fmtMoney(row.discountValue);
+}
+
 export function PromoCodesTable({ codes }: { codes: AdminPromoCodeRow[] }) {
   const router = useRouter();
 
@@ -52,9 +58,9 @@ export function PromoCodesTable({ codes }: { codes: AdminPromoCodeRow[] }) {
         cell: ({ row }) => <Badge variant="outline">{row.original.creditType}</Badge>,
       },
       {
-        accessorKey: "amountInCents",
-        header: "Amount",
-        cell: ({ row }) => fmtMoney(row.original.amountInCents),
+        accessorKey: "discountValue",
+        header: "Discount",
+        cell: ({ row }) => fmtDiscount(row.original),
       },
       {
         accessorKey: "usedCount",

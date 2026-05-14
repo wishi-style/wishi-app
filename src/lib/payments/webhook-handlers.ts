@@ -13,7 +13,10 @@ import { applyBuyMoreLooksFromCheckout } from "./buy-more-looks.service";
 import { applyDirectSaleFromCheckout } from "./direct-sale.service";
 import { applyDirectSalePaymentIntentSucceeded } from "./direct-sale-elements.service";
 import { handleTipPaymentSucceeded } from "./payout-webhooks";
-import { applyGiftCardPurchaseFromCheckout } from "@/lib/promotions/gift-card.service";
+import {
+  applyGiftCardPurchaseFromCheckout,
+  redeemPromoCode,
+} from "@/lib/promotions/gift-card.service";
 import { parseFullName } from "@/lib/users/ensure-stripe-name";
 
 // Capture cardholder name from a completed Stripe Checkout when our DB row is
@@ -101,6 +104,7 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
   }
 
   const { userId, planType, stylistUserId } = session.metadata ?? {};
+  const promoCodeId = session.metadata?.promoCodeId || null;
   if (!userId || !planType) {
     console.error("[stripe] Missing metadata on checkout session", session.id);
     return;
@@ -139,6 +143,15 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
 
   if (recoveryPlan.shouldCreateSession) {
     localSession = await prisma.$transaction(async (tx) => {
+      // Redeem the promo first so usedCount increments atomically with
+      // the Session/Payment writes. If redemption fails (race lost,
+      // expired since we resolved at checkout creation, etc) we silently
+      // drop the link — Stripe has already discounted the line item, so
+      // there's no double-charge risk; we just lose the audit link.
+      const redeemed = promoCodeId
+        ? await redeemPromoCode({ id: promoCodeId }, "SESSION", tx)
+        : null;
+
       const createdSession = await tx.session.create({
         data: {
           clientId: userId,
@@ -149,6 +162,7 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
           styleboardsAllowed: plan.styleboards,
           moodboardsAllowed: plan.moodboards,
           stripePaymentIntentId: paymentIntentId,
+          promoCodeId: redeemed?.promoCodeId ?? null,
         },
         select: { id: true, status: true, stylistId: true },
       });
@@ -158,6 +172,7 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
           amountInCents: session.amount_total ?? plan.priceInCents,
           paymentIntentId,
           sessionId: createdSession.id,
+          promoCodeId: redeemed?.promoCodeId ?? null,
           tx,
           userId,
         });
@@ -170,6 +185,7 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
       amountInCents: session.amount_total ?? plan.priceInCents,
       paymentIntentId,
       sessionId: localSession.id,
+      promoCodeId: null,
       tx: prisma,
       userId,
     });
@@ -478,12 +494,14 @@ async function createOrUpdatePaymentRecord({
   amountInCents,
   paymentIntentId,
   sessionId,
+  promoCodeId,
   tx,
   userId,
 }: {
   amountInCents: number;
   paymentIntentId: string | null;
   sessionId: string;
+  promoCodeId: string | null;
   tx: { payment: typeof prisma.payment };
   userId: string;
 }) {
@@ -496,6 +514,7 @@ async function createOrUpdatePaymentRecord({
         status: "SUCCEEDED",
         type: "SESSION",
         userId,
+        promoCodeId,
       },
       create: {
         userId,
@@ -504,6 +523,7 @@ async function createOrUpdatePaymentRecord({
         status: "SUCCEEDED",
         amountInCents,
         stripePaymentIntentId: paymentIntentId,
+        promoCodeId,
       },
     });
     return;
@@ -517,6 +537,7 @@ async function createOrUpdatePaymentRecord({
       status: "SUCCEEDED",
       amountInCents,
       stripePaymentIntentId: null,
+      promoCodeId,
     },
   });
 }

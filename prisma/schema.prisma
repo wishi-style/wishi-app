@@ -143,6 +143,11 @@ enum PromoCodeCreditType {
   SHOPPING
 }
 
+enum PromoCodeDiscountType {
+  AMOUNT
+  PERCENT
+}
+
 // === Preferences ===
 
 enum FitPreference {
@@ -1167,10 +1172,15 @@ model LoyaltyAccount {
 }
 
 model PromoCode {
-  id               String              @id @default(cuid())
-  code             String              @unique
-  creditType       PromoCodeCreditType @map("credit_type")
-  amountInCents    Int                 @map("amount_in_cents")
+  id               String                @id @default(cuid())
+  code             String                @unique
+  creditType       PromoCodeCreditType   @map("credit_type")
+  // discountType + discountValue are a discriminated pair. AMOUNT carries a
+  // cents value (e.g. 5000 = $50 off). PERCENT carries 1-100 (e.g. 100 = 100%
+  // off). Enforced in DB by the `promo_codes_discount_value_valid_chk`
+  // CHECK constraint applied in the same migration that added these columns.
+  discountType     PromoCodeDiscountType @map("discount_type")
+  discountValue    Int                   @map("discount_value")
   expiresAt        DateTime?           @map("expires_at")
   usageLimit       Int?                @map("usage_limit")
   usedCount        Int                 @default(0) @map("used_count")

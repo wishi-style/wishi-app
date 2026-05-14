@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { createPromoCode } from "@/lib/promotions/promo-code.service";
-import type { PromoCodeCreditType } from "@/generated/prisma/client";
+import type {
+  PromoCodeCreditType,
+  PromoCodeDiscountType,
+} from "@/generated/prisma/client";
 
 export const dynamic = "force-dynamic";
 
 interface Body {
   code?: string;
   creditType?: PromoCodeCreditType;
-  amountInCents?: number;
+  discountType?: PromoCodeDiscountType;
+  discountValue?: number;
   usageLimit?: number | null;
   expiresAt?: string | null;
 }
@@ -16,9 +20,13 @@ interface Body {
 export async function POST(req: Request) {
   const admin = await requireAdmin();
   const body = (await req.json().catch(() => null)) as Body | null;
-  if (!body?.creditType || !body?.amountInCents) {
+  if (
+    !body?.creditType ||
+    !body?.discountType ||
+    typeof body?.discountValue !== "number"
+  ) {
     return NextResponse.json(
-      { error: "creditType and amountInCents are required" },
+      { error: "creditType, discountType, and discountValue are required" },
       { status: 400 },
     );
   }
@@ -26,7 +34,8 @@ export async function POST(req: Request) {
     const promo = await createPromoCode({
       code: body.code,
       creditType: body.creditType,
-      amountInCents: body.amountInCents,
+      discountType: body.discountType,
+      discountValue: body.discountValue,
       usageLimit: body.usageLimit ?? null,
       expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
       actorUserId: admin.userId,
