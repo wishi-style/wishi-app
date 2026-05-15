@@ -63,6 +63,7 @@ export function SessionCard({ session }: { session: SessionData }) {
 
   const status = deriveStatus(session);
   const isHighPriority = status === "new_board";
+  const isTerminal = status === "terminal";
   const lastTimestamp = session.messages[0]?.createdAt ?? session.createdAt;
 
   const stylistProfileHref = session.stylist?.stylistProfile?.id
@@ -71,15 +72,27 @@ export function SessionCard({ session }: { session: SessionData }) {
 
   return (
     <div
-      className={`group flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 rounded-sm bg-card p-4 sm:p-6 transition-all hover:shadow-md ${
+      className={`group relative flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 rounded-sm bg-card p-4 sm:p-6 transition-all hover:shadow-md ${
         isHighPriority ? "border-l-2 border-l-warm-beige" : ""
       }`}
     >
+      {isTerminal && (
+        // Card-level overlay so any tap outside the avatar / action button
+        // opens the read-only chat recap. The interactive children below get
+        // `relative z-10` so their own hrefs intercept clicks first.
+        <Link
+          href={`/sessions/${session.id}/chat`}
+          aria-label={`Open chat with ${stylistName}`}
+          className="absolute inset-0 z-0 rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-foreground/40"
+        >
+          <span className="sr-only">Open chat with {stylistName}</span>
+        </Link>
+      )}
       <div className="flex items-center gap-3 sm:contents">
         {stylistProfileHref ? (
           <Link
             href={stylistProfileHref}
-            className="shrink-0 transition-opacity hover:opacity-80"
+            className="relative z-10 shrink-0 transition-opacity hover:opacity-80"
             aria-label={`View ${stylistName}'s profile`}
           >
             <SessionAvatar
@@ -131,7 +144,7 @@ export function SessionCard({ session }: { session: SessionData }) {
 
       <Link
         href={actionHref(status, session)}
-        className={`shrink-0 rounded-sm px-8 py-2.5 text-xs font-body tracking-widest transition-colors ${
+        className={`relative z-10 shrink-0 rounded-sm px-8 py-2.5 text-xs font-body tracking-widest transition-colors ${
           isHighPriority
             ? "bg-foreground text-background hover:bg-foreground/90"
             : "border border-input text-foreground hover:bg-accent hover:text-accent-foreground"
