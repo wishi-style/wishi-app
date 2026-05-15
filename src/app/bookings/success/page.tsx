@@ -1,15 +1,28 @@
 import Link from "next/link";
 import Image from "next/image";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { ArrowRightIcon, MessageCircleIcon, SparklesIcon, ShoppingBagIcon } from "lucide-react";
-import { stripe } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { getServerAuth } from "@/lib/auth/server-auth";
+import {
+  CLERK_RECOVERY_MARKER,
+  CLERK_RECOVERY_MARKER_VALUE,
+  buildClerkRecoveryUrl,
+} from "@/lib/auth/clerk-recovery";
+import {
+  retrieveCheckoutMetadata,
+  type CheckoutMetadata,
+} from "@/lib/payments/checkout-metadata";
+import { resolveAppUrl } from "@/lib/app-url";
 import { hasCompletedStyleQuiz } from "@/lib/quiz/style-quiz-status";
 
 export const dynamic = "force-dynamic";
 
 interface SearchParams {
   session_id?: string;
+  __clerk_recovery?: string;
 }
 
 interface ResolvedStylist {
@@ -17,37 +30,33 @@ interface ResolvedStylist {
   avatarUrl: string | null;
 }
 
-interface ResolvedCheckout {
-  stylist: ResolvedStylist | null;
-  userId: string | null;
-}
-
-async function resolveFromCheckout(stripeSessionId: string | undefined): Promise<ResolvedCheckout> {
-  if (!stripeSessionId || stripeSessionId === "{CHECKOUT_SESSION_ID}") {
-    return { stylist: null, userId: null };
-  }
-
-  let stylistUserId: string | null = null;
-  let userId: string | null = null;
-  try {
-    const checkout = await stripe.checkout.sessions.retrieve(stripeSessionId);
-    stylistUserId = (checkout.metadata?.stylistUserId as string) || null;
-    userId = (checkout.metadata?.userId as string) || null;
-  } catch {
-    return { stylist: null, userId: null };
-  }
-  if (!stylistUserId) return { stylist: null, userId };
-
+async function resolveStylistFromMetadata(
+  metadata: CheckoutMetadata | null,
+): Promise<ResolvedStylist | null> {
+  if (!metadata?.stylistUserId) return null;
   const stylistUser = await prisma.user.findUnique({
-    where: { id: stylistUserId },
+    where: { id: metadata.stylistUserId },
     select: { firstName: true, avatarUrl: true },
   });
-  return {
-    stylist: stylistUser
-      ? { firstName: stylistUser.firstName, avatarUrl: stylistUser.avatarUrl }
-      : null,
-    userId,
-  };
+  return stylistUser
+    ? { firstName: stylistUser.firstName, avatarUrl: stylistUser.avatarUrl }
+    : null;
+}
+
+// Preserve any non-recovery query params on the round-trip back to
+// /bookings/success after ticket consumption. We strip CLERK_RECOVERY_MARKER
+// itself so the helper's loop guard sets a fresh `tried` value rather than
+// inheriting whatever the inbound request carried.
+function buildReturnPath(params: SearchParams): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (key === CLERK_RECOVERY_MARKER) continue;
+    if (typeof value === "string" && value.length > 0) {
+      search.set(key, value);
+    }
+  }
+  const qs = search.toString();
+  return qs ? `/bookings/success?${qs}` : "/bookings/success";
 }
 
 export default async function BookingSuccessPage(props: {
@@ -55,15 +64,49 @@ export default async function BookingSuccessPage(props: {
 }) {
   const params = await props.searchParams;
 
-  // Don't require Clerk auth here. Stripe redirects land on the HTTP staging
-  // ALB and Clerk's Secure session cookie doesn't always come along, which
-  // historically threw the user into a session-refresh loop. The Stripe
-  // `session_id` (unforgeable, server-to-server retrieve) is sufficient
-  // proof of the booking — fall back to the userId on its metadata when
-  // there is no signed-in user.
+  // Single Stripe round-trip for the whole render — recovery + stylist
+  // resolution both consume this. Hoisted out of the helpers so the unhappy
+  // path (no Clerk session + recovery falls through) doesn't double-call.
+  const checkoutMetadata = await retrieveCheckoutMetadata({
+    stripeSessionId: params.session_id,
+  });
+
+  // Auto-recovery: Clerk's session can be missing here even on HTTPS staging.
+  // The most common driver is the new-signup race — the Clerk frontend SDK
+  // hasn't fully persisted the long-lived refresh cookie before the modal
+  // closes and `forceRedirectUrl` kicks off the booking flow. By the time the
+  // browser bounces back from Stripe (1–3 minutes later), the short-lived JWT
+  // is expired and there's nothing for Clerk's middleware to refresh from.
+  //
+  // The Stripe `metadata.userId` is server-side, unforgeable proof of identity:
+  // we look up the paying user, mint a one-shot Clerk sign-in token, and
+  // bounce through `/sign-in?__clerk_ticket=...` so the <SignIn> component
+  // re-establishes the session and lands the user back here authed. The
+  // `CLERK_RECOVERY_MARKER` query param is the loop guard for the rare case
+  // where ticket consumption fails — second time through, we skip recovery
+  // and render the generic confirmation below.
+  const { userId: clerkId } = await getServerAuth();
+  if (!clerkId && params[CLERK_RECOVERY_MARKER] !== CLERK_RECOVERY_MARKER_VALUE) {
+    const appUrl = resolveAppUrl({
+      envAppUrl: process.env.APP_URL,
+      headers: await headers(),
+    });
+    const recoveryUrl = await buildClerkRecoveryUrl({
+      prismaUserId: checkoutMetadata?.prismaUserId,
+      appUrl,
+      returnPath: buildReturnPath(params),
+    });
+    if (recoveryUrl) redirect(recoveryUrl);
+  }
+
+  // Even after recovery (or when no Clerk session exists and recovery wasn't
+  // possible — direct visit, expired ticket, missing metadata), the Stripe
+  // metadata keeps the page functional: it's server-to-server retrievable
+  // proof of who paid, so we degrade to a generic confirmation rather than
+  // 401ing.
   const signedInUser = await getCurrentUser().catch(() => null);
-  const { stylist, userId: checkoutUserId } = await resolveFromCheckout(params.session_id);
-  const userId = signedInUser?.id ?? checkoutUserId;
+  const stylist = await resolveStylistFromMetadata(checkoutMetadata);
+  const userId = signedInUser?.id ?? checkoutMetadata?.prismaUserId ?? null;
 
   const stylistFirstName = stylist?.firstName ?? "your stylist";
   const stylistPhotoUrl = stylist?.avatarUrl ?? null;
