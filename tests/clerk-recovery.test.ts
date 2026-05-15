@@ -11,20 +11,11 @@ const APP_URL = "https://d2mt49xs07o9rr.cloudfront.net";
 const RETURN_PATH = "/bookings/success?session_id=cs_test_xyz";
 
 function makeDeps(overrides: {
-  metadata?: Record<string, string | null> | null;
   user?: { clerkId: string | null; deletedAt: Date | null } | null;
   token?: string;
-  throwOn?: "retrieve" | "findUser" | "createToken";
+  throwOn?: "findUser" | "createToken";
 } = {}) {
   return {
-    retrieveCheckoutSession: async () => {
-      if (overrides.throwOn === "retrieve") throw new Error("stripe boom");
-      const metadata =
-        "metadata" in overrides
-          ? (overrides.metadata ?? null)
-          : { userId: "user_abc" };
-      return { metadata };
-    },
     findUserById: async () => {
       if (overrides.throwOn === "findUser") throw new Error("prisma boom");
       return "user" in overrides
@@ -38,9 +29,9 @@ function makeDeps(overrides: {
   };
 }
 
-test("returns null when stripeSessionId is missing", async () => {
+test("returns null when prismaUserId is missing", async () => {
   const url = await buildClerkRecoveryUrl({
-    stripeSessionId: undefined,
+    prismaUserId: undefined,
     appUrl: APP_URL,
     returnPath: RETURN_PATH,
     deps: makeDeps(),
@@ -48,9 +39,9 @@ test("returns null when stripeSessionId is missing", async () => {
   assert.equal(url, null);
 });
 
-test("returns null when stripeSessionId is the literal placeholder", async () => {
+test("returns null when prismaUserId is null", async () => {
   const url = await buildClerkRecoveryUrl({
-    stripeSessionId: "{CHECKOUT_SESSION_ID}",
+    prismaUserId: null,
     appUrl: APP_URL,
     returnPath: RETURN_PATH,
     deps: makeDeps(),
@@ -58,29 +49,19 @@ test("returns null when stripeSessionId is the literal placeholder", async () =>
   assert.equal(url, null);
 });
 
-test("returns null when Stripe metadata has no userId", async () => {
+test("returns null when prismaUserId is empty string", async () => {
   const url = await buildClerkRecoveryUrl({
-    stripeSessionId: "cs_test_xyz",
+    prismaUserId: "",
     appUrl: APP_URL,
     returnPath: RETURN_PATH,
-    deps: makeDeps({ metadata: { foo: "bar" } }),
-  });
-  assert.equal(url, null);
-});
-
-test("returns null when Stripe metadata is empty / null", async () => {
-  const url = await buildClerkRecoveryUrl({
-    stripeSessionId: "cs_test_xyz",
-    appUrl: APP_URL,
-    returnPath: RETURN_PATH,
-    deps: makeDeps({ metadata: null }),
+    deps: makeDeps(),
   });
   assert.equal(url, null);
 });
 
 test("returns null when user not found", async () => {
   const url = await buildClerkRecoveryUrl({
-    stripeSessionId: "cs_test_xyz",
+    prismaUserId: "user_abc",
     appUrl: APP_URL,
     returnPath: RETURN_PATH,
     deps: makeDeps({ user: null }),
@@ -90,7 +71,7 @@ test("returns null when user not found", async () => {
 
 test("returns null when user has no clerkId", async () => {
   const url = await buildClerkRecoveryUrl({
-    stripeSessionId: "cs_test_xyz",
+    prismaUserId: "user_abc",
     appUrl: APP_URL,
     returnPath: RETURN_PATH,
     deps: makeDeps({ user: { clerkId: null, deletedAt: null } }),
@@ -100,7 +81,7 @@ test("returns null when user has no clerkId", async () => {
 
 test("returns null when user is soft-deleted", async () => {
   const url = await buildClerkRecoveryUrl({
-    stripeSessionId: "cs_test_xyz",
+    prismaUserId: "user_abc",
     appUrl: APP_URL,
     returnPath: RETURN_PATH,
     deps: makeDeps({
@@ -110,19 +91,9 @@ test("returns null when user is soft-deleted", async () => {
   assert.equal(url, null);
 });
 
-test("returns null when Stripe retrieve throws", async () => {
-  const url = await buildClerkRecoveryUrl({
-    stripeSessionId: "cs_test_xyz",
-    appUrl: APP_URL,
-    returnPath: RETURN_PATH,
-    deps: makeDeps({ throwOn: "retrieve" }),
-  });
-  assert.equal(url, null);
-});
-
 test("returns null when DB lookup throws", async () => {
   const url = await buildClerkRecoveryUrl({
-    stripeSessionId: "cs_test_xyz",
+    prismaUserId: "user_abc",
     appUrl: APP_URL,
     returnPath: RETURN_PATH,
     deps: makeDeps({ throwOn: "findUser" }),
@@ -132,7 +103,7 @@ test("returns null when DB lookup throws", async () => {
 
 test("returns null when Clerk token creation throws", async () => {
   const url = await buildClerkRecoveryUrl({
-    stripeSessionId: "cs_test_xyz",
+    prismaUserId: "user_abc",
     appUrl: APP_URL,
     returnPath: RETURN_PATH,
     deps: makeDeps({ throwOn: "createToken" }),
@@ -142,7 +113,7 @@ test("returns null when Clerk token creation throws", async () => {
 
 test("builds /sign-in URL with __clerk_ticket and loop-guarded redirect_url", async () => {
   const raw = await buildClerkRecoveryUrl({
-    stripeSessionId: "cs_test_xyz",
+    prismaUserId: "user_abc",
     appUrl: APP_URL,
     returnPath: RETURN_PATH,
     deps: makeDeps({ token: "tkt_signed_value" }),
@@ -173,11 +144,12 @@ test("builds /sign-in URL with __clerk_ticket and loop-guarded redirect_url", as
   );
 });
 
-test("preserves existing query params on the returnPath", async () => {
+test("preserves arbitrary query params on the returnPath", async () => {
   const raw = await buildClerkRecoveryUrl({
-    stripeSessionId: "cs_test_xyz",
+    prismaUserId: "user_abc",
     appUrl: APP_URL,
-    returnPath: "/bookings/success?session_id=cs_test_xyz&utm_source=email",
+    returnPath:
+      "/bookings/success?session_id=cs_test_xyz&utm_source=email&affiliate=partner_xyz",
     deps: makeDeps(),
   });
   assert.ok(raw);
@@ -186,6 +158,7 @@ test("preserves existing query params on the returnPath", async () => {
   const redirectRaw = url.searchParams.get("redirect_url");
   const redirectUrl = new URL(redirectRaw!, APP_URL);
   assert.equal(redirectUrl.searchParams.get("utm_source"), "email");
+  assert.equal(redirectUrl.searchParams.get("affiliate"), "partner_xyz");
   assert.equal(redirectUrl.searchParams.get("session_id"), "cs_test_xyz");
   assert.equal(
     redirectUrl.searchParams.get(CLERK_RECOVERY_MARKER),

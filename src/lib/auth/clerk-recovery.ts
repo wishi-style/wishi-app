@@ -1,5 +1,4 @@
 import { clerkClient } from "@clerk/nextjs/server";
-import { stripe } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
 
 // Marker we add to the recovery redirect's `redirect_url`. If we ever land back
@@ -14,14 +13,16 @@ export const CLERK_RECOVERY_MARKER_VALUE = "tried";
 const SIGN_IN_TOKEN_TTL_SECONDS = 300;
 
 export interface BuildClerkRecoveryUrlInput {
-  stripeSessionId: string | null | undefined;
+  /**
+   * `User.id` (Prisma) of the user who paid — typically resolved out of the
+   * Stripe Checkout metadata by `retrieveCheckoutMetadata`. Caller hoists the
+   * Stripe round-trip so we don't double-fetch on the unhappy path.
+   */
+  prismaUserId: string | null | undefined;
   appUrl: string;
   returnPath: string;
   // Test seams. Production omits these.
   deps?: {
-    retrieveCheckoutSession?: (id: string) => Promise<{
-      metadata: Record<string, string> | Record<string, string | null> | null | undefined;
-    }>;
     findUserById?: (id: string) => Promise<{
       clerkId: string | null;
       deletedAt: Date | null;
@@ -39,34 +40,26 @@ export interface BuildClerkRecoveryUrlInput {
  *
  * Returning `null` means recovery is not possible for this request — the
  * caller should fall through to the generic confirmation render. We never
- * surface a Clerk/Stripe/DB error to the user from this path; on any failure
+ * surface a Clerk/Prisma error to the user from this path; on any failure
  * we log and return `null`.
  *
- * The Stripe `session_id` is the trust anchor: it's an unforgeable, server-to-
- * server-retrievable proof that the caller just paid as `metadata.userId`. We
- * use it to look up the user's `clerkId`, then mint a one-shot Clerk sign-in
- * token. The browser follows `/sign-in?__clerk_ticket=...` which Clerk's
- * `<SignIn>` component auto-consumes, then bounces back to `returnPath` with
- * a fresh session cookie.
+ * The Stripe `metadata.userId` is the trust anchor: the Stripe session itself
+ * is server-to-server-retrievable proof, and its metadata is set by us at
+ * checkout-creation time, so it's unforgeable in transit. We look up the
+ * user's `clerkId`, then mint a one-shot Clerk sign-in token. The browser
+ * follows `/sign-in?__clerk_ticket=...` which Clerk's `<SignIn>` component
+ * auto-consumes, then bounces back to `returnPath` with a fresh session
+ * cookie.
  */
 export async function buildClerkRecoveryUrl({
-  stripeSessionId,
+  prismaUserId,
   appUrl,
   returnPath,
   deps,
 }: BuildClerkRecoveryUrlInput): Promise<string | null> {
-  if (!stripeSessionId || stripeSessionId === "{CHECKOUT_SESSION_ID}") {
-    return null;
-  }
+  if (!prismaUserId) return null;
 
   try {
-    const retrieve =
-      deps?.retrieveCheckoutSession ??
-      ((id: string) => stripe.checkout.sessions.retrieve(id));
-    const session = await retrieve(stripeSessionId);
-    const stripeMetadataUserId = readUserId(session.metadata);
-    if (!stripeMetadataUserId) return null;
-
     const findUser =
       deps?.findUserById ??
       ((id: string) =>
@@ -74,7 +67,7 @@ export async function buildClerkRecoveryUrl({
           where: { id },
           select: { clerkId: true, deletedAt: true },
         }));
-    const user = await findUser(stripeMetadataUserId);
+    const user = await findUser(prismaUserId);
     if (!user?.clerkId || user.deletedAt) return null;
 
     const createToken =
@@ -100,21 +93,15 @@ export async function buildClerkRecoveryUrl({
     );
     return signInUrl.toString();
   } catch (err) {
+    // Structured payload for CloudWatch search + raw stack for debugging.
     console.error(
       JSON.stringify({
         event: "clerk_recovery_failed",
-        stripeSessionId,
+        prismaUserId,
         err: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
       }),
     );
     return null;
   }
-}
-
-function readUserId(
-  metadata: Record<string, string | null> | Record<string, string> | null | undefined,
-): string | null {
-  if (!metadata) return null;
-  const value = metadata["userId"];
-  return typeof value === "string" && value.length > 0 ? value : null;
 }
