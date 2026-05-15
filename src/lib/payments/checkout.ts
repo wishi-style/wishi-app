@@ -10,18 +10,10 @@ interface CheckoutOptions {
   stylistUserId?: string;
   successUrl: string;
   cancelUrl: string;
-  // Promo discount validated server-side in `runCheckout`. When set, Stripe
-  // applies the coupon at the Hosted Checkout page and the webhook bumps
-  // `PromoCode.usedCount` + sets `Session.promoCodeId` from `promoCodeId`.
-  promo?: { promoCodeId: string; stripeCouponId: string } | null;
-}
-
-function promoMetadata(promo: CheckoutOptions["promo"]): Record<string, string> {
-  return promo ? { promoCodeId: promo.promoCodeId } : {};
-}
-
-function promoDiscounts(promo: CheckoutOptions["promo"]) {
-  return promo ? [{ coupon: promo.stripeCouponId }] : undefined;
+  // SESSION-type PromoCode pre-resolved by run-checkout.ts. Passed through to
+  // Stripe as `discounts:[{ coupon }]` and stashed in metadata so the webhook
+  // can increment usedCount + link Session.promoCodeId after fulfillment.
+  promo?: { promoCodeId: string; stripeCouponId: string };
 }
 
 export async function createOneTimeCheckout(options: CheckoutOptions) {
@@ -40,7 +32,9 @@ export async function createOneTimeCheckout(options: CheckoutOptions) {
     customer_update: { name: "auto" },
     mode: "payment",
     line_items: [{ price: plan.stripePriceIdOneTime, quantity: 1 }],
-    discounts: promoDiscounts(options.promo),
+    ...(options.promo
+      ? { discounts: [{ coupon: options.promo.stripeCouponId }] }
+      : { allow_promotion_codes: true }),
     success_url: options.successUrl,
     cancel_url: options.cancelUrl,
     metadata: {
@@ -48,7 +42,7 @@ export async function createOneTimeCheckout(options: CheckoutOptions) {
       planType: options.planType,
       stylistProfileId: options.stylistId ?? "",
       stylistUserId: options.stylistUserId ?? "",
-      ...promoMetadata(options.promo),
+      promoCodeId: options.promo?.promoCodeId ?? "",
     },
   });
 }
@@ -70,7 +64,9 @@ export async function createSubscriptionCheckout(options: CheckoutOptions) {
     customer_update: { name: "auto" },
     mode: "subscription",
     line_items: [{ price: plan.stripePriceIdSubscription, quantity: 1 }],
-    discounts: promoDiscounts(options.promo),
+    ...(options.promo
+      ? { discounts: [{ coupon: options.promo.stripeCouponId }] }
+      : { allow_promotion_codes: true }),
     subscription_data: {
       trial_period_days: plan.trialDays || undefined,
       metadata: {
@@ -78,7 +74,7 @@ export async function createSubscriptionCheckout(options: CheckoutOptions) {
         planType: options.planType,
         stylistProfileId: options.stylistId ?? "",
         stylistUserId: options.stylistUserId ?? "",
-        ...promoMetadata(options.promo),
+        promoCodeId: options.promo?.promoCodeId ?? "",
       },
     },
     success_url: options.successUrl,
@@ -88,7 +84,7 @@ export async function createSubscriptionCheckout(options: CheckoutOptions) {
       planType: options.planType,
       stylistProfileId: options.stylistId ?? "",
       stylistUserId: options.stylistUserId ?? "",
-      ...promoMetadata(options.promo),
+      promoCodeId: options.promo?.promoCodeId ?? "",
     },
   });
 }

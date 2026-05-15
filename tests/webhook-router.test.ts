@@ -140,6 +140,126 @@ test("handleCheckoutCompleted captures customer_details.name into empty User row
   assert.equal(after.lastName, "Cardozo");
 });
 
+test("handleCheckoutCompleted redeems promo code in metadata + links Session/Payment", async () => {
+  const suffix = randomUUID().slice(0, 8);
+  const buyer = await ensureClientUser({
+    clerkId: `rt_promo_${suffix}`,
+    email: `rt-promo-${suffix}@example.com`,
+    firstName: "Promo",
+    lastName: "Booker",
+  });
+  teardown.push(buyer as User);
+
+  // Seed a promo locally — bypass createPromoCode so we don't depend on a
+  // live Stripe Coupon (the webhook only needs the DB row to redeem against).
+  const promo = await prisma.promoCode.create({
+    data: {
+      code: `PCT-${suffix.toUpperCase()}`,
+      creditType: "SESSION",
+      discountType: "PERCENT",
+      discountValue: 50,
+      isActive: true,
+      usageLimit: 1,
+    },
+  });
+
+  const paymentIntentId = `pi_rt_promo_${suffix}`;
+  await handleCheckoutCompleted({
+    id: `cs_test_promo_${suffix}`,
+    payment_intent: paymentIntentId,
+    amount_total: 3000, // 50% of $60 Mini
+    currency: "usd",
+    customer_details: { name: null },
+    metadata: {
+      userId: buyer.id,
+      planType: "MINI",
+      promoCodeId: promo.id,
+    },
+  } as unknown as Stripe.Checkout.Session);
+
+  const session = await prisma.session.findFirstOrThrow({
+    where: { clientId: buyer.id },
+    select: { id: true, promoCodeId: true, amountPaidInCents: true },
+  });
+  assert.equal(session.promoCodeId, promo.id);
+  assert.equal(session.amountPaidInCents, 3000);
+
+  const payment = await prisma.payment.findUniqueOrThrow({
+    where: { stripePaymentIntentId: paymentIntentId },
+    select: { promoCodeId: true, amountInCents: true },
+  });
+  assert.equal(payment.promoCodeId, promo.id);
+  assert.equal(payment.amountInCents, 3000);
+
+  const refreshed = await prisma.promoCode.findUniqueOrThrow({
+    where: { id: promo.id },
+    select: { usedCount: true },
+  });
+  assert.equal(refreshed.usedCount, 1);
+
+  // Cleanup: cleanupE2EUserByEmail deletes Session+Payment+User; the promo
+  // row stays orphaned but doesn't interfere with other tests.
+  await prisma.payment.deleteMany({ where: { id: { in: [] } } }); // no-op safety
+  await prisma.session.deleteMany({ where: { id: session.id } });
+  await prisma.promoCode.delete({ where: { id: promo.id } });
+});
+
+test("handleCheckoutCompleted reconciles a Stripe-typed coupon back to PromoCode when metadata empty", async () => {
+  const suffix = randomUUID().slice(0, 8);
+  const buyer = await ensureClientUser({
+    clerkId: `rt_recon_${suffix}`,
+    email: `rt-recon-${suffix}@example.com`,
+    firstName: "Recon",
+    lastName: "Booker",
+  });
+  teardown.push(buyer as User);
+
+  const stripeCouponId = `STRP-${suffix.toUpperCase()}`;
+  const promo = await prisma.promoCode.create({
+    data: {
+      code: stripeCouponId,
+      creditType: "SESSION",
+      discountType: "AMOUNT",
+      discountValue: 1000,
+      stripeCouponId,
+      isActive: true,
+      usageLimit: 1,
+    },
+  });
+
+  const paymentIntentId = `pi_rt_recon_${suffix}`;
+  await handleCheckoutCompleted({
+    id: `cs_test_recon_${suffix}`,
+    payment_intent: paymentIntentId,
+    amount_total: 5000,
+    currency: "usd",
+    customer_details: { name: null },
+    metadata: {
+      userId: buyer.id,
+      planType: "MINI",
+      // promoCodeId intentionally absent — simulates the allow_promotion_codes
+      // path where a code is typed on Stripe's hosted page.
+    },
+    total_details: { amount_discount: 1000 },
+    discounts: [{ coupon: stripeCouponId }],
+  } as unknown as Stripe.Checkout.Session);
+
+  const session = await prisma.session.findFirstOrThrow({
+    where: { clientId: buyer.id },
+    select: { id: true, promoCodeId: true },
+  });
+  assert.equal(session.promoCodeId, promo.id);
+
+  const refreshed = await prisma.promoCode.findUniqueOrThrow({
+    where: { id: promo.id },
+    select: { usedCount: true },
+  });
+  assert.equal(refreshed.usedCount, 1, "Stripe-typed redemption must increment usedCount");
+
+  await prisma.session.deleteMany({ where: { id: session.id } });
+  await prisma.promoCode.delete({ where: { id: promo.id } });
+});
+
 test("handleCheckoutCompleted does not overwrite an existing name", async () => {
   const suffix = randomUUID().slice(0, 8);
   const user = await ensureClientUser({

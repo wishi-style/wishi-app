@@ -13,8 +13,67 @@ import { applyBuyMoreLooksFromCheckout } from "./buy-more-looks.service";
 import { applyDirectSaleFromCheckout } from "./direct-sale.service";
 import { applyDirectSalePaymentIntentSucceeded } from "./direct-sale-elements.service";
 import { handleTipPaymentSucceeded } from "./payout-webhooks";
-import { applyGiftCardPurchaseFromCheckout } from "@/lib/promotions/gift-card.service";
+import {
+  applyGiftCardPurchaseFromCheckout,
+  redeemPromoCode,
+} from "@/lib/promotions/gift-card.service";
+import { stripe } from "@/lib/stripe";
 import { parseFullName } from "@/lib/users/ensure-stripe-name";
+
+/**
+ * When a code was applied directly on Stripe's hosted Checkout page
+ * (allow_promotion_codes path, or admin attached a PromotionCode in the
+ * Stripe dashboard), metadata.promoCodeId is empty. Map the redeemed
+ * coupon back to the Wishi PromoCode by stripeCouponId so we still record
+ * usage and link the audit trail.
+ *
+ * Returns null when no discount was applied OR the coupon doesn't map to
+ * a Wishi-side row (e.g. a Stripe-only coupon).
+ */
+async function resolvePromoCodeIdFromCheckoutDiscounts(
+  session: Stripe.Checkout.Session,
+): Promise<string | null> {
+  const totalDiscount = session.total_details?.amount_discount ?? 0;
+  if (totalDiscount <= 0) return null;
+
+  const discounts = session.discounts ?? [];
+  let couponId: string | null = null;
+  for (const d of discounts) {
+    if (typeof d.coupon === "string" && d.coupon) {
+      couponId = d.coupon;
+      break;
+    }
+    if (d.coupon && typeof d.coupon === "object" && "id" in d.coupon) {
+      couponId = d.coupon.id;
+      break;
+    }
+    // Stripe's hosted promo input attaches a PromotionCode (not bare Coupon).
+    // Fetch it to get the underlying coupon id.
+    const promoCodeRef = d.promotion_code;
+    if (promoCodeRef) {
+      try {
+        const pc = await stripe.promotionCodes.retrieve(
+          typeof promoCodeRef === "string" ? promoCodeRef : promoCodeRef.id,
+        );
+        const couponRef = pc.promotion.coupon;
+        couponId = typeof couponRef === "string" ? couponRef : couponRef?.id ?? null;
+        if (couponId) break;
+      } catch (err) {
+        console.error("[stripe] promotion_code resolve failed", {
+          promoCodeRef,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
+  if (!couponId) return null;
+  const promo = await prisma.promoCode.findUnique({
+    where: { stripeCouponId: couponId },
+    select: { id: true },
+  });
+  return promo?.id ?? null;
+}
 
 // Capture cardholder name from a completed Stripe Checkout when our DB row is
 // still empty. Every paid Wishi flow (one-time bookings, subscription
@@ -101,12 +160,18 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
   }
 
   const { userId, planType, stylistUserId } = session.metadata ?? {};
+  // The promoCodeId in metadata is set when Wishi pre-resolved the code at
+  // checkout-creation time. If empty but Stripe applied a discount at the
+  // hosted-checkout page (allow_promotion_codes path), reconcile back to a
+  // Wishi PromoCode by the coupon id so usedCount + the audit link stay
+  // in sync with Stripe's redemption count.
+  const promoCodeId =
+    session.metadata?.promoCodeId ||
+    (await resolvePromoCodeIdFromCheckoutDiscounts(session));
   if (!userId || !planType) {
     console.error("[stripe] Missing metadata on checkout session", session.id);
     return;
   }
-
-  const promoCodeId = session.metadata?.promoCodeId ?? null;
 
   const plan = await getPlanByType(planType as PlanType);
   if (!plan) {
@@ -122,7 +187,7 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
   let localSession = paymentIntentId
     ? await prisma.session.findUnique({
         where: { stripePaymentIntentId: paymentIntentId },
-        select: { id: true, status: true, stylistId: true },
+        select: { id: true, status: true, stylistId: true, promoCodeId: true },
       })
     : null;
 
@@ -141,6 +206,15 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
 
   if (recoveryPlan.shouldCreateSession) {
     localSession = await prisma.$transaction(async (tx) => {
+      // Redeem the promo first so usedCount increments atomically with
+      // the Session/Payment writes. If redemption fails (race lost,
+      // expired since we resolved at checkout creation, etc) we silently
+      // drop the link — Stripe has already discounted the line item, so
+      // there's no double-charge risk; we just lose the audit link.
+      const redeemed = promoCodeId
+        ? await redeemPromoCode({ id: promoCodeId }, "SESSION", tx)
+        : null;
+
       const createdSession = await tx.session.create({
         data: {
           clientId: userId,
@@ -151,9 +225,9 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
           styleboardsAllowed: plan.styleboards,
           moodboardsAllowed: plan.moodboards,
           stripePaymentIntentId: paymentIntentId,
-          promoCodeId: promoCodeId ?? null,
+          promoCodeId: redeemed?.promoCodeId ?? null,
         },
-        select: { id: true, status: true, stylistId: true },
+        select: { id: true, status: true, stylistId: true, promoCodeId: true },
       });
 
       if (recoveryPlan.shouldCreatePayment) {
@@ -161,32 +235,24 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
           amountInCents: session.amount_total ?? plan.priceInCents,
           paymentIntentId,
           sessionId: createdSession.id,
+          promoCodeId: redeemed?.promoCodeId ?? null,
           tx,
           userId,
-          promoCodeId: promoCodeId ?? null,
-        });
-      }
-
-      if (promoCodeId) {
-        // Atomic bump — Stripe's at-least-once webhook semantics could
-        // redeliver, but `recoveryPlan.shouldCreateSession` only fires once
-        // per paymentIntent so the bump is exactly-once in practice.
-        await tx.promoCode.update({
-          where: { id: promoCodeId },
-          data: { usedCount: { increment: 1 } },
         });
       }
 
       return createdSession;
     });
   } else if (recoveryPlan.shouldCreatePayment && localSession) {
+    // Recovery path: Session already exists. Preserve its promoCodeId so a
+    // late webhook retry doesn't wipe the audit link on the Payment row.
     await createOrUpdatePaymentRecord({
       amountInCents: session.amount_total ?? plan.priceInCents,
       paymentIntentId,
       sessionId: localSession.id,
+      promoCodeId: localSession.promoCodeId,
       tx: prisma,
       userId,
-      promoCodeId: promoCodeId ?? null,
     });
   }
 
@@ -493,27 +559,29 @@ async function createOrUpdatePaymentRecord({
   amountInCents,
   paymentIntentId,
   sessionId,
+  promoCodeId,
   tx,
   userId,
-  promoCodeId,
 }: {
   amountInCents: number;
   paymentIntentId: string | null;
   sessionId: string;
+  promoCodeId: string | null;
   tx: { payment: typeof prisma.payment };
   userId: string;
-  promoCodeId?: string | null;
 }) {
   if (paymentIntentId) {
     await tx.payment.upsert({
       where: { stripePaymentIntentId: paymentIntentId },
+      // Only write promoCodeId on update when we have one to set — passing
+      // null on a recovery replay would wipe a previously-linked code.
       update: {
         amountInCents,
         sessionId,
         status: "SUCCEEDED",
         type: "SESSION",
         userId,
-        promoCodeId: promoCodeId ?? undefined,
+        ...(promoCodeId !== null ? { promoCodeId } : {}),
       },
       create: {
         userId,
@@ -522,7 +590,7 @@ async function createOrUpdatePaymentRecord({
         status: "SUCCEEDED",
         amountInCents,
         stripePaymentIntentId: paymentIntentId,
-        promoCodeId: promoCodeId ?? null,
+        promoCodeId,
       },
     });
     return;
@@ -536,7 +604,7 @@ async function createOrUpdatePaymentRecord({
       status: "SUCCEEDED",
       amountInCents,
       stripePaymentIntentId: null,
-      promoCodeId: promoCodeId ?? null,
+      promoCodeId,
     },
   });
 }
