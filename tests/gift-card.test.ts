@@ -78,8 +78,10 @@ test("applyGiftCardPurchaseFromCheckout issues two PromoCodes + one GiftCard + o
   assert.equal(giftCards[0].amountInCents, 5000);
   assert.equal(giftCards[0].sessionPromoCode.creditType, "SESSION");
   assert.equal(giftCards[0].shoppingPromoCode.creditType, "SHOPPING");
-  assert.equal(giftCards[0].sessionPromoCode.amountInCents, 5000);
-  assert.equal(giftCards[0].shoppingPromoCode.amountInCents, 5000);
+  assert.equal(giftCards[0].sessionPromoCode.discountType, "AMOUNT");
+  assert.equal(giftCards[0].sessionPromoCode.discountValue, 5000);
+  assert.equal(giftCards[0].shoppingPromoCode.discountType, "AMOUNT");
+  assert.equal(giftCards[0].shoppingPromoCode.discountValue, 5000);
 
   const payments = await prisma.payment.findMany({
     where: { userId: buyer.id, type: "GIFT_CARD_PURCHASE" },
@@ -172,7 +174,8 @@ test("redeemPromoCode increments usedCount and marks GiftCard redeemed", async (
     redeemPromoCode(giftCard.sessionPromoCode.code, "SESSION", tx),
   );
   assert.ok(result);
-  assert.equal(result?.amountInCents, 5000);
+  assert.equal(result?.discountType, "AMOUNT");
+  assert.equal(result?.discountValue, 5000);
 
   const second = await prisma.$transaction((tx) =>
     redeemPromoCode(giftCard.sessionPromoCode.code, "SESSION", tx),

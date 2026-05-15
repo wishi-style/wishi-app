@@ -71,7 +71,8 @@ test("createPromoCode with SESSION type creates a matching Stripe Coupon", { ski
   const promo = await createPromoCode({
     code,
     creditType: "SESSION",
-    amountInCents: 2500,
+    discountType: "AMOUNT",
+    discountValue: 2500,
     usageLimit: 3,
     expiresAt,
     actorUserId: admin.id,
@@ -108,7 +109,8 @@ test("createPromoCode with SHOPPING type does NOT touch Stripe", { skip: skipRea
   const promo = await createPromoCode({
     code,
     creditType: "SHOPPING",
-    amountInCents: 1500,
+    discountType: "AMOUNT",
+    discountValue: 1500,
     actorUserId: admin.id,
   });
   teardown.promoId = promo.id;
@@ -119,4 +121,35 @@ test("createPromoCode with SHOPPING type does NOT touch Stripe", { skip: skipRea
     () => stripe.coupons.retrieve(code),
     (err: Error) => err.message.includes("No such coupon"),
   );
+});
+
+test("createPromoCode with PERCENT discountType uses Stripe percent_off", { skip: skipReason }, async () => {
+  const suffix = randomUUID().slice(0, 8).toUpperCase();
+  const admin = await ensureAdminUser({
+    clerkId: `pcp_${suffix}`,
+    email: `pcp-${suffix.toLowerCase()}@example.com`,
+    firstName: "Promo",
+    lastName: "Admin",
+  });
+  teardown.user = admin as User;
+
+  const code = `PCT-${suffix}`;
+
+  const promo = await createPromoCode({
+    code,
+    creditType: "SESSION",
+    discountType: "PERCENT",
+    discountValue: 25,
+    actorUserId: admin.id,
+  });
+  teardown.promoId = promo.id;
+
+  assert.equal(promo.discountType, "PERCENT");
+  assert.equal(promo.discountValue, 25);
+  assert.equal(promo.stripeCouponId, code);
+
+  const coupon = await stripe.coupons.retrieve(code);
+  assert.equal(coupon.amount_off, null);
+  assert.equal(coupon.percent_off, 25);
+  assert.equal(coupon.duration, "once");
 });

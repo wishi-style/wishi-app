@@ -2,13 +2,18 @@ import { nanoid } from "nanoid";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { writeAudit } from "@/lib/audit/log";
-import type { PromoCode, PromoCodeCreditType } from "@/generated/prisma/client";
+import type {
+  PromoCode,
+  PromoCodeCreditType,
+  PromoCodeDiscountType,
+} from "@/generated/prisma/client";
 
 export interface AdminPromoCodeRow {
   id: string;
   code: string;
   creditType: PromoCodeCreditType;
-  amountInCents: number;
+  discountType: PromoCodeDiscountType;
+  discountValue: number;
   isActive: boolean;
   usageLimit: number | null;
   usedCount: number;
@@ -30,7 +35,8 @@ export async function listPromoCodes(opts?: {
     id: r.id,
     code: r.code,
     creditType: r.creditType,
-    amountInCents: r.amountInCents,
+    discountType: r.discountType,
+    discountValue: r.discountValue,
     isActive: r.isActive,
     usageLimit: r.usageLimit,
     usedCount: r.usedCount,
@@ -40,27 +46,32 @@ export async function listPromoCodes(opts?: {
   }));
 }
 
-export interface CreatePromoCodeInput {
+export type CreatePromoCodeInput = {
   code?: string;
   creditType: PromoCodeCreditType;
-  amountInCents: number;
   usageLimit?: number | null;
   expiresAt?: Date | null;
   actorUserId: string;
-}
+} & (
+  | { discountType: "AMOUNT"; discountValue: number }
+  | { discountType: "PERCENT"; discountValue: number }
+);
 
 /**
  * Admin-only. SESSION-type promo codes are mirrored into Stripe as a Coupon
  * so Stripe Checkout can apply them natively at the subscription/one-time
  * flow. SHOPPING-type codes are local-only and applied by the Wishi
  * checkout when the cart hits our webhook.
+ *
+ * `discountType` discriminates the meaning of `discountValue`:
+ *   - AMOUNT  → cents off (e.g. 5000 = $50 off, capped at line total by Stripe)
+ *   - PERCENT → 1..100 percent off
  */
 export async function createPromoCode(
   input: CreatePromoCodeInput,
 ): Promise<PromoCode> {
-  if (!Number.isInteger(input.amountInCents) || input.amountInCents <= 0) {
-    throw new Error("amountInCents must be a positive integer");
-  }
+  validateDiscount(input.discountType, input.discountValue);
+
   const rawCode = input.code?.trim().toUpperCase() || `WISHI-${nanoid(8).toUpperCase()}`;
   if (!/^[A-Z0-9-]+$/.test(rawCode)) {
     throw new Error("Code may only contain letters, digits, and hyphens");
@@ -70,7 +81,8 @@ export async function createPromoCode(
     input.creditType === "SESSION"
       ? await createStripeCoupon({
           code: rawCode,
-          amountInCents: input.amountInCents,
+          discountType: input.discountType,
+          discountValue: input.discountValue,
           usageLimit: input.usageLimit ?? null,
           expiresAt: input.expiresAt ?? null,
         })
@@ -81,7 +93,8 @@ export async function createPromoCode(
       data: {
         code: rawCode,
         creditType: input.creditType,
-        amountInCents: input.amountInCents,
+        discountType: input.discountType,
+        discountValue: input.discountValue,
         usageLimit: input.usageLimit ?? null,
         expiresAt: input.expiresAt ?? null,
         stripeCouponId,
@@ -97,7 +110,8 @@ export async function createPromoCode(
       meta: {
         code: promo.code,
         creditType: promo.creditType,
-        amountInCents: promo.amountInCents,
+        discountType: promo.discountType,
+        discountValue: promo.discountValue,
         stripeCouponId: promo.stripeCouponId,
       },
     });
@@ -144,9 +158,42 @@ export async function deactivatePromoCode(
   return promo;
 }
 
+/**
+ * Compute the actual discount in cents for a given base price.
+ *   - AMOUNT  → min(discountValue, basePriceInCents) so we never go negative
+ *   - PERCENT → Math.floor(basePrice * value / 100). Stripe rounds the same way.
+ */
+export function computeDiscountInCents(
+  discountType: PromoCodeDiscountType,
+  discountValue: number,
+  basePriceInCents: number,
+): number {
+  if (basePriceInCents <= 0) return 0;
+  if (discountType === "AMOUNT") {
+    return Math.min(discountValue, basePriceInCents);
+  }
+  return Math.floor((basePriceInCents * discountValue) / 100);
+}
+
+function validateDiscount(
+  discountType: PromoCodeDiscountType,
+  discountValue: number,
+): void {
+  if (!Number.isInteger(discountValue)) {
+    throw new Error("discountValue must be an integer");
+  }
+  if (discountType === "AMOUNT" && discountValue <= 0) {
+    throw new Error("AMOUNT discountValue must be a positive integer (cents)");
+  }
+  if (discountType === "PERCENT" && (discountValue < 1 || discountValue > 100)) {
+    throw new Error("PERCENT discountValue must be between 1 and 100");
+  }
+}
+
 async function createStripeCoupon(input: {
   code: string;
-  amountInCents: number;
+  discountType: PromoCodeDiscountType;
+  discountValue: number;
   usageLimit: number | null;
   expiresAt: Date | null;
 }): Promise<string> {
@@ -154,8 +201,9 @@ async function createStripeCoupon(input: {
   // exhausted locally can't still be redeemed on the Stripe Checkout page.
   const coupon = await stripe.coupons.create({
     id: input.code,
-    amount_off: input.amountInCents,
-    currency: "usd",
+    ...(input.discountType === "AMOUNT"
+      ? { amount_off: input.discountValue, currency: "usd" }
+      : { percent_off: input.discountValue }),
     duration: "once",
     name: input.code,
     ...(input.usageLimit !== null && input.usageLimit > 0

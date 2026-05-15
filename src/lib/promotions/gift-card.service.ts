@@ -5,6 +5,7 @@ import { stripe } from "@/lib/stripe";
 import { getOrCreateStripeCustomer } from "@/lib/payments/stripe-customer";
 import { sendTransactionalEmail } from "@/lib/notifications/transactional";
 import { Prisma } from "@/generated/prisma/client";
+import type { PromoCodeDiscountType } from "@/generated/prisma/client";
 
 export const GIFT_CARD_MIN_CENTS = 2500; // $25 floor
 export const GIFT_CARD_MAX_CENTS = 50000; // $500 ceiling
@@ -140,7 +141,8 @@ export async function applyGiftCardPurchaseFromCheckout(
         data: {
           code: giftPromoCode("S"),
           creditType: "SESSION",
-          amountInCents: amountPaid,
+          discountType: "AMOUNT",
+          discountValue: amountPaid,
           usageLimit: 1,
         },
       });
@@ -148,7 +150,8 @@ export async function applyGiftCardPurchaseFromCheckout(
         data: {
           code: giftPromoCode("H"),
           creditType: "SHOPPING",
-          amountInCents: amountPaid,
+          discountType: "AMOUNT",
+          discountValue: amountPaid,
           usageLimit: 1,
         },
       });
@@ -232,11 +235,21 @@ export async function applyGiftCardPurchaseFromCheckout(
  * a `usageLimit=1` code.
  */
 export async function redeemPromoCode(
-  code: string,
+  lookup: string | { id: string } | { code: string },
   creditType: "SESSION" | "SHOPPING",
   tx: TxClient,
-): Promise<{ promoCodeId: string; amountInCents: number } | null> {
-  const promo = await tx.promoCode.findUnique({ where: { code } });
+): Promise<{
+  promoCodeId: string;
+  discountType: PromoCodeDiscountType;
+  discountValue: number;
+} | null> {
+  const where =
+    typeof lookup === "string"
+      ? { code: lookup }
+      : "id" in lookup
+        ? { id: lookup.id }
+        : { code: lookup.code };
+  const promo = await tx.promoCode.findUnique({ where });
   if (!promo || !promo.isActive) return null;
   if (promo.creditType !== creditType) return null;
   if (promo.expiresAt && promo.expiresAt < new Date()) return null;
@@ -263,7 +276,11 @@ export async function redeemPromoCode(
     data: { redeemedAt: new Date() },
   });
 
-  return { promoCodeId: promo.id, amountInCents: promo.amountInCents };
+  return {
+    promoCodeId: promo.id,
+    discountType: promo.discountType,
+    discountValue: promo.discountValue,
+  };
 }
 
 function giftPromoCode(prefix: "S" | "H"): string {

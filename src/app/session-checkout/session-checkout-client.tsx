@@ -20,6 +20,28 @@ export interface SessionCheckoutClientProps {
   defaultEmail: string;
 }
 
+/** "$60" for whole dollars, "$19.80" otherwise. Matches Stripe's display. */
+function formatDollars(cents: number): string {
+  if (cents % 100 === 0) return `$${cents / 100}`;
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+interface AppliedPromo {
+  code: string;
+  discountInCents: number;
+  discountType: "AMOUNT" | "PERCENT";
+  discountValue: number;
+}
+
+interface ValidateResponse {
+  valid: boolean;
+  reason?: string;
+  code?: string;
+  discountInCents?: number;
+  discountType?: "AMOUNT" | "PERCENT";
+  discountValue?: number;
+}
+
 /**
  * Visual port of Loveable's SessionCheckout.tsx.
  *
@@ -29,8 +51,10 @@ export interface SessionCheckoutClientProps {
  * but the Pay CTA is wired to the existing `createCheckout` server action.
  * Stripe collects the card on stripe.com and redirects to /bookings/success.
  *
- * Promo code field is visual-only — applying real promos is wired through
- * Stripe Coupons on the Hosted Checkout page itself, not here.
+ * Promo input validates against `/api/promo-codes/validate` and forwards the
+ * applied code through the createCheckout form so run-checkout.ts can resolve
+ * the Stripe coupon and attach it as `discounts:[{ coupon }]`. Wishi-side
+ * total recomputes immediately; Stripe Hosted Checkout shows the same total.
  */
 export function SessionCheckoutClient({
   stylist,
@@ -43,14 +67,13 @@ export function SessionCheckoutClient({
 
   // Lux is one-time only per locked decisions 2026-04-07.
   const luxOnly = planType === "LUX";
-  const [frequency, setFrequency] = useState<"one-time" | "monthly">(
-    luxOnly ? "one-time" : "one-time",
-  );
+  const [frequency, setFrequency] = useState<"one-time" | "monthly">("one-time");
   const [email, setEmail] = useState(defaultEmail);
   const [promoOpen, setPromoOpen] = useState(false);
-  const [promoCode, setPromoCode] = useState("");
-  const [appliedPromo, setAppliedPromo] = useState<string | null>(null);
+  const [promoCodeInput, setPromoCodeInput] = useState("");
+  const [appliedPromo, setAppliedPromo] = useState<AppliedPromo | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
+  const [promoChecking, setPromoChecking] = useState(false);
 
   // Subscription pricing is roughly 90% of one-time per Loveable's planData.
   // Real per-plan monthly prices come from the Plan table; Stripe applies the
@@ -59,28 +82,79 @@ export function SessionCheckoutClient({
   const monthlyDollars = Math.round(oneTimeDollars * 0.9);
 
   const basePrice = frequency === "monthly" ? monthlyDollars : oneTimeDollars;
-  const discount = appliedPromo === "WISHI" ? basePrice : 0;
-  const total = Math.max(0, basePrice - discount);
+  const basePriceInCents = basePrice * 100;
+  // If the applied promo was validated against a different basePrice (user
+  // toggled monthly/one-time after applying), recompute defensively client-side
+  // so the displayed discount tracks the current line item. The server is the
+  // authority on amount-cap and percent rounding at checkout.
+  const liveDiscountInCents = appliedPromo
+    ? appliedPromo.discountType === "PERCENT"
+      ? Math.floor((basePriceInCents * appliedPromo.discountValue) / 100)
+      : Math.min(appliedPromo.discountValue, basePriceInCents)
+    : 0;
+  // Keep totals in cents so percent-off discounts that produce non-whole
+  // dollar amounts (e.g. 33% off $60 = $19.80) match what Stripe charges.
+  // formatDollars drops the decimals when whole, otherwise shows two.
+  const totalInCents = Math.max(0, basePriceInCents - liveDiscountInCents);
+  const totalDisplay = formatDollars(totalInCents);
+  const discountDisplay = formatDollars(liveDiscountInCents);
 
-  function applyPromo() {
-    const code = promoCode.trim().toUpperCase();
-    if (code === "WISHI") {
-      setAppliedPromo("WISHI");
+  async function applyPromo() {
+    const code = promoCodeInput.trim().toUpperCase();
+    if (!code) {
+      setPromoError("Enter a code");
+      return;
+    }
+    setPromoChecking(true);
+    setPromoError(null);
+    try {
+      const res = await fetch("/api/promo-codes/validate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          code,
+          creditType: "SESSION",
+          basePriceInCents,
+        }),
+      });
+      const json = (await res.json().catch(() => null)) as ValidateResponse | null;
+      if (!json?.valid) {
+        setAppliedPromo(null);
+        setPromoError(json?.reason ?? "Invalid promo code");
+        return;
+      }
+      setAppliedPromo({
+        code: json.code!,
+        discountInCents: json.discountInCents!,
+        discountType: json.discountType!,
+        discountValue: json.discountValue!,
+      });
       setPromoError(null);
-    } else {
+      setPromoOpen(false);
+    } catch {
       setAppliedPromo(null);
-      setPromoError("Invalid promo code");
+      setPromoError("Validation failed — try again");
+    } finally {
+      setPromoChecking(false);
     }
   }
 
   function removePromo() {
     setAppliedPromo(null);
-    setPromoCode("");
+    setPromoCodeInput("");
     setPromoError(null);
     setPromoOpen(false);
   }
 
   const stylistFirstName = stylist?.firstName ?? "your stylist";
+
+  // Chip describes the *code itself* (e.g. "$25 off" or "25% off"), not the
+  // applied amount on this line item. discountValue for AMOUNT is cents.
+  const promoChip = appliedPromo
+    ? appliedPromo.discountType === "PERCENT"
+      ? `${appliedPromo.discountValue}% off`
+      : `${formatDollars(appliedPromo.discountValue)} off`
+    : null;
 
   return (
     <div className="min-h-screen bg-white">
@@ -201,7 +275,7 @@ export function SessionCheckoutClient({
             <p className="mb-1 font-body text-sm text-muted-foreground">
               Pay Wishi Fashion, Inc.
             </p>
-            <p className="mb-6 font-display text-4xl">${total}</p>
+            <p className="mb-6 font-display text-4xl">{totalDisplay}</p>
 
             <div className="space-y-4">
               <div className="flex justify-between font-body text-sm">
@@ -226,9 +300,11 @@ export function SessionCheckoutClient({
                 <div className="flex items-center justify-between font-body text-sm">
                   <span className="flex items-center gap-2">
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                      {appliedPromo}
+                      {appliedPromo.code}
                     </span>
-                    <span className="text-muted-foreground">applied</span>
+                    <span className="text-muted-foreground">
+                      {promoChip} applied
+                    </span>
                     <button
                       type="button"
                       onClick={removePromo}
@@ -237,22 +313,22 @@ export function SessionCheckoutClient({
                       Remove
                     </button>
                   </span>
-                  <span className="text-emerald-700">−${discount}</span>
+                  <span className="text-emerald-700">−{discountDisplay}</span>
                 </div>
               ) : (
                 <div className="space-y-1.5">
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      value={promoCode}
+                      value={promoCodeInput}
                       onChange={(e) => {
-                        setPromoCode(e.target.value);
+                        setPromoCodeInput(e.target.value);
                         setPromoError(null);
                       }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
-                          applyPromo();
+                          void applyPromo();
                         }
                       }}
                       placeholder="Promo code"
@@ -260,10 +336,11 @@ export function SessionCheckoutClient({
                     />
                     <button
                       type="button"
-                      onClick={applyPromo}
-                      className="rounded-md border border-border px-4 py-2 font-body text-sm transition-colors hover:bg-muted/50"
+                      onClick={() => void applyPromo()}
+                      disabled={promoChecking}
+                      className="rounded-md border border-border px-4 py-2 font-body text-sm transition-colors hover:bg-muted/50 disabled:opacity-60"
                     >
-                      Apply
+                      {promoChecking ? "Checking…" : "Apply"}
                     </button>
                   </div>
                   {promoError && (
@@ -277,7 +354,7 @@ export function SessionCheckoutClient({
               <div className="border-t border-border" />
               <div className="flex justify-between font-body text-sm font-semibold">
                 <span>Total due</span>
-                <span>${total}</span>
+                <span>{totalDisplay}</span>
               </div>
             </div>
           </div>
@@ -317,7 +394,12 @@ export function SessionCheckoutClient({
                 name="isSubscription"
                 value={frequency === "monthly" ? "true" : "false"}
               />
-              <PayButton total={total} />
+              <input
+                type="hidden"
+                name="promoCode"
+                value={appliedPromo?.code ?? ""}
+              />
+              <PayButton totalDisplay={totalDisplay} />
             </form>
 
             <p className="mt-3 text-center font-body text-[10px] leading-relaxed text-muted-foreground">
@@ -332,7 +414,7 @@ export function SessionCheckoutClient({
   );
 }
 
-function PayButton({ total }: { total: number }) {
+function PayButton({ totalDisplay }: { totalDisplay: string }) {
   const { pending } = useFormStatus();
   return (
     <button
@@ -340,7 +422,7 @@ function PayButton({ total }: { total: number }) {
       disabled={pending}
       className="w-full rounded-lg bg-foreground py-4 font-body text-sm font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-60"
     >
-      {pending ? "Loading…" : `Pay $${total}`}
+      {pending ? "Loading…" : `Pay ${totalDisplay}`}
     </button>
   );
 }

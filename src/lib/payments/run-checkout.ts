@@ -8,6 +8,35 @@ import { provisionSessionForE2E } from "@/lib/payments/e2e-provision-session";
 import { hasActiveSessionWithStylist } from "@/lib/sessions/queries";
 import type { PlanType } from "@/generated/prisma/client";
 
+interface ResolvedPromo {
+  promoCodeId: string;
+  stripeCouponId: string;
+}
+
+async function resolvePromoCode(
+  code: string,
+): Promise<ResolvedPromo | null> {
+  const promo = await prisma.promoCode.findUnique({
+    where: { code: code.toUpperCase() },
+    select: {
+      id: true,
+      isActive: true,
+      creditType: true,
+      expiresAt: true,
+      usageLimit: true,
+      usedCount: true,
+      stripeCouponId: true,
+    },
+  });
+  if (!promo) return null;
+  if (!promo.isActive) return null;
+  if (promo.creditType !== "SESSION") return null;
+  if (promo.expiresAt && promo.expiresAt < new Date()) return null;
+  if (promo.usageLimit !== null && promo.usedCount >= promo.usageLimit) return null;
+  if (!promo.stripeCouponId) return null;
+  return { promoCodeId: promo.id, stripeCouponId: promo.stripeCouponId };
+}
+
 export type CheckoutOutcome =
   | { kind: "redirect-to-active-session" }
   | { kind: "e2e-provisioned"; sessionId: string }
@@ -61,6 +90,7 @@ export async function runCheckout({
   const stylistProfileId =
     (formData.get("stylistId") as string) || undefined;
   const isSubscription = formData.get("isSubscription") === "true";
+  const promoCodeInput = (formData.get("promoCode") as string | null)?.trim();
 
   if (!planType || !["MINI", "MAJOR", "LUX"].includes(planType)) {
     throw new Error("Invalid plan type");
@@ -96,6 +126,10 @@ export async function runCheckout({
     return { kind: "e2e-provisioned", sessionId: result.sessionId };
   }
 
+  const resolvedPromo = promoCodeInput
+    ? await resolvePromoCode(promoCodeInput)
+    : null;
+
   const stripeOptions = {
     userId: user.id,
     planType,
@@ -103,6 +137,7 @@ export async function runCheckout({
     stylistUserId,
     successUrl: `${appUrl}/bookings/success?session_id={CHECKOUT_SESSION_ID}`,
     cancelUrl: `${appUrl}/bookings/new${stylistProfileId ? `?stylistId=${stylistProfileId}` : ""}`,
+    promo: resolvedPromo ?? undefined,
   };
 
   const oneTime = deps?.createOneTimeCheckout ?? createOneTimeCheckout;

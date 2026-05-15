@@ -20,7 +20,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { PromoCodeCreditType } from "@/generated/prisma/client";
+import type {
+  PromoCodeCreditType,
+  PromoCodeDiscountType,
+} from "@/generated/prisma/client";
 
 export function CreatePromoCodeButton() {
   const router = useRouter();
@@ -28,15 +31,36 @@ export function CreatePromoCodeButton() {
   const [pending, setPending] = useState(false);
   const [code, setCode] = useState("");
   const [creditType, setCreditType] = useState<PromoCodeCreditType>("SESSION");
-  const [amountDollars, setAmountDollars] = useState("20");
+  const [discountType, setDiscountType] =
+    useState<PromoCodeDiscountType>("AMOUNT");
+  // For AMOUNT we collect dollars (UI), convert to cents at submit.
+  // For PERCENT we collect the integer 1–100 directly.
+  const [discountInput, setDiscountInput] = useState("20");
   const [usageLimit, setUsageLimit] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
 
+  function reset() {
+    setCode("");
+    setDiscountType("AMOUNT");
+    setDiscountInput("20");
+    setUsageLimit("");
+    setExpiresAt("");
+  }
+
   async function submit() {
-    const amountInCents = Math.round(Number(amountDollars) * 100);
-    if (!Number.isInteger(amountInCents) || amountInCents <= 0) {
-      alert("Amount must be a positive number of dollars");
-      return;
+    let discountValue: number;
+    if (discountType === "AMOUNT") {
+      discountValue = Math.round(Number(discountInput) * 100);
+      if (!Number.isInteger(discountValue) || discountValue <= 0) {
+        alert("Amount must be a positive number of dollars");
+        return;
+      }
+    } else {
+      discountValue = Math.round(Number(discountInput));
+      if (!Number.isInteger(discountValue) || discountValue < 1 || discountValue > 100) {
+        alert("Percent must be an integer between 1 and 100");
+        return;
+      }
     }
     setPending(true);
     try {
@@ -46,7 +70,8 @@ export function CreatePromoCodeButton() {
         body: JSON.stringify({
           code: code.trim() || undefined,
           creditType,
-          amountInCents,
+          discountType,
+          discountValue,
           usageLimit: usageLimit.trim() ? Number(usageLimit) : null,
           expiresAt: expiresAt || null,
         }),
@@ -57,10 +82,7 @@ export function CreatePromoCodeButton() {
         return;
       }
       setOpen(false);
-      setCode("");
-      setAmountDollars("20");
-      setUsageLimit("");
-      setExpiresAt("");
+      reset();
       router.refresh();
     } finally {
       setPending(false);
@@ -72,74 +94,99 @@ export function CreatePromoCodeButton() {
       <Button onClick={() => setOpen(true)}>Create promo code</Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
-        <DialogHeader>
-          <DialogTitle>New promo code</DialogTitle>
-          <DialogDescription>
-            SESSION codes sync to Stripe Coupons. SHOPPING codes apply at Wishi checkout only.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-1">
-            <Label htmlFor="code">Code (leave blank to auto-generate)</Label>
-            <Input
-              id="code"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="WELCOME20"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="creditType">Credit type</Label>
-            <Select value={creditType} onValueChange={(v) => setCreditType(v as PromoCodeCreditType)}>
-              <SelectTrigger id="creditType">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="SESSION">Session (styling)</SelectItem>
-                <SelectItem value="SHOPPING">Shopping (cart)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="amount">Amount (USD)</Label>
-            <Input
-              id="amount"
-              type="number"
-              step="0.01"
-              value={amountDollars}
-              onChange={(e) => setAmountDollars(e.target.value)}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+          <DialogHeader>
+            <DialogTitle>New promo code</DialogTitle>
+            <DialogDescription>
+              SESSION codes sync to Stripe Coupons. SHOPPING codes apply at Wishi checkout only.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
             <div className="space-y-1">
-              <Label htmlFor="usageLimit">Usage limit</Label>
+              <Label htmlFor="code">Code (leave blank to auto-generate)</Label>
               <Input
-                id="usageLimit"
-                type="number"
-                placeholder="unlimited"
-                value={usageLimit}
-                onChange={(e) => setUsageLimit(e.target.value)}
+                id="code"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="WELCOME20"
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="expiresAt">Expires</Label>
-              <Input
-                id="expiresAt"
-                type="date"
-                value={expiresAt}
-                onChange={(e) => setExpiresAt(e.target.value)}
-              />
+              <Label htmlFor="creditType">Credit type</Label>
+              <Select value={creditType} onValueChange={(v) => setCreditType(v as PromoCodeCreditType)}>
+                <SelectTrigger id="creditType">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SESSION">Session (styling)</SelectItem>
+                  <SelectItem value="SHOPPING">Shopping (cart)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="discountType">Discount type</Label>
+                <Select
+                  value={discountType}
+                  onValueChange={(v) => {
+                    const next = v as PromoCodeDiscountType;
+                    setDiscountType(next);
+                    setDiscountInput(next === "PERCENT" ? "10" : "20");
+                  }}
+                >
+                  <SelectTrigger id="discountType">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="AMOUNT">Fixed amount ($)</SelectItem>
+                    <SelectItem value="PERCENT">Percentage (%)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="discountValue">
+                  {discountType === "PERCENT" ? "Percent off" : "Amount (USD)"}
+                </Label>
+                <Input
+                  id="discountValue"
+                  type="number"
+                  step={discountType === "PERCENT" ? "1" : "0.01"}
+                  min={discountType === "PERCENT" ? "1" : undefined}
+                  max={discountType === "PERCENT" ? "100" : undefined}
+                  value={discountInput}
+                  onChange={(e) => setDiscountInput(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="usageLimit">Usage limit</Label>
+                <Input
+                  id="usageLimit"
+                  type="number"
+                  placeholder="unlimited"
+                  value={usageLimit}
+                  onChange={(e) => setUsageLimit(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="expiresAt">Expires</Label>
+                <Input
+                  id="expiresAt"
+                  type="date"
+                  value={expiresAt}
+                  onChange={(e) => setExpiresAt(e.target.value)}
+                />
+              </div>
             </div>
           </div>
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => setOpen(false)} disabled={pending}>
-            Cancel
-          </Button>
-          <Button onClick={submit} disabled={pending}>
-            {pending ? "Creating…" : "Create"}
-          </Button>
-        </DialogFooter>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setOpen(false)} disabled={pending}>
+              Cancel
+            </Button>
+            <Button onClick={submit} disabled={pending}>
+              {pending ? "Creating…" : "Create"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
