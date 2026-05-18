@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { dispatchNotification } from "@/lib/notifications/dispatcher";
+import { transitionOrderItemStatus } from "@/lib/orders/admin-orders.service";
 import type { Order, OrderItem } from "@/generated/prisma/client";
 
 export const RETURN_WINDOW_DAYS = 14;
@@ -124,4 +125,72 @@ export async function initiateReturn(
   });
 
   return updated;
+}
+
+/**
+ * Per-OrderItem retailer-mirror return.
+ *
+ * In the universal-fulfillment model, the user returns the item DIRECTLY
+ * to the retailer (the retailer's return label arrived in the shipping
+ * email since we used the user's email at retailer checkout). Wishi
+ * mirrors the refund onto the user's Stripe charge once the user submits
+ * the retailer return reference (number / receipt URL) here and an admin
+ * confirms the retailer refund landed.
+ *
+ * Eligibility: the OrderItem must be PURCHASED, the parent Order must be
+ * owned by the caller, and the parent must be DIRECT_SALE. No 14-day
+ * Wishi-side window — retailer return policies vary; admin verifies
+ * before mirroring the refund.
+ */
+export async function requestRetailerReturnForOrderItem(
+  userId: string,
+  orderItemId: string,
+  receiptRef: string,
+): Promise<OrderItem> {
+  const trimmed = receiptRef.trim();
+  if (!trimmed) throw new Error("Retailer return reference is required");
+  if (trimmed.length > 500) {
+    throw new Error("Retailer return reference is too long (max 500 chars)");
+  }
+
+  const item = await prisma.orderItem.findUnique({
+    where: { id: orderItemId },
+    include: { order: true },
+  });
+  if (!item || item.order.userId !== userId) {
+    throw new Error("Order item not found");
+  }
+  if (item.order.source !== "DIRECT_SALE") {
+    throw new Error("Only Wishi-fulfilled items can mirror a retailer refund");
+  }
+  if (item.status !== "PURCHASED") {
+    throw new Error(
+      `Item is in state ${item.status}; only PURCHASED items can request a retailer return`,
+    );
+  }
+
+  const result = await transitionOrderItemStatus(orderItemId, "RETURN_REQUESTED", {
+    returnReceiptRef: trimmed,
+  });
+
+  await dispatchNotification({
+    event: "order.return_initiated",
+    userId,
+    title: "Return submitted",
+    body: `We'll mirror your ${item.retailerName ?? "retailer"} refund once it lands.`,
+    url: `/orders/${item.order.id}`,
+    emailProperties: {
+      orderId: item.order.id,
+      orderItemId,
+      retailerName: item.retailerName,
+      returnReceiptRef: trimmed,
+    },
+  }).catch((err) => {
+    console.warn(
+      `[orders] retailer return notification failed for ${orderItemId}:`,
+      err,
+    );
+  });
+
+  return result.orderItem;
 }

@@ -6,6 +6,7 @@ import { ChevronRightIcon, ClockIcon, PackageCheckIcon, RotateCcwIcon, TruckIcon
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type { ClientOrderRow } from "@/lib/orders/client-orders.service";
+import type { OrderItem } from "@/generated/prisma/client";
 
 type OrdersTab = "all" | "active" | "past";
 
@@ -99,6 +100,11 @@ export function OrdersList({ initialOrders }: { initialOrders: ClientOrderRow[] 
   const [actingOn, setActingOn] = useState<string | null>(null);
   const [detailOrder, setDetailOrder] = useState<string | null>(null);
   const [tab, setTab] = useState<OrdersTab>("all");
+  const [returnItem, setReturnItem] = useState<{
+    orderId: string;
+    item: OrderItem;
+  } | null>(null);
+  const [returnRef, setReturnRef] = useState("");
 
   const { activeOrders, pastOrders } = useMemo(() => {
     const active: ClientOrderRow[] = [];
@@ -138,6 +144,56 @@ export function OrdersList({ initialOrders }: { initialOrders: ClientOrderRow[] 
             : o,
         ),
       );
+      startTransition(() => router.refresh());
+    } finally {
+      setActingOn(null);
+    }
+  }
+
+  async function submitItemReturn() {
+    if (!returnItem) return;
+    const ref = returnRef.trim();
+    if (!ref) {
+      alert("Please paste the retailer's return confirmation or screenshot URL.");
+      return;
+    }
+    const itemKey = returnItem.item.id;
+    setActingOn(itemKey);
+    try {
+      const res = await fetch(
+        `/api/orders/${returnItem.orderId}/items/${returnItem.item.id}/return-request`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ receiptRef: ref }),
+        },
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(json.error ?? "Return request failed");
+        return;
+      }
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === returnItem.orderId
+            ? {
+                ...o,
+                items: o.items.map((it) =>
+                  it.id === returnItem.item.id
+                    ? {
+                        ...it,
+                        status: "RETURN_REQUESTED",
+                        returnReceiptRef: ref,
+                        returnRequestedAt: new Date(),
+                      }
+                    : it,
+                ),
+              }
+            : o,
+        ),
+      );
+      setReturnItem(null);
+      setReturnRef("");
       startTransition(() => router.refresh());
     } finally {
       setActingOn(null);
@@ -265,8 +321,40 @@ export function OrdersList({ initialOrders }: { initialOrders: ClientOrderRow[] 
                       {fmtMoney(item.priceInCents * item.quantity)}
                     </p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      via {order.retailer}
+                      via {item.retailerName ?? order.retailer}
                     </p>
+                    {item.status === "UNFULFILLABLE" && (
+                      <p className="mt-2 text-xs font-medium text-amber-600">
+                        Couldn&apos;t source — refunded{" "}
+                        {fmtMoney(item.refundedInCents)}
+                      </p>
+                    )}
+                    {item.status === "RETURN_REQUESTED" && (
+                      <p className="mt-2 text-xs font-medium text-foreground">
+                        Return submitted — we&apos;ll mirror your retailer
+                        refund once it lands.
+                      </p>
+                    )}
+                    {item.status === "RETURNED" && (
+                      <p className="mt-2 text-xs font-medium text-muted-foreground">
+                        Returned · refund of {fmtMoney(item.refundedInCents)}{" "}
+                        issued
+                      </p>
+                    )}
+                    {item.status === "PURCHASED" && order.source === "DIRECT_SALE" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReturnItem({ orderId: order.id, item });
+                          setReturnRef("");
+                        }}
+                        disabled={pending || actingOn !== null}
+                        className="mt-2 inline-flex items-center gap-1.5 text-xs text-foreground underline underline-offset-4 hover:text-muted-foreground disabled:opacity-60"
+                      >
+                        <RotateCcwIcon className="h-3 w-3" />
+                        I returned this to {item.retailerName ?? "the retailer"}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -308,21 +396,82 @@ export function OrdersList({ initialOrders }: { initialOrders: ClientOrderRow[] 
   }
 
   return (
-    <Tabs value={tab} onValueChange={(v) => setTab(v as OrdersTab)} className="w-full">
-      <TabsList className="mb-6">
-        <TabsTrigger value="all">All ({orders.length})</TabsTrigger>
-        <TabsTrigger value="active">Active ({activeOrders.length})</TabsTrigger>
-        <TabsTrigger value="past">Past ({pastOrders.length})</TabsTrigger>
-      </TabsList>
-      <TabsContent value="all" className="space-y-4">
-        {orders.map(renderOrder)}
-      </TabsContent>
-      <TabsContent value="active" className="space-y-4">
-        {activeOrders.length > 0 ? activeOrders.map(renderOrder) : emptyState("No active orders")}
-      </TabsContent>
-      <TabsContent value="past" className="space-y-4">
-        {pastOrders.length > 0 ? pastOrders.map(renderOrder) : emptyState("No past orders yet")}
-      </TabsContent>
-    </Tabs>
+    <>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as OrdersTab)} className="w-full">
+        <TabsList className="mb-6">
+          <TabsTrigger value="all">All ({orders.length})</TabsTrigger>
+          <TabsTrigger value="active">Active ({activeOrders.length})</TabsTrigger>
+          <TabsTrigger value="past">Past ({pastOrders.length})</TabsTrigger>
+        </TabsList>
+        <TabsContent value="all" className="space-y-4">
+          {orders.map(renderOrder)}
+        </TabsContent>
+        <TabsContent value="active" className="space-y-4">
+          {activeOrders.length > 0 ? activeOrders.map(renderOrder) : emptyState("No active orders")}
+        </TabsContent>
+        <TabsContent value="past" className="space-y-4">
+          {pastOrders.length > 0 ? pastOrders.map(renderOrder) : emptyState("No past orders yet")}
+        </TabsContent>
+      </Tabs>
+
+      {returnItem && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setReturnItem(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl bg-card p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-display text-lg">
+              Mirror your {returnItem.item.retailerName ?? "retailer"} refund
+            </h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Return the item directly through{" "}
+              {returnItem.item.retailerName ?? "the retailer"} using the
+              return label in their shipping email. Once they refund you on
+              their end, we&apos;ll mirror the refund onto your original
+              Wishi payment.
+            </p>
+            <label
+              htmlFor="return-receipt-ref"
+              className="mt-4 block text-xs text-muted-foreground"
+            >
+              Retailer return reference (RMA #, order #, or a link to your
+              return confirmation email)
+            </label>
+            <textarea
+              id="return-receipt-ref"
+              rows={3}
+              value={returnRef}
+              onChange={(e) => setReturnRef(e.target.value)}
+              placeholder="e.g. RMA-12345 or https://..."
+              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-foreground/20"
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setReturnItem(null)}
+                className="rounded-md px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitItemReturn()}
+                disabled={
+                  !returnRef.trim() || actingOn === returnItem.item.id
+                }
+                className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/90 disabled:opacity-60"
+              >
+                {actingOn === returnItem.item.id
+                  ? "Submitting…"
+                  : "Submit return"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
