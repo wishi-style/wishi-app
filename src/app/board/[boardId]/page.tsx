@@ -7,10 +7,8 @@ import { getServerAuth } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
-import {
-  BoardThumbnail,
-  type BoardThumbnailItem,
-} from "@/components/boards/board-thumbnail";
+import { BoardThumbnail } from "@/components/boards/board-thumbnail";
+import { resolveCanvasForBoards } from "@/lib/boards/board-thumbnails";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +66,7 @@ async function loadSharedBoard(boardId: string) {
       },
     },
   });
+  // canvasMode is included via the default findUnique include.
 
   if (!board) return null;
   if (board.type !== "STYLEBOARD") return null;
@@ -141,34 +140,37 @@ export default async function SharedBoardPage({ params }: Props) {
   const title = board.title ?? "Styleboard";
   const photos = board.photos;
   const items = board.items;
-  const thumbnailItems: BoardThumbnailItem[] = items.map((item) => ({
-    id: item.id,
-    imageUrl:
-      item.source === "WEB_ADDED"
-        ? item.webItemImageUrl
-        : item.source === "CLOSET"
-          ? item.closetItem?.url ?? null
-          : item.source === "INSPIRATION_PHOTO"
-            ? item.inspirationPhoto?.url ?? null
-            : null,
-    x: item.x,
-    y: item.y,
-    zIndex: item.zIndex,
-    flipH: item.flipH,
-    flipV: item.flipV,
-    crop:
-      item.cropTop != null ||
-      item.cropRight != null ||
-      item.cropBottom != null ||
-      item.cropLeft != null
-        ? {
-            top: item.cropTop ?? 0,
-            right: item.cropRight ?? 0,
-            bottom: item.cropBottom ?? 0,
-            left: item.cropLeft ?? 0,
-          }
-        : null,
-  }));
+  // Resolve canvas items including INVENTORY image lookups via tastegraph,
+  // so an inventory-heavy styleboard renders the same tiles here as it does
+  // in chat / feed / profile. INVENTORY items without this resolver step
+  // would silently appear with imageUrl=null and drop from the canvas.
+  const canvasByBoardId = await resolveCanvasForBoards([
+    {
+      id: board.id,
+      type: board.type,
+      canvasMode: board.canvasMode,
+      coverUrl: board.coverUrl,
+      photos: board.photos.map((p) => ({ url: p.url })),
+      items: board.items.map((it) => ({
+        id: it.id,
+        source: it.source,
+        inventoryProductId: it.inventoryProductId,
+        webItemImageUrl: it.webItemImageUrl,
+        closetItem: it.closetItem,
+        inspirationPhoto: it.inspirationPhoto,
+        x: it.x,
+        y: it.y,
+        zIndex: it.zIndex,
+        flipH: it.flipH,
+        flipV: it.flipV,
+        cropTop: it.cropTop,
+        cropRight: it.cropRight,
+        cropBottom: it.cropBottom,
+        cropLeft: it.cropLeft,
+      })),
+    },
+  ]);
+  const canvas = canvasByBoardId.get(board.id);
 
   // Floating cart bar: only when this viewer is signed in and has items
   // queued in their cart — Loveable parity (SharedBoard.tsx:82-99).
@@ -227,7 +229,8 @@ export default async function SharedBoardPage({ params }: Props) {
             <div className="mx-auto max-w-xl">
               <BoardThumbnail
                 type="STYLEBOARD"
-                items={thumbnailItems}
+                canvasMode={canvas?.canvasMode ?? null}
+                items={canvas?.items}
               />
             </div>
           </section>

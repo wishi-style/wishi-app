@@ -1,3 +1,5 @@
+"use client";
+
 import { MoodBoardGrid } from "@/components/stylist/moodboard-grid";
 import { cn } from "@/lib/utils";
 
