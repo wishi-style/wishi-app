@@ -6,7 +6,6 @@ import { CheckIcon, XIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { RetailerClickButton } from "./retailer-click";
 import { CheckoutButton } from "./checkout-button";
 
 type SortOption = "newest" | "price_high" | "price_low" | "retailer";
@@ -24,24 +23,14 @@ export interface WishiCartRow {
   brand: string;
   name: string;
   imageUrl: string | null;
+  /** Retailer the fulfiller will source this item from (snapshotted to the Order at checkout). */
+  retailerName: string | null;
   priceInCents: number;
   totalInCents: number;
 }
 
-export interface RetailerCartRow {
-  favoriteItemId: string;
-  inventoryProductId: string | null;
-  url: string;
-  retailer: string;
-  brand: string;
-  name: string;
-  imageUrl: string | null;
-  priceInCents: number | null;
-}
-
 interface Props {
   wishi: WishiCartRow[];
-  retailer: RetailerCartRow[];
 }
 
 function formatDollars(cents: number): string {
@@ -52,30 +41,25 @@ function formatDollars(cents: number): string {
   }).format(cents / 100);
 }
 
-function sortRows<T extends { priceInCents: number | null; brand: string }>(
-  rows: T[],
-  sortBy: SortOption,
-): T[] {
+function sortRows(rows: WishiCartRow[], sortBy: SortOption): WishiCartRow[] {
   const copy = [...rows];
   switch (sortBy) {
     case "price_high":
-      return copy.sort(
-        (a, b) => (b.priceInCents ?? 0) - (a.priceInCents ?? 0),
-      );
+      return copy.sort((a, b) => b.priceInCents - a.priceInCents);
     case "price_low":
-      return copy.sort(
-        (a, b) => (a.priceInCents ?? 0) - (b.priceInCents ?? 0),
-      );
+      return copy.sort((a, b) => a.priceInCents - b.priceInCents);
     case "retailer":
       return copy.sort((a, b) =>
-        (a.brand || "").localeCompare(b.brand || ""),
+        (a.retailerName ?? a.brand ?? "").localeCompare(
+          b.retailerName ?? b.brand ?? "",
+        ),
       );
     default:
       return copy;
   }
 }
 
-export function CartClient({ wishi, retailer }: Props) {
+export function CartClient({ wishi }: Props) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sortBy, setSortBy] = useState<SortOption>("newest");
@@ -109,25 +93,6 @@ export function CartClient({ wishi, retailer }: Props) {
     }
   }
 
-  async function removeRetailer(row: RetailerCartRow) {
-    if (!window.confirm("Remove this favorite?")) return;
-    setRemovingId(row.favoriteItemId);
-    const params = row.inventoryProductId
-      ? `inventoryProductId=${encodeURIComponent(row.inventoryProductId)}`
-      : `webUrl=${encodeURIComponent(row.url)}`;
-    try {
-      const res = await fetch(`/api/favorites/items?${params}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error("Failed");
-      router.refresh();
-    } catch {
-      toast.error("Couldn't remove that item. Try again.");
-    } finally {
-      setRemovingId(null);
-    }
-  }
-
   const selectedRows = useMemo(
     () => wishi.filter((r) => selected.has(r.cartItemId)),
     [wishi, selected],
@@ -140,10 +105,16 @@ export function CartClient({ wishi, retailer }: Props) {
   const selectedItemCount = selectedRows.length;
 
   const sortedWishi = useMemo(() => sortRows(wishi, sortBy), [wishi, sortBy]);
-  const sortedRetailer = useMemo(
-    () => sortRows(retailer, sortBy),
-    [retailer, sortBy],
-  );
+
+  // Roll up unique retailers across the *selected* items so the summary tells
+  // the user exactly which retailers we'll source from once they check out.
+  const selectedRetailers = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of selectedRows) {
+      if (r.retailerName) set.add(r.retailerName);
+    }
+    return Array.from(set);
+  }, [selectedRows]);
 
   return (
     <>
@@ -169,119 +140,47 @@ export function CartClient({ wishi, retailer }: Props) {
 
       <div className="flex flex-col lg:flex-row gap-10">
         <div className="flex-1 min-w-0">
-          {/* Wishi checkout section */}
-          {sortedWishi.length > 0 && (
-            <section className="mb-10">
-              <div className="mb-4 pb-3 border-b border-border">
-                <h2 className="font-display text-lg">
-                  Select items for single checkout via Wishi
-                </h2>
-              </div>
-              <div className="divide-y divide-border">
-                {sortedWishi.map((row) => {
-                  const isSelected = selected.has(row.cartItemId);
-                  return (
-                    <div
-                      key={row.cartItemId}
-                      className="py-6 flex gap-5 group"
-                    >
-                      <div className="flex items-start pt-2">
-                        <button
-                          type="button"
-                          onClick={() => toggleSelect(row.cartItemId)}
-                          className={cn(
-                            "h-5 w-5 rounded border-2 flex items-center justify-center transition-colors shrink-0",
-                            isSelected
-                              ? "bg-foreground border-foreground"
-                              : "border-border hover:border-foreground",
-                          )}
-                          aria-pressed={isSelected}
-                          aria-label={
-                            isSelected
-                              ? "Deselect for checkout"
-                              : "Select for checkout"
-                          }
-                        >
-                          {isSelected && (
-                            <CheckIcon className="h-3 w-3 text-background" />
-                          )}
-                        </button>
-                      </div>
-
-                      <div className="relative h-32 w-24 md:h-36 md:w-28 shrink-0 overflow-hidden rounded-md bg-muted">
-                        {row.imageUrl ? (
-                          <Image
-                            src={row.imageUrl}
-                            alt={row.name}
-                            fill
-                            sizes="112px"
-                            className="object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
-                            ?
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex flex-1 flex-col justify-between min-w-0">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="font-body text-base font-semibold text-foreground">
-                              {row.brand}
-                            </p>
-                            <p className="font-body text-sm text-muted-foreground mt-0.5">
-                              {row.name}
-                            </p>
-                            <p className="font-body text-sm font-medium text-foreground mt-2">
-                              {formatDollars(row.totalInCents)}
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeWishi(row.cartItemId)}
-                            disabled={removingId === row.cartItemId}
-                            aria-label="Remove from bag"
-                            className="text-muted-foreground hover:text-foreground transition-colors p-1 disabled:opacity-40"
-                          >
-                            <XIcon className="h-4 w-4" />
-                          </button>
-                        </div>
-                        <div className="mt-3 flex justify-end">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              toast.success(`${row.brand} added to your closet`)
-                            }
-                            className="font-body text-sm text-foreground underline underline-offset-4 hover:text-muted-foreground transition-colors"
-                          >
-                            Add to Closet
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          )}
-
-          {/* Retailer section */}
-          {sortedRetailer.length > 0 && (
-            <section>
-              <div className="mb-4 pb-3 border-b border-border">
-                <h2 className="font-display text-lg">Purchase via retailer</h2>
-                <p className="font-body text-xs text-muted-foreground mt-1">
-                  These items are available through external retailers
-                </p>
-              </div>
-              <div className="divide-y divide-border">
-                {sortedRetailer.map((row) => (
+          <section className="mb-10">
+            <div className="mb-4 pb-3 border-b border-border">
+              <h2 className="font-display text-lg">Your items</h2>
+              <p className="font-body text-xs text-muted-foreground mt-1">
+                Wishi purchases each piece from its retailer on your behalf
+                using the info you provide at checkout. You&apos;ll receive
+                shipping confirmation directly from each retailer.
+              </p>
+            </div>
+            <div className="divide-y divide-border">
+              {sortedWishi.map((row) => {
+                const isSelected = selected.has(row.cartItemId);
+                return (
                   <div
-                    key={row.favoriteItemId}
+                    key={row.cartItemId}
                     className="py-6 flex gap-5 group"
                   >
-                    <div className="relative h-32 w-24 md:h-36 md:w-28 shrink-0 overflow-hidden rounded-md bg-muted ml-10">
+                    <div className="flex items-start pt-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleSelect(row.cartItemId)}
+                        className={cn(
+                          "h-5 w-5 rounded border-2 flex items-center justify-center transition-colors shrink-0",
+                          isSelected
+                            ? "bg-foreground border-foreground"
+                            : "border-border hover:border-foreground",
+                        )}
+                        aria-pressed={isSelected}
+                        aria-label={
+                          isSelected
+                            ? "Deselect for checkout"
+                            : "Select for checkout"
+                        }
+                      >
+                        {isSelected && (
+                          <CheckIcon className="h-3 w-3 text-background" />
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="relative h-32 w-24 md:h-36 md:w-28 shrink-0 overflow-hidden rounded-md bg-muted">
                       {row.imageUrl ? (
                         <Image
                           src={row.imageUrl}
@@ -296,46 +195,43 @@ export function CartClient({ wishi, retailer }: Props) {
                         </div>
                       )}
                     </div>
-                    <div className="flex flex-1 flex-col min-w-0">
+
+                    <div className="flex flex-1 flex-col justify-between min-w-0">
                       <div className="flex justify-between items-start">
                         <div>
-                          {row.brand && (
-                            <p className="font-body text-base font-semibold text-foreground">
-                              {row.brand}
-                            </p>
-                          )}
+                          <p className="font-body text-base font-semibold text-foreground">
+                            {row.brand}
+                          </p>
                           <p className="font-body text-sm text-muted-foreground mt-0.5">
                             {row.name}
                           </p>
-                          {row.priceInCents != null && (
-                            <p className="font-body text-sm font-medium text-foreground mt-2">
-                              {formatDollars(row.priceInCents)}
+                          {row.retailerName && (
+                            <p className="font-body text-xs text-muted-foreground mt-1.5">
+                              Sourced from{" "}
+                              <span className="text-foreground">
+                                {row.retailerName}
+                              </span>
                             </p>
                           )}
+                          <p className="font-body text-sm font-medium text-foreground mt-2">
+                            {formatDollars(row.totalInCents)}
+                          </p>
                         </div>
                         <button
                           type="button"
-                          onClick={() => removeRetailer(row)}
-                          disabled={removingId === row.favoriteItemId}
+                          onClick={() => removeWishi(row.cartItemId)}
+                          disabled={removingId === row.cartItemId}
                           aria-label="Remove from bag"
                           className="text-muted-foreground hover:text-foreground transition-colors p-1 disabled:opacity-40"
                         >
                           <XIcon className="h-4 w-4" />
                         </button>
                       </div>
-                      <div className="mt-3 flex items-end justify-between">
-                        <RetailerClickButton
-                          inventoryProductId={row.inventoryProductId}
-                          retailer={row.retailer}
-                          url={row.url}
-                          className="inline-flex items-center gap-1.5 font-body text-sm font-medium text-foreground border border-foreground rounded-md px-4 py-1.5 hover:bg-foreground hover:text-background transition-colors"
-                        />
+                      <div className="mt-3 flex justify-end">
                         <button
                           type="button"
                           onClick={() =>
-                            toast.success(
-                              `${row.brand || row.name} added to your closet`,
-                            )
+                            toast.success(`${row.brand} added to your closet`)
                           }
                           className="font-body text-sm text-foreground underline underline-offset-4 hover:text-muted-foreground transition-colors"
                         >
@@ -344,10 +240,10 @@ export function CartClient({ wishi, retailer }: Props) {
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            </section>
-          )}
+                );
+              })}
+            </div>
+          </section>
         </div>
 
         {/* Order Summary sidebar */}
@@ -392,13 +288,15 @@ export function CartClient({ wishi, retailer }: Props) {
               />
             </div>
 
-            {sortedRetailer.length > 0 && (
+            {selectedRetailers.length > 0 && (
               <p className="mt-3 text-center font-body text-xs text-muted-foreground">
-                {sortedRetailer.length}{" "}
-                {sortedRetailer.length === 1
-                  ? "item requires"
-                  : "items require"}{" "}
-                separate retailer checkout
+                We&apos;ll purchase from{" "}
+                {selectedRetailers.length === 1
+                  ? selectedRetailers[0]
+                  : selectedRetailers.length === 2
+                    ? `${selectedRetailers[0]} & ${selectedRetailers[1]}`
+                    : `${selectedRetailers.length} retailers`}{" "}
+                on your behalf.
               </p>
             )}
           </div>

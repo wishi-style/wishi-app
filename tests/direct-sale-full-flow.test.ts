@@ -79,9 +79,6 @@ beforeEach(async () => {
   await prisma.cartItem.deleteMany({ where: { userId: clientUserId } });
   await prisma.closetItem.deleteMany({ where: { userId: clientUserId } });
   await prisma.order.deleteMany({ where: { userId: clientUserId } });
-  await prisma.merchandisedProduct.deleteMany({
-    where: { inventoryProductId: { startsWith: `dsf_${suiteSuffix}_` } },
-  });
 });
 
 function fakeStripeCheckout(id = `cs_test_${randomUUID()}`) {
@@ -150,14 +147,11 @@ integrationTest(
       data: { stripeCustomerId: `cus_test_${randomUUID()}` },
     });
 
-    // Build a merchandised product + cart item. The inventory service is
-    // unreachable in test env, so resolveLineItems would fail on getProduct.
-    // Instead we drive applyDirectSaleFromCheckout directly after a hand-built
-    // PENDING Order (mirrors production shape).
+    // Universal Unicart: no merchandised-product seeding needed. The inventory
+    // service is unreachable in test env, so resolveLineItems would fail on
+    // getProduct — instead we drive applyDirectSaleFromCheckout directly
+    // after a hand-built PENDING Order (mirrors production shape).
     const inventoryProductId = `dsf_${suiteSuffix}_item1`;
-    await prisma.merchandisedProduct.create({
-      data: { inventoryProductId, isDirectSale: true },
-    });
     const cartItem = await prisma.cartItem.create({
       data: {
         userId: clientUserId,
@@ -226,9 +220,6 @@ integrationTest(
       data: { stripeCustomerId: `cus_test_${randomUUID()}` },
     });
     const inventoryProductId = `dsf_${suiteSuffix}_lux`;
-    await prisma.merchandisedProduct.create({
-      data: { inventoryProductId, isDirectSale: true },
-    });
     // Inventory is unreachable, so resolveLineItems would throw on getProduct.
     // We assert on the webhook-side isPriorityShipping mapping instead, plus
     // the constant values — the checkout-side seam is unit-covered here.
@@ -287,17 +278,14 @@ integrationTest(
   "item 1: createDirectSaleCheckout test seam records correct params (inventory present)",
   async () => {
     // This variant drives createDirectSaleCheckout end-to-end with a fake
-    // Stripe seam AND a seeded MerchandisedProduct. Inventory service isn't
-    // reachable so we stop at resolveLineItems; asserting the guard throws
-    // "product not found" proves the service wiring, not a silent swallow.
+    // Stripe seam. Inventory service isn't reachable so we stop at
+    // resolveLineItems; asserting the guard throws "product not found"
+    // proves the service wiring, not a silent swallow.
     await prisma.user.update({
       where: { id: clientUserId },
       data: { stripeCustomerId: `cus_test_${randomUUID()}` },
     });
     const inventoryProductId = `dsf_${suiteSuffix}_seam`;
-    await prisma.merchandisedProduct.create({
-      data: { inventoryProductId, isDirectSale: true },
-    });
     await prisma.cartItem.create({
       data: {
         userId: clientUserId,

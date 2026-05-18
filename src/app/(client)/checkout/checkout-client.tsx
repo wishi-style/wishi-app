@@ -18,6 +18,8 @@ export interface CheckoutItem {
   imageUrl: string | null;
   unitAmountInCents: number;
   quantity: number;
+  /** Retailer the fulfiller will source this item from (snapshotted on the Order). */
+  retailerName: string | null;
 }
 
 interface ShippingForm {
@@ -136,6 +138,22 @@ export function CheckoutClient({
     }
   }
 
+  // Unique retailers across the cart so users see the "we'll purchase from X
+  // on your behalf" framing with concrete names.
+  const retailers = useMemo(() => {
+    const set = new Set<string>();
+    for (const it of items) {
+      if (it.retailerName) set.add(it.retailerName);
+    }
+    return Array.from(set);
+  }, [items]);
+  const retailersLabel = useMemo(() => {
+    if (retailers.length === 0) return "each retailer";
+    if (retailers.length === 1) return retailers[0];
+    if (retailers.length === 2) return `${retailers[0]} and ${retailers[1]}`;
+    return `${retailers[0]}, ${retailers[1]}, and ${retailers.length - 2} more`;
+  }, [retailers]);
+
   if (step === "confirmation") {
     return (
       <ConfirmationStep
@@ -143,6 +161,7 @@ export function CheckoutClient({
         totalInCents={quote?.totalInCents ?? subtotalInCents}
         email={shipping.email}
         orderId={orderId}
+        retailers={retailers}
         onView={() => router.push("/orders")}
         onCloset={() => router.push("/closet")}
       />
@@ -161,6 +180,17 @@ export function CheckoutClient({
       </button>
 
       <StepIndicator step={step} />
+
+      <div className="mb-8 rounded-xl border border-border bg-secondary/30 p-4 font-body text-sm text-muted-foreground">
+        <p>
+          <span className="font-medium text-foreground">
+            How Wishi shopping works.
+          </span>{" "}
+          We purchase each item from {retailersLabel} on your behalf using the
+          info below. You&apos;ll receive shipping confirmation directly from
+          each retailer.
+        </p>
+      </div>
 
       <div className="grid grid-cols-1 gap-12 lg:grid-cols-5">
         <div className="lg:col-span-3">
@@ -591,6 +621,7 @@ function ConfirmationStep({
   totalInCents,
   email,
   orderId,
+  retailers,
   onView,
   onCloset,
 }: {
@@ -598,6 +629,7 @@ function ConfirmationStep({
   totalInCents: number;
   email: string;
   orderId: string | null;
+  retailers: string[];
   onView: () => void;
   onCloset: () => void;
 }) {
@@ -620,11 +652,24 @@ function ConfirmationStep({
       <p className="mb-1 font-body text-sm text-muted-foreground">
         Thank you for your purchase!
       </p>
-      <p className="mb-8 font-body text-xs text-muted-foreground">
+      <p className="mb-3 font-body text-xs text-muted-foreground">
         A confirmation email has been sent to{" "}
         <span className="text-foreground">{email}</span>
         {orderId ? ` · Order ${orderId.slice(0, 8)}` : null}
       </p>
+      {retailers.length > 0 && (
+        <p className="mb-8 font-body text-xs text-muted-foreground">
+          We&apos;re purchasing your items from{" "}
+          <span className="text-foreground">
+            {retailers.length === 1
+              ? retailers[0]
+              : retailers.length === 2
+                ? `${retailers[0]} and ${retailers[1]}`
+                : `${retailers.slice(0, -1).join(", ")}, and ${retailers[retailers.length - 1]}`}
+          </span>
+          . Expect shipping confirmation from each retailer in the next 1–2 days.
+        </p>
+      )}
 
       <div className="mb-4 rounded-xl border border-border bg-card p-6 text-left">
         <p className="mb-3 font-body text-xs uppercase tracking-wider text-muted-foreground">

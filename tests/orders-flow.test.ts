@@ -58,9 +58,6 @@ beforeEach(async () => {
   await prisma.cartItem.deleteMany({ where: { userId: clientUserId } });
   await prisma.closetItem.deleteMany({ where: { userId: clientUserId } });
   await prisma.order.deleteMany({ where: { userId: clientUserId } });
-  await prisma.merchandisedProduct.deleteMany({
-    where: { inventoryProductId: { startsWith: `of_${suiteSuffix}_` } },
-  });
 });
 
 integrationTest(

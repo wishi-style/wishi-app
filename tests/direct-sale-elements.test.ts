@@ -98,17 +98,9 @@ before(async () => {
   });
   luxSessionId = luxSession.id;
 
-  // MerchandisedProduct rows so resolveLineItems lets the cart through.
-  // The integration helpers below assume these inventoryProductIds resolve
-  // via the inventory service stub baked into the test env. Skip merch
-  // creation if it already exists (rerun resilience).
-  for (const inventoryProductId of [STD_INVENTORY_ID, LUX_INVENTORY_ID]) {
-    await prisma.merchandisedProduct.upsert({
-      where: { inventoryProductId },
-      update: {},
-      create: { inventoryProductId, isDirectSale: true },
-    });
-  }
+  // Universal Unicart: no merchandised-product seeding needed.
+  // resolveLineItems no longer gates on a direct-sale allow-list — every
+  // inventory item with an in-stock retailer listing is Wishi-shoppable.
 });
 
 beforeEach(async () => {

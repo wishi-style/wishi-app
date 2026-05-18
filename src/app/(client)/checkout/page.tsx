@@ -4,7 +4,6 @@ import type { Metadata } from "next";
 import { getCurrentUser } from "@/lib/auth";
 import { getCartItemsByIds } from "@/lib/cart/cart.service";
 import { getProduct } from "@/lib/inventory/inventory-client";
-import { getMerchandised } from "@/lib/products/merchandised-product.service";
 import { CheckoutClient, type CheckoutItem } from "./checkout-client";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +18,13 @@ export const metadata: Metadata = {
  * wishi.com through shipping → payment → confirmation; cards are collected
  * via Stripe Elements (`<PaymentElement>`), which keeps PCI scope at SAQ A
  * (Stripe still hosts the card iframes).
+ *
+ * Universal Unicart model: every inventory item with a retailer link is
+ * shoppable via Wishi checkout. The human fulfiller buys from each retailer
+ * on the user's behalf using the shipping info captured here; users get
+ * retailer shipping emails directly. If an item can't be sourced, that's a
+ * per-OrderItem UNFULFILLABLE transition with a partial refund — never an
+ * upfront block in checkout.
  *
  * Tax + shipping are computed server-side via Stripe Tax API
  * (`/api/payments/direct-sale/calculate-tax`) once the user enters a
@@ -64,19 +70,11 @@ export default async function CheckoutPage(props: {
     return <EmptyState reason="invalid" />;
   }
 
-  const inventoryIds = [...new Set(cartRows.map((r) => r.inventoryProductId))];
-  const merchandisedMap = await getMerchandised(inventoryIds);
-
-  // Strict resolution — every cart row must map to an in-stock direct-sale
-  // listing or we render the empty state. Anything looser would let the
-  // checkout render fewer items than the cart, or with an out-of-stock
-  // listing that resolveLineItems will then refuse to charge.
+  // Strict resolution — every cart row must map to an in-stock listing or we
+  // render the empty state. No direct-sale gate: every inventory item with
+  // an in-stock retailer listing is Wishi-shoppable.
   const items: CheckoutItem[] = [];
   for (const row of cartRows) {
-    const merch = merchandisedMap.get(row.inventoryProductId);
-    if (!merch?.isDirectSale) {
-      return <EmptyState reason="not-direct-sale" />;
-    }
     const product = await getProduct(row.inventoryProductId);
     if (!product) {
       return <EmptyState reason="invalid" />;
@@ -97,6 +95,7 @@ export default async function CheckoutPage(props: {
       imageUrl: listing.primary_image_url || product.primary_image_url || null,
       unitAmountInCents: Math.round(priceDollars * 100),
       quantity: row.quantity,
+      retailerName: listing.merchant_name ?? null,
     });
   }
 
@@ -113,11 +112,10 @@ export default async function CheckoutPage(props: {
   );
 }
 
-function EmptyState({ reason }: { reason: "empty" | "invalid" | "not-direct-sale" }) {
+function EmptyState({ reason }: { reason: "empty" | "invalid" }) {
   const messages = {
     empty: "Your cart is empty.",
     invalid: "Some of the items in your cart are no longer available.",
-    "not-direct-sale": "One or more items are no longer available for direct sale.",
   } as const;
 
   return (

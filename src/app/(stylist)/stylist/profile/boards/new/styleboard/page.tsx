@@ -8,9 +8,8 @@ import { getCurrentAuthUser } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import { listInspirationPhotos } from "@/lib/boards/inspiration.service";
-import { getProduct, getFilters } from "@/lib/inventory/inventory-client";
+import { getFilters } from "@/lib/inventory/inventory-client";
 import { loadShopInventory } from "@/lib/inventory/shop-inventory.service";
-import { adaptProductDoc } from "@/lib/inventory/adapt-product-doc";
 import { StyleboardBuilder } from "@/app/(stylist)/stylist/sessions/[id]/styleboards/new/builder";
 
 export const dynamic = "force-dynamic";
@@ -58,28 +57,19 @@ export default async function NewProfileStyleboardPage({ searchParams }: Props) 
     board = { ...created, items: [] };
   }
 
-  const directSaleRows = await prisma.merchandisedProduct.findMany({
-    where: { isDirectSale: true },
-    select: { inventoryProductId: true },
-  });
-  const directSaleProductIds = directSaleRows.map((r) => r.inventoryProductId);
+  // Universal Unicart: every inventory item is Wishi-shoppable; the legacy
+  // direct-sale allow-list is gone. The Shop tab covers the full catalog.
+  const directSaleProductIds: string[] = [];
 
   // Profile mode skips client context entirely: no closet, cart, dislikes,
-  // sizes, budgets. Shop / Store / Inspiration are the only sources.
-  const [inspiration, initialShop, facets, storeProductDocs] = await Promise.all(
-    [
-      listInspirationPhotos({ take: 60 }),
-      loadShopInventory({ sessionId: null, page: 1, pageSize: 120 }),
-      getFilters(),
-      Promise.all(
-        directSaleProductIds.slice(0, 60).map((id) => getProduct(id)),
-      ),
-    ],
-  );
+  // sizes, budgets. Shop + Inspiration are the only sources.
+  const [inspiration, initialShop, facets] = await Promise.all([
+    listInspirationPhotos({ take: 60 }),
+    loadShopInventory({ sessionId: null, page: 1, pageSize: 120 }),
+    getFilters(),
+  ]);
 
-  const storeInventoryItems = storeProductDocs.flatMap((doc) =>
-    doc ? [adaptProductDoc(doc)] : [],
-  );
+  const storeInventoryItems: never[] = [];
   const inspirationInventoryItems = inspiration.map((p) => ({
     id: p.id,
     image: p.url,
