@@ -186,9 +186,9 @@ export function CheckoutClient({
           <span className="font-medium text-foreground">
             How Wishi shopping works.
           </span>{" "}
-          We purchase each item from {retailersLabel} on your behalf using the
-          info below. You&apos;ll receive shipping confirmation directly from
-          each retailer.
+          We purchase each item from {retailersLabel}
+          {" "}on your behalf using the info below. You&apos;ll receive shipping
+          confirmation directly from each retailer.
         </p>
       </div>
 

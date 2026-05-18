@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Image from "next/image";
 import { CheckIcon, XIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -182,12 +181,14 @@ export function CartClient({ wishi }: Props) {
 
                     <div className="relative h-32 w-24 md:h-36 md:w-28 shrink-0 overflow-hidden rounded-md bg-muted">
                       {row.imageUrl ? (
-                        <Image
+                        // Retailer image CDNs (Bloomingdale's, Saks, etc.)
+                        // aren't all in next/image's remotePatterns allowlist;
+                        // BoardThumbnail uses the same plain-img workaround.
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
                           src={row.imageUrl}
                           alt={row.name}
-                          fill
-                          sizes="112px"
-                          className="object-cover"
+                          className="absolute inset-0 h-full w-full object-cover"
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
