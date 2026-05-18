@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import {
   getPresignedUploadUrl,
   getBoardPhotoPresignedUrl,
+  getBoardProcessedImagePresignedUrl,
   getStyleQuizBodyPhotoPresignedUrl,
   getPublicUrl,
 } from "@/lib/s3";
@@ -12,7 +13,12 @@ export const dynamic = "force-dynamic";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILENAME_LENGTH = 255;
-const ALLOWED_PURPOSES = ["avatar", "profile-moodboard", "style-quiz-body-photo"] as const;
+const ALLOWED_PURPOSES = [
+  "avatar",
+  "profile-moodboard",
+  "style-quiz-body-photo",
+  "board-processed-image",
+] as const;
 type Purpose = (typeof ALLOWED_PURPOSES)[number];
 
 export async function GET(req: NextRequest) {
@@ -71,6 +77,44 @@ export async function GET(req: NextRequest) {
       filename,
       contentType,
     );
+    return Response.json({ url: uploadUrl, key, publicUrl });
+  }
+  if (purpose === "board-processed-image") {
+    // Background-removed canvas cutout. Authorize on board ownership so a
+    // stylist can only push processed images onto boards they own. Session
+    // boards: stylist is the session's stylist. Profile boards: stylist
+    // owns the StylistProfile that anchors the board.
+    if (contentType !== "image/png") {
+      return Response.json(
+        { error: "board-processed-image requires image/png" },
+        { status: 400 },
+      );
+    }
+    const boardId = req.nextUrl.searchParams.get("boardId");
+    const itemUid = req.nextUrl.searchParams.get("itemUid");
+    if (!boardId || !itemUid) {
+      return Response.json(
+        { error: "boardId and itemUid are required for board-processed-image" },
+        { status: 400 },
+      );
+    }
+    const board = await prisma.board.findUnique({
+      where: { id: boardId },
+      select: {
+        session: { select: { stylistId: true } },
+        stylistProfile: { select: { userId: true } },
+      },
+    });
+    if (!board) {
+      return Response.json({ error: "Board not found" }, { status: 404 });
+    }
+    const ownsViaSession = board.session?.stylistId === user.id;
+    const ownsViaProfile = board.stylistProfile?.userId === user.id;
+    if (!ownsViaSession && !ownsViaProfile) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const { uploadUrl, key, publicUrl } =
+      await getBoardProcessedImagePresignedUrl(boardId, itemUid);
     return Response.json({ url: uploadUrl, key, publicUrl });
   }
   const { uploadUrl, key, publicUrl } = await getBoardPhotoPresignedUrl(

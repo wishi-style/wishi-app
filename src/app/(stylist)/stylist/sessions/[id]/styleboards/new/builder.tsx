@@ -46,6 +46,8 @@ import {
   ChevronDownIcon,
 } from "lucide-react";
 import { removeBackground } from "@/lib/removeBackground";
+import { uploadProcessedImages } from "@/lib/boards/upload-processed";
+import Cropper, { type Area } from "react-easy-crop";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ClientDetailPanel from "@/components/stylist/client-detail-panel";
 import { ProductDetailDialog } from "@/components/products/product-detail-dialog";
@@ -173,11 +175,54 @@ interface CanvasItem {
   originalImage: string;
   x: number; // percent 0-100
   y: number; // percent 0-100
+  width: number; // percent of canvas, 6-80
+  rotation: number; // degrees, -180..180
   flipH: boolean;
   flipV: boolean;
   bgRemoved: boolean;
   bgRemoving?: boolean;
   crop?: { top: number; right: number; bottom: number; left: number }; // percent insets
+  // Once uploaded to S3 after BG removal, the canonical /api/images URL.
+  // Empty until save flow persists the cutout PNG.
+  processedImageUrl?: string;
+}
+
+const DEFAULT_ITEM_WIDTH = 26;
+const MIN_ITEM_WIDTH = 6;
+const MAX_ITEM_WIDTH = 80;
+const MAX_CROP_INSET = 45;
+
+// Convert react-easy-crop's pixel-space output (image-natural coords)
+// into per-side percent insets so the existing render path
+// (board-thumbnail's CanvasLayer) can keep using cropTop/Right/Bottom/Left
+// unchanged. Clamped to [0, MAX_CROP_INSET] which mirrors the prior
+// slider's max-45 invariant.
+function pixelsToPercentInsets(
+  area: { x: number; y: number; width: number; height: number },
+  natural: { width: number; height: number },
+): { top: number; right: number; bottom: number; left: number } {
+  const w = Math.max(1, natural.width);
+  const h = Math.max(1, natural.height);
+  return clampInsets({
+    top: (area.y / h) * 100,
+    left: (area.x / w) * 100,
+    right: ((w - area.x - area.width) / w) * 100,
+    bottom: ((h - area.y - area.height) / h) * 100,
+  });
+}
+
+function clampInsets(insets: {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}): { top: number; right: number; bottom: number; left: number } {
+  return {
+    top: Math.min(MAX_CROP_INSET, Math.max(0, insets.top)),
+    right: Math.min(MAX_CROP_INSET, Math.max(0, insets.right)),
+    bottom: Math.min(MAX_CROP_INSET, Math.max(0, insets.bottom)),
+    left: Math.min(MAX_CROP_INSET, Math.max(0, insets.left)),
+  };
 }
 
 interface ClientProfile {
@@ -281,6 +326,13 @@ export function StyleboardBuilder({
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
   const [cropUid, setCropUid] = useState<string | null>(null);
   const [cropDraft, setCropDraft] = useState<{ top: number; right: number; bottom: number; left: number }>({ top: 0, right: 0, bottom: 0, left: 0 });
+  // react-easy-crop state. Pan position + zoom drive the interactive crop
+  // frame; the onCropComplete callback gives us pixel coords in the image's
+  // natural space, which we convert to percent insets on apply.
+  const [cropPan, setCropPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [cropZoom, setCropZoom] = useState<number>(1);
+  const cropAreaRef = useRef<Area | null>(null);
+  const cropNaturalRef = useRef<{ width: number; height: number } | null>(null);
   const [clientInfoOpen, setClientInfoOpen] = useState(false);
   const [canvasSize, setCanvasSize] = useState<"min" | "small" | "large">("min");
   const [filtersCollapsed, setFiltersCollapsed] = useState(false);
@@ -516,11 +568,55 @@ export function StyleboardBuilder({
   const canvasRef = useRef<HTMLDivElement>(null);
   const dragData = useRef<{ image: string; itemId: string } | null>(null);
   const movingUid = useRef<string | null>(null);
+  // Inventory→canvas drag affordance: tracks whether an inventory tile is
+  // currently being dragged over the canvas, and the live cursor position so
+  // we can render a "+ Release to add" pill under the cursor.
+  const [dragOverCanvas, setDragOverCanvas] = useState(false);
+  const [dragOverPos, setDragOverPos] = useState<{ x: number; y: number } | null>(
+    null,
+  );
+  // Pointer-events drag for items already on the canvas. Replaces the legacy
+  // native-HTML5 draggable=true plumbing so we get live position updates and
+  // a clean grabbing cursor without the browser ghost image.
+  const itemDragRef = useRef<{
+    uid: string;
+    rect: DOMRect;
+    pointerId: number;
+    offsetXpct: number;
+    offsetYpct: number;
+  } | null>(null);
+  // Resize handles (corner drag, aspect-locked). Stores the starting width
+  // and pointer distance from the item's centre so we can compute the new
+  // width by ratio.
+  const resizeRef = useRef<{
+    uid: string;
+    startWidth: number;
+    startDist: number;
+    centerX: number;
+    centerY: number;
+    pointerId: number;
+  } | null>(null);
+  // Rotation handle. Stores the start angle delta so dragging the handle
+  // rotates relative to where it was first grabbed.
+  const rotateRef = useRef<{
+    uid: string;
+    startRotation: number;
+    startAngle: number;
+    centerX: number;
+    centerY: number;
+    pointerId: number;
+  } | null>(null);
 
-  // Keyboard shortcuts: 1/2/3 to switch canvas size (ignored while typing)
+  // Keyboard shortcuts:
+  //  - 1/2/3 switch canvas size
+  //  - arrow keys nudge the selected canvas item (Shift = 5%, default 0.5%)
+  //  - Delete/Backspace removes the selected item
+  //  - Cmd/Ctrl + ] / [ bring forward / send back
+  //  - R rotates the selected item by 90°
+  // All canvas shortcuts no-op when there is no selectedUid; all ignored while
+  // typing in inputs.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
       if (
         target &&
@@ -531,20 +627,101 @@ export function StyleboardBuilder({
       ) {
         return;
       }
-      if (e.key === "1") {
-        setCanvasSize("min");
-        toast("Canvas: minimize");
-      } else if (e.key === "2") {
-        setCanvasSize("small");
-        toast("Canvas: small");
-      } else if (e.key === "3") {
-        setCanvasSize("large");
-        toast("Canvas: large");
+      // Canvas-size mode keys (no modifiers).
+      if (!e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (e.key === "1") {
+          setCanvasSize("min");
+          toast("Canvas: minimize");
+          return;
+        }
+        if (e.key === "2") {
+          setCanvasSize("small");
+          toast("Canvas: small");
+          return;
+        }
+        if (e.key === "3") {
+          setCanvasSize("large");
+          toast("Canvas: large");
+          return;
+        }
+      }
+
+      // Selection-scoped shortcuts.
+      const uid = selectedUid;
+      if (!uid) return;
+
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        setCanvas((prev) => prev.filter((c) => c.uid !== uid));
+        setSelectedUid(null);
+        return;
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.key === "]") {
+        e.preventDefault();
+        setCanvas((prev) => {
+          const idx = prev.findIndex((c) => c.uid === uid);
+          if (idx < 0 || idx === prev.length - 1) return prev;
+          const next = [...prev];
+          const [item] = next.splice(idx, 1);
+          if (e.shiftKey) next.push(item);
+          else next.splice(idx + 1, 0, item);
+          return next;
+        });
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "[") {
+        e.preventDefault();
+        setCanvas((prev) => {
+          const idx = prev.findIndex((c) => c.uid === uid);
+          if (idx <= 0) return prev;
+          const next = [...prev];
+          const [item] = next.splice(idx, 1);
+          if (e.shiftKey) next.unshift(item);
+          else next.splice(idx - 1, 0, item);
+          return next;
+        });
+        return;
+      }
+
+      const arrows: Record<string, [number, number]> = {
+        ArrowLeft: [-1, 0],
+        ArrowRight: [1, 0],
+        ArrowUp: [0, -1],
+        ArrowDown: [0, 1],
+      };
+      if (arrows[e.key]) {
+        e.preventDefault();
+        const step = e.shiftKey ? 5 : 0.5;
+        const [dx, dy] = arrows[e.key];
+        setCanvas((prev) =>
+          prev.map((c) =>
+            c.uid === uid
+              ? {
+                  ...c,
+                  x: Math.min(100, Math.max(0, c.x + dx * step)),
+                  y: Math.min(100, Math.max(0, c.y + dy * step)),
+                }
+              : c,
+          ),
+        );
+        return;
+      }
+
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && (e.key === "r" || e.key === "R")) {
+        e.preventDefault();
+        setCanvas((prev) =>
+          prev.map((c) =>
+            c.uid === uid
+              ? { ...c, rotation: ((c.rotation + 90 + 180) % 360) - 180 }
+              : c,
+          ),
+        );
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
+  }, [selectedUid]);
 
   const sourceItems = useMemo<InventoryItem[]>(() => {
     switch (tab) {
@@ -699,6 +876,9 @@ export function StyleboardBuilder({
     };
   };
 
+  // Free-form canvas: items drop exactly where the cursor releases. When added
+  // via the inventory tile's plus icon (no x/y), they land at canvas center
+  // with a small cascade offset so consecutive clicks don't stack identically.
   const addToCanvas = (item: InventoryItem, x?: number, y?: number) => {
     if (canvas.length >= 12) {
       toast("Maximum 12 items on canvas");
@@ -706,53 +886,16 @@ export function StyleboardBuilder({
     }
     const { source, refIdFor } = sourceForActiveTab();
     setCanvas((prev) => {
-      // Tile size on canvas (% of canvas) — matches render width
-      const tile = 24; // overlap threshold in %
-      const occupied = (px: number, py: number) =>
-        prev.some((c) => Math.abs(c.x - px) < tile && Math.abs(c.y - py) < tile);
-
-      // Candidate grid: 4 cols x 4 rows centered in canvas
-      const cols = 4;
-      const rows = 4;
-      const stepX = 22;
-      const stepY = 22;
-      const startX = 50 - ((cols - 1) * stepX) / 2;
-      const startY = 50 - ((rows - 1) * stepY) / 2;
-
-      const candidates: Array<{ x: number; y: number }> = [];
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          candidates.push({ x: startX + c * stepX, y: startY + r * stepY });
-        }
-      }
-
       let finalX: number;
       let finalY: number;
       if (x !== undefined && y !== undefined) {
-        // User dropped at a specific spot — nudge if that spot is occupied
-        let px = x;
-        let py = y;
-        if (occupied(px, py)) {
-          const free = candidates.find((p) => !occupied(p.x, p.y));
-          if (free) {
-            px = free.x;
-            py = free.y;
-          } else {
-            // Fallback: small jitter
-            px = Math.min(88, Math.max(12, x + 8));
-            py = Math.min(88, Math.max(12, y + 8));
-          }
-        }
-        finalX = Math.min(88, Math.max(12, px));
-        finalY = Math.min(88, Math.max(12, py));
+        finalX = Math.min(100, Math.max(0, x));
+        finalY = Math.min(100, Math.max(0, y));
       } else {
-        const free = candidates.find((p) => !occupied(p.x, p.y));
-        const fallback = candidates[prev.length % candidates.length];
-        const pick = free ?? fallback;
-        finalX = pick.x;
-        finalY = pick.y;
+        const offset = (prev.length % 8) * 3;
+        finalX = Math.min(100, Math.max(0, 50 + offset));
+        finalY = Math.min(100, Math.max(0, 50 + offset));
       }
-
       return [
         ...prev,
         {
@@ -764,6 +907,8 @@ export function StyleboardBuilder({
           originalImage: item.image,
           x: finalX,
           y: finalY,
+          width: DEFAULT_ITEM_WIDTH,
+          rotation: 0,
           flipH: false,
           flipV: false,
           bgRemoved: false,
@@ -872,9 +1017,25 @@ export function StyleboardBuilder({
     if (!item) return;
     setCropUid(uid);
     setCropDraft(item.crop ?? { top: 0, right: 0, bottom: 0, left: 0 });
+    setCropPan({ x: 0, y: 0 });
+    setCropZoom(1);
+    cropAreaRef.current = null;
+    cropNaturalRef.current = null;
   };
   const applyCrop = () => {
-    if (cropUid) updateItem(cropUid, { crop: cropDraft });
+    if (!cropUid) return;
+    // react-easy-crop reports pixel coords in the image's natural space.
+    // When the user actually moves the marquee, prefer those over the
+    // older cropDraft. Clamped to [0, MAX_CROP_INSET] to match the schema
+    // invariant the previous slider enforced.
+    const area = cropAreaRef.current;
+    const natural = cropNaturalRef.current;
+    if (area && natural) {
+      const insets = pixelsToPercentInsets(area, natural);
+      updateItem(cropUid, { crop: insets });
+    } else {
+      updateItem(cropUid, { crop: cropDraft });
+    }
     setCropUid(null);
   };
   const resetCrop = () => {
@@ -886,8 +1047,28 @@ export function StyleboardBuilder({
     dragData.current = { image: item.image, itemId: item.id };
   };
 
+  const handleCanvasDragOver = (e: React.DragEvent) => {
+    if (!dragData.current) return;
+    e.preventDefault();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setDragOverCanvas(true);
+    setDragOverPos({
+      x: ((e.clientX - rect.left) / rect.width) * 100,
+      y: ((e.clientY - rect.top) / rect.height) * 100,
+    });
+  };
+
+  const handleCanvasDragLeave = (e: React.DragEvent) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setDragOverCanvas(false);
+    setDragOverPos(null);
+  };
+
   const handleCanvasDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    setDragOverCanvas(false);
+    setDragOverPos(null);
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const x = ((e.clientX - rect.left) / rect.width) * 100;
@@ -903,6 +1084,143 @@ export function StyleboardBuilder({
       const it = sourceItems.find((s) => s.id === dragData.current!.itemId);
       if (it) addToCanvas(it, x, y);
       dragData.current = null;
+    }
+  };
+
+  // Pointer-driven item-on-canvas drag (replaces native HTML5 draggable on
+  // the item div so we get live position updates without a ghost image).
+  const handleItemPointerDown = (uid: string) => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const item = canvas.find((c) => c.uid === uid);
+    if (!item) return;
+    const pointerXpct = ((e.clientX - rect.left) / rect.width) * 100;
+    const pointerYpct = ((e.clientY - rect.top) / rect.height) * 100;
+    itemDragRef.current = {
+      uid,
+      rect,
+      pointerId: e.pointerId,
+      offsetXpct: pointerXpct - item.x,
+      offsetYpct: pointerYpct - item.y,
+    };
+    setSelectedUid(uid);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handleItemPointerMove = (e: React.PointerEvent) => {
+    const drag = itemDragRef.current;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    const newX = ((e.clientX - drag.rect.left) / drag.rect.width) * 100 - drag.offsetXpct;
+    const newY = ((e.clientY - drag.rect.top) / drag.rect.height) * 100 - drag.offsetYpct;
+    setCanvas((prev) =>
+      prev.map((c) =>
+        c.uid === drag.uid
+          ? {
+              ...c,
+              x: Math.min(100, Math.max(0, newX)),
+              y: Math.min(100, Math.max(0, newY)),
+            }
+          : c,
+      ),
+    );
+  };
+
+  const handleItemPointerUp = (e: React.PointerEvent) => {
+    if (itemDragRef.current?.pointerId === e.pointerId) {
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {}
+      itemDragRef.current = null;
+    }
+  };
+
+  // Corner resize handle: drag distance from item centre ÷ original distance
+  // → scale factor. Aspect-locked (uniform scaleby width).
+  const handleResizePointerDown = (uid: string) => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const item = canvas.find((c) => c.uid === uid);
+    if (!rect || !item) return;
+    const centerX = rect.left + (item.x / 100) * rect.width;
+    const centerY = rect.top + (item.y / 100) * rect.height;
+    const startDist = Math.hypot(e.clientX - centerX, e.clientY - centerY);
+    resizeRef.current = {
+      uid,
+      startWidth: item.width,
+      startDist: Math.max(startDist, 1),
+      centerX,
+      centerY,
+      pointerId: e.pointerId,
+    };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handleResizePointerMove = (e: React.PointerEvent) => {
+    const r = resizeRef.current;
+    if (!r || e.pointerId !== r.pointerId) return;
+    const dist = Math.hypot(e.clientX - r.centerX, e.clientY - r.centerY);
+    const next = Math.min(
+      MAX_ITEM_WIDTH,
+      Math.max(MIN_ITEM_WIDTH, r.startWidth * (dist / r.startDist)),
+    );
+    setCanvas((prev) =>
+      prev.map((c) => (c.uid === r.uid ? { ...c, width: next } : c)),
+    );
+  };
+
+  const handleResizePointerUp = (e: React.PointerEvent) => {
+    if (resizeRef.current?.pointerId === e.pointerId) {
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {}
+      resizeRef.current = null;
+    }
+  };
+
+  // Rotation handle: compute pointer→centre angle delta and add to start
+  // rotation. Shift snaps to 15° increments.
+  const handleRotatePointerDown = (uid: string) => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const item = canvas.find((c) => c.uid === uid);
+    if (!rect || !item) return;
+    const centerX = rect.left + (item.x / 100) * rect.width;
+    const centerY = rect.top + (item.y / 100) * rect.height;
+    const startAngle =
+      (Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180) / Math.PI;
+    rotateRef.current = {
+      uid,
+      startRotation: item.rotation,
+      startAngle,
+      centerX,
+      centerY,
+      pointerId: e.pointerId,
+    };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handleRotatePointerMove = (e: React.PointerEvent) => {
+    const r = rotateRef.current;
+    if (!r || e.pointerId !== r.pointerId) return;
+    const angle =
+      (Math.atan2(e.clientY - r.centerY, e.clientX - r.centerX) * 180) / Math.PI;
+    let next = r.startRotation + (angle - r.startAngle);
+    next = ((next % 360) + 540) % 360 - 180;
+    if (e.shiftKey) next = Math.round(next / 15) * 15;
+    setCanvas((prev) =>
+      prev.map((c) => (c.uid === r.uid ? { ...c, rotation: next } : c)),
+    );
+  };
+
+  const handleRotatePointerUp = (e: React.PointerEvent) => {
+    if (rotateRef.current?.pointerId === e.pointerId) {
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {}
+      rotateRef.current = null;
     }
   };
 
@@ -942,11 +1260,19 @@ export function StyleboardBuilder({
       // board to sent. The send route replaces existing BoardItem rows with
       // this payload inside the tx that sets sentAt, so a fresh board with
       // only client-side canvas state can save & send in one round-trip.
-      const items = canvas.map((c, idx) => {
+      // Upload any background-removed cutouts to S3 before building the
+      // payload, so render surfaces (chat card, feed, profile, share link)
+      // can resolve them via processedImageUrl. Failures degrade gracefully:
+      // the toast warns, the URL stays null, and rendering falls back to the
+      // original image.
+      const canvasForSave = await uploadProcessedImages(boardId, canvas);
+      const items = canvasForSave.map((c, idx) => {
         const base: {
           source: CanvasItemSource;
           x: number;
           y: number;
+          width: number;
+          rotation: number;
           zIndex: number;
           inventoryProductId?: string;
           closetItemId?: string;
@@ -957,10 +1283,13 @@ export function StyleboardBuilder({
           cropRight?: number | null;
           cropBottom?: number | null;
           cropLeft?: number | null;
+          processedImageUrl?: string | null;
         } = {
           source: c.source,
           x: c.x,
           y: c.y,
+          width: c.width,
+          rotation: c.rotation,
           zIndex: idx,
           flipH: c.flipH,
           flipV: c.flipV,
@@ -968,6 +1297,7 @@ export function StyleboardBuilder({
           cropRight: c.crop?.right ?? null,
           cropBottom: c.crop?.bottom ?? null,
           cropLeft: c.crop?.left ?? null,
+          processedImageUrl: c.processedImageUrl ?? null,
         };
         if (c.source === "INVENTORY") base.inventoryProductId = c.refId;
         else if (c.source === "CLOSET") base.closetItemId = c.refId;
@@ -1948,8 +2278,15 @@ export function StyleboardBuilder({
                   return (
                     <div
                       key={c.uid}
-                      style={{ left: `${c.x}%`, top: `${c.y}%`, width: "30%", aspectRatio: "1 / 1", zIndex: idx + 1 }}
-                      className="absolute -translate-x-1/2 -translate-y-1/2 rounded-sm overflow-hidden border border-border bg-card shadow-sm pointer-events-none"
+                      style={{
+                        left: `${c.x}%`,
+                        top: `${c.y}%`,
+                        width: `${c.width}%`,
+                        aspectRatio: "1 / 1",
+                        zIndex: idx + 1,
+                        transform: `translate(-50%, -50%) rotate(${c.rotation}deg)`,
+                      }}
+                      className="absolute rounded-sm overflow-hidden border border-border bg-card shadow-sm pointer-events-none"
                     >
                       <div
                         className="absolute"
@@ -1971,12 +2308,16 @@ export function StyleboardBuilder({
           ) : (
           <div
             ref={canvasRef}
-            onDragOver={(e) => e.preventDefault()}
+            onDragOver={handleCanvasDragOver}
+            onDragLeave={handleCanvasDragLeave}
             onDrop={handleCanvasDrop}
-            onClick={(e) => {
+            onPointerDown={(e) => {
               if (e.target === e.currentTarget) setSelectedUid(null);
             }}
-            className="relative aspect-square w-full rounded-sm border-2 border-dashed border-border bg-background overflow-hidden"
+            className={cn(
+              "relative aspect-square w-full rounded-sm border-2 border-dashed bg-background overflow-hidden touch-none",
+              dragOverCanvas ? "border-emerald-500 bg-emerald-50/40" : "border-border",
+            )}
           >
             {canvas.length === 0 && (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
@@ -1992,6 +2333,18 @@ export function StyleboardBuilder({
               </div>
             )}
 
+            {/* Drag-from-inventory affordance: green "+ Release to add" pill
+                tracks the cursor while a tile is being dragged over the canvas. */}
+            {dragOverCanvas && dragOverPos && (
+              <div
+                className="absolute z-[1000] pointer-events-none flex items-center gap-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-500 text-white text-[11px] font-medium px-2.5 py-1 shadow-md"
+                style={{ left: `${dragOverPos.x}%`, top: `${dragOverPos.y}%` }}
+              >
+                <PlusIcon className="h-3 w-3" />
+                Release to add
+              </div>
+            )}
+
             {canvas.map((c, idx) => {
               const selected = selectedUid === c.uid;
               const crop = c.crop ?? { top: 0, right: 0, bottom: 0, left: 0 };
@@ -2000,21 +2353,19 @@ export function StyleboardBuilder({
               return (
                 <div
                   key={c.uid}
-                  draggable
-                  onDragStart={() => {
-                    movingUid.current = c.uid;
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedUid(c.uid);
-                  }}
+                  onPointerDown={handleItemPointerDown(c.uid)}
+                  onPointerMove={handleItemPointerMove}
+                  onPointerUp={handleItemPointerUp}
+                  onPointerCancel={handleItemPointerUp}
                   style={{
                     left: `${c.x}%`,
                     top: `${c.y}%`,
-                    width: canvasSize === "small" ? "26%" : "22%",
+                    width: `${c.width}%`,
                     zIndex: idx + 1,
+                    transform: `translate(-50%, -50%) rotate(${c.rotation}deg)`,
+                    touchAction: "none",
                   }}
-                  className="absolute -translate-x-1/2 -translate-y-1/2"
+                  className="absolute"
                 >
                   <div
                     style={{ aspectRatio: "1 / 1" }}
@@ -2051,8 +2402,47 @@ export function StyleboardBuilder({
                   </div>
 
                   {selected && (
+                    <>
+                      {/* Corner resize handles — aspect-locked uniform scale.
+                          Stop pointer propagation so they don't trigger the
+                          item drag. */}
+                      {(["nw", "ne", "sw", "se"] as const).map((corner) => (
+                        <div
+                          key={corner}
+                          onPointerDown={handleResizePointerDown(c.uid)}
+                          onPointerMove={handleResizePointerMove}
+                          onPointerUp={handleResizePointerUp}
+                          onPointerCancel={handleResizePointerUp}
+                          className={cn(
+                            "absolute h-3 w-3 rounded-sm border border-foreground bg-background shadow-sm",
+                            corner === "nw" && "-top-1.5 -left-1.5 cursor-nwse-resize",
+                            corner === "ne" && "-top-1.5 -right-1.5 cursor-nesw-resize",
+                            corner === "sw" && "-bottom-1.5 -left-1.5 cursor-nesw-resize",
+                            corner === "se" && "-bottom-1.5 -right-1.5 cursor-nwse-resize",
+                          )}
+                          style={{ touchAction: "none" }}
+                        />
+                      ))}
+                      {/* Rotation handle — small circle above the toolbar
+                          with a connecting line, drag in a circle to rotate. */}
+                      <div
+                        onPointerDown={handleRotatePointerDown(c.uid)}
+                        onPointerMove={handleRotatePointerMove}
+                        onPointerUp={handleRotatePointerUp}
+                        onPointerCancel={handleRotatePointerUp}
+                        className="absolute left-1/2 -translate-x-1/2 -top-16 h-4 w-4 rounded-full border border-foreground bg-background shadow-sm cursor-grab"
+                        style={{ touchAction: "none" }}
+                        aria-label="Rotate"
+                      >
+                        <div className="absolute left-1/2 top-full h-3 w-px bg-foreground" />
+                      </div>
+                    </>
+                  )}
+
+                  {selected && (
                     <div
                       onClick={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => e.stopPropagation()}
                       className="absolute left-1/2 -translate-x-1/2 -top-10 flex items-center gap-0.5 px-1 py-1 rounded-sm bg-popover border border-border shadow-md"
                       style={{ zIndex: 999 }}
                     >
@@ -2243,38 +2633,46 @@ export function StyleboardBuilder({
           {cropUid && (() => {
             const item = canvas.find((c) => c.uid === cropUid);
             if (!item) return null;
-            const sx = 100 / Math.max(1, 100 - cropDraft.left - cropDraft.right);
-            const sy = 100 / Math.max(1, 100 - cropDraft.top - cropDraft.bottom);
             return (
               <div className="space-y-4">
-                <div className="relative aspect-square w-full rounded-sm overflow-hidden border border-border bg-muted">
-                  <div
-                    className="absolute"
-                    style={{
-                      top: `${-cropDraft.top * sy}%`,
-                      left: `${-cropDraft.left * sx}%`,
-                      width: `${sx * 100}%`,
-                      height: `${sy * 100}%`,
-                      transform: `scale(${item.flipH ? -1 : 1}, ${item.flipV ? -1 : 1})`,
+                <div className="relative aspect-square w-full overflow-hidden rounded-sm border border-border bg-muted">
+                  <Cropper
+                    image={item.image}
+                    crop={cropPan}
+                    zoom={cropZoom}
+                    aspect={1}
+                    onCropChange={setCropPan}
+                    onZoomChange={setCropZoom}
+                    onMediaLoaded={(media) => {
+                      cropNaturalRef.current = {
+                        width: media.naturalWidth,
+                        height: media.naturalHeight,
+                      };
                     }}
-                  >
-                    <Image src={item.image} alt="Crop preview" width={400} height={400} unoptimized className="w-full h-full object-cover" />
-                  </div>
+                    onCropComplete={(_, area) => {
+                      cropAreaRef.current = area;
+                    }}
+                    style={{
+                      containerStyle: { background: "transparent" },
+                    }}
+                  />
                 </div>
-                {(["top", "right", "bottom", "left"] as const).map((side) => (
-                  <div key={side}>
-                    <div className="flex justify-between font-body text-xs mb-1.5">
-                      <span className="capitalize text-muted-foreground">{side}</span>
-                      <span className="text-foreground">{Math.round(cropDraft[side])}%</span>
-                    </div>
-                    <Slider
-                      value={[cropDraft[side]]}
-                      max={45}
-                      step={1}
-                      onValueChange={(v) => setCropDraft((d) => ({ ...d, [side]: (v as readonly number[])[0] }))}
-                    />
+                <div className="space-y-1.5">
+                  <div className="flex justify-between font-body text-xs">
+                    <span className="text-muted-foreground">Zoom</span>
+                    <span className="text-foreground">{cropZoom.toFixed(1)}×</span>
                   </div>
-                ))}
+                  <Slider
+                    value={[cropZoom]}
+                    min={1}
+                    max={4}
+                    step={0.1}
+                    onValueChange={(v) => setCropZoom((v as readonly number[])[0] ?? 1)}
+                  />
+                </div>
+                <p className="font-body text-[11px] text-muted-foreground">
+                  Drag inside the frame to pan. Scroll or use the slider to zoom.
+                </p>
               </div>
             );
           })()}

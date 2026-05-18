@@ -49,7 +49,42 @@ export interface AddItemInput {
   // Phase 12: LookCreator canvas composition.
   x?: number | null;
   y?: number | null;
+  width?: number | null;
+  rotation?: number | null;
   zIndex?: number | null;
+  processedImageUrl?: string | null;
+}
+
+// Server-side guards for the free-form canvas inputs.
+// `width` is a percent of the canvas (1..100). `rotation` is normalised to
+// (-180, 180]. `processedImageUrl` must point at the canonical server-served
+// background-removed asset path so a stylist can't smuggle an arbitrary URL
+// into every render surface.
+const PROCESSED_IMAGE_URL_PREFIX = "/api/images/boards/processed/";
+
+export function validateCanvasWidth(value: number | null | undefined): number | null {
+  if (value === undefined || value === null) return null;
+  if (!Number.isFinite(value)) throw new Error("width must be a finite number");
+  if (value < 1 || value > 100) throw new Error("width must be between 1 and 100");
+  return value;
+}
+
+export function normaliseCanvasRotation(value: number | null | undefined): number | null {
+  if (value === undefined || value === null) return null;
+  if (!Number.isFinite(value)) throw new Error("rotation must be a finite number");
+  return ((value % 360) + 540) % 360 - 180;
+}
+
+export function validateProcessedImageUrl(
+  value: string | null | undefined,
+): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string" || !value.startsWith(PROCESSED_IMAGE_URL_PREFIX)) {
+    throw new Error(
+      `processedImageUrl must start with ${PROCESSED_IMAGE_URL_PREFIX}`,
+    );
+  }
+  return value;
 }
 
 function validatePolymorphism(input: AddItemInput): void {
@@ -93,7 +128,10 @@ export async function addStyleboardItem(
       webItemImageUrl: input.webItemImageUrl ?? null,
       x: input.x ?? null,
       y: input.y ?? null,
+      width: validateCanvasWidth(input.width),
+      rotation: normaliseCanvasRotation(input.rotation),
       zIndex: input.zIndex ?? null,
+      processedImageUrl: validateProcessedImageUrl(input.processedImageUrl),
     },
   });
 }
@@ -101,6 +139,8 @@ export async function addStyleboardItem(
 export interface PatchStyleboardItemInput {
   x?: number;
   y?: number;
+  width?: number | null;
+  rotation?: number | null;
   zIndex?: number;
   flipH?: boolean;
   flipV?: boolean;
@@ -108,6 +148,7 @@ export interface PatchStyleboardItemInput {
   cropRight?: number | null;
   cropBottom?: number | null;
   cropLeft?: number | null;
+  processedImageUrl?: string | null;
 }
 
 export async function patchStyleboardItem(
@@ -134,6 +175,15 @@ export async function patchStyleboardItem(
       ...(patch.cropRight !== undefined ? { cropRight: patch.cropRight } : {}),
       ...(patch.cropBottom !== undefined ? { cropBottom: patch.cropBottom } : {}),
       ...(patch.cropLeft !== undefined ? { cropLeft: patch.cropLeft } : {}),
+      ...(patch.width !== undefined
+        ? { width: validateCanvasWidth(patch.width) }
+        : {}),
+      ...(patch.rotation !== undefined
+        ? { rotation: normaliseCanvasRotation(patch.rotation) }
+        : {}),
+      ...(patch.processedImageUrl !== undefined
+        ? { processedImageUrl: validateProcessedImageUrl(patch.processedImageUrl) }
+        : {}),
     },
   });
 }
@@ -184,9 +234,14 @@ export async function reorderStyleboardItems(
  * message and increments the counters.
  */
 export interface SendStyleboardItemInput
-  extends Omit<AddItemInput, "x" | "y" | "zIndex"> {
+  extends Omit<
+    AddItemInput,
+    "x" | "y" | "zIndex" | "width" | "rotation" | "processedImageUrl"
+  > {
   x?: number | null;
   y?: number | null;
+  width?: number | null;
+  rotation?: number | null;
   zIndex?: number | null;
   flipH?: boolean;
   flipV?: boolean;
@@ -194,6 +249,7 @@ export interface SendStyleboardItemInput
   cropRight?: number | null;
   cropBottom?: number | null;
   cropLeft?: number | null;
+  processedImageUrl?: string | null;
 }
 
 export interface SendStyleboardInput {
@@ -324,6 +380,8 @@ export async function sendStyleboard(
             webItemImageUrl: it.webItemImageUrl ?? null,
             x: it.x ?? null,
             y: it.y ?? null,
+            width: validateCanvasWidth(it.width),
+            rotation: normaliseCanvasRotation(it.rotation),
             zIndex: it.zIndex ?? null,
             flipH: it.flipH ?? false,
             flipV: it.flipV ?? false,
@@ -331,6 +389,7 @@ export async function sendStyleboard(
             cropRight: it.cropRight ?? null,
             cropBottom: it.cropBottom ?? null,
             cropLeft: it.cropLeft ?? null,
+            processedImageUrl: validateProcessedImageUrl(it.processedImageUrl),
           })),
         });
       }

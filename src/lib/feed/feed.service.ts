@@ -15,8 +15,11 @@ export type FeedProduct = {
 export type FeedBoardItem = {
   id: string;
   imageUrl: string | null;
+  processedImageUrl: string | null;
   x: number | null;
   y: number | null;
+  width: number | null;
+  rotation: number | null;
   zIndex: number | null;
   flipH: boolean;
   flipV: boolean;
@@ -116,6 +119,8 @@ export async function listFeedBoards(params: {
           orderIndex: true,
           x: true,
           y: true,
+          width: true,
+          rotation: true,
           zIndex: true,
           flipH: true,
           flipV: true,
@@ -123,6 +128,7 @@ export async function listFeedBoards(params: {
           cropRight: true,
           cropBottom: true,
           cropLeft: true,
+          processedImageUrl: true,
           // Web items power the FeedCard product grid AND supply image URLs
           // for the BoardThumbnail canvas render when source = WEB_ADDED.
           webItemBrand: true,
@@ -194,8 +200,11 @@ export async function listFeedBoards(params: {
               : it.source === "INSPIRATION_PHOTO"
                 ? it.inspirationPhoto?.url ?? null
                 : null,
+        processedImageUrl: it.processedImageUrl,
         x: it.x,
         y: it.y,
+        width: it.width,
+        rotation: it.rotation,
         zIndex: it.zIndex,
         flipH: it.flipH,
         flipV: it.flipV,

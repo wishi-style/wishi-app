@@ -61,6 +61,8 @@ interface PreviewProduct {
   inventoryProductId: string | null;
   x: number | null;
   y: number | null;
+  width: number | null;
+  rotation: number | null;
   zIndex: number | null;
   flipH: boolean;
   flipV: boolean;
@@ -299,6 +301,8 @@ export function StyleboardCard({
                   imageUrl: p.image,
                   x: p.x,
                   y: p.y,
+                  width: p.width,
+                  rotation: p.rotation,
                   zIndex: p.zIndex,
                   flipH: p.flipH,
                   flipV: p.flipV,

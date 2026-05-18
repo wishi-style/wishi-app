@@ -6,6 +6,11 @@
 import { prisma } from "@/lib/prisma";
 import { DomainError, NotFoundError } from "@/lib/errors/domain-error";
 import type { Board, BoardPhoto, BoardType } from "@/generated/prisma/client";
+import {
+  validateCanvasWidth,
+  normaliseCanvasRotation,
+  validateProcessedImageUrl,
+} from "@/lib/boards/styleboard.service";
 
 export const MIN_BOARDS_PER_STYLE = 3;
 export const MAX_BOARDS_PER_STYLE = 10;
@@ -68,6 +73,8 @@ export interface PublishStyleboardItem {
   webItemImageUrl?: string | null;
   x?: number | null;
   y?: number | null;
+  width?: number | null;
+  rotation?: number | null;
   zIndex?: number | null;
   flipH?: boolean;
   flipV?: boolean;
@@ -75,6 +82,7 @@ export interface PublishStyleboardItem {
   cropRight?: number | null;
   cropBottom?: number | null;
   cropLeft?: number | null;
+  processedImageUrl?: string | null;
 }
 
 export async function publishProfileBoard(input: {
@@ -151,6 +159,8 @@ export async function publishProfileBoard(input: {
             webItemImageUrl: it.webItemImageUrl ?? null,
             x: it.x ?? null,
             y: it.y ?? null,
+            width: validateCanvasWidth(it.width),
+            rotation: normaliseCanvasRotation(it.rotation),
             zIndex: it.zIndex ?? null,
             flipH: it.flipH ?? false,
             flipV: it.flipV ?? false,
@@ -158,6 +168,7 @@ export async function publishProfileBoard(input: {
             cropRight: it.cropRight ?? null,
             cropBottom: it.cropBottom ?? null,
             cropLeft: it.cropLeft ?? null,
+            processedImageUrl: validateProcessedImageUrl(it.processedImageUrl),
           })),
         });
       }

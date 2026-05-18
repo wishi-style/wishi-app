@@ -121,6 +121,8 @@ export interface BoardWithCanvasRows {
     inspirationPhoto?: { url: string | null } | null;
     x: number | null;
     y: number | null;
+    width: number | null;
+    rotation: number | null;
     zIndex: number | null;
     flipH: boolean;
     flipV: boolean;
@@ -128,6 +130,7 @@ export interface BoardWithCanvasRows {
     cropRight: number | null;
     cropBottom: number | null;
     cropLeft: number | null;
+    processedImageUrl: string | null;
   }[];
 }
 
@@ -187,8 +190,11 @@ export async function resolveCanvasForBoards(
           return {
             id: it.id,
             imageUrl,
+            processedImageUrl: it.processedImageUrl,
             x: it.x,
             y: it.y,
+            width: it.width,
+            rotation: it.rotation,
             zIndex: it.zIndex,
             flipH: it.flipH,
             flipV: it.flipV,
