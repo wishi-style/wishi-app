@@ -17,9 +17,10 @@ export interface SessionCardInput {
 }
 
 export function deriveStatus(session: SessionCardInput): CardStatus {
-  // Terminal status wins over any unrated-board hint. Chats are closed once
-  // a session ends, so the card MUST NOT route the user back into board
-  // review / chat / etc. — the only forward motion is to rebook.
+  // Terminal status wins over any unrated-board hint. The action button on
+  // terminal cards routes to rebook; the card surface itself opens the
+  // read-only chat recap (handled in SessionCard via an overlay link), so
+  // we still classify these as "terminal" here regardless of board state.
   if (
     session.status === "COMPLETED" ||
     session.status === "CANCELLED" ||
