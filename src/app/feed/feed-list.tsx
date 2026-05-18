@@ -11,6 +11,7 @@ import type {
   FeedPage,
   FeedProduct,
 } from "@/lib/feed/feed.service";
+import { BoardThumbnail } from "@/components/boards/board-thumbnail";
 import { PillButton } from "@/components/primitives/pill-button";
 import { cn } from "@/lib/utils";
 import {
@@ -130,21 +131,16 @@ function FeedCard({
 
           <Link
             href={`/stylists/${board.stylist.profileId}`}
-            className="block aspect-square overflow-hidden"
+            className="block overflow-hidden"
           >
-            {board.coverImageUrl ? (
-              <Image
-                src={board.coverImageUrl}
-                alt={board.title ?? `Look by ${board.stylist.name}`}
-                width={800}
-                height={800}
-                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
-              />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center bg-muted font-display text-5xl text-muted-foreground">
-                {board.stylist.name.charAt(0)}
-              </div>
-            )}
+            <BoardThumbnail
+              type={board.type}
+              canvasMode={board.canvasMode}
+              photoUrls={board.photoUrls}
+              items={board.items}
+              flat
+              className="rounded-none border-0"
+            />
           </Link>
 
           {/* Stylist row + Book CTA */}

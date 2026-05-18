@@ -7,6 +7,8 @@ import { getServerAuth } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
+import { BoardThumbnail } from "@/components/boards/board-thumbnail";
+import { resolveCanvasForBoards } from "@/lib/boards/board-thumbnails";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +45,13 @@ async function loadSharedBoard(boardId: string) {
     where: { id: boardId },
     include: {
       photos: { orderBy: { orderIndex: "asc" } },
-      items: { orderBy: { orderIndex: "asc" } },
+      items: {
+        orderBy: { orderIndex: "asc" },
+        include: {
+          closetItem: { select: { url: true } },
+          inspirationPhoto: { select: { url: true } },
+        },
+      },
       session: {
         select: {
           stylist: {
@@ -58,6 +66,7 @@ async function loadSharedBoard(boardId: string) {
       },
     },
   });
+  // canvasMode is included via the default findUnique include.
 
   if (!board) return null;
   if (board.type !== "STYLEBOARD") return null;
@@ -131,6 +140,37 @@ export default async function SharedBoardPage({ params }: Props) {
   const title = board.title ?? "Styleboard";
   const photos = board.photos;
   const items = board.items;
+  // Resolve canvas items including INVENTORY image lookups via tastegraph,
+  // so an inventory-heavy styleboard renders the same tiles here as it does
+  // in chat / feed / profile. INVENTORY items without this resolver step
+  // would silently appear with imageUrl=null and drop from the canvas.
+  const canvasByBoardId = await resolveCanvasForBoards([
+    {
+      id: board.id,
+      type: board.type,
+      canvasMode: board.canvasMode,
+      coverUrl: board.coverUrl,
+      photos: board.photos.map((p) => ({ url: p.url })),
+      items: board.items.map((it) => ({
+        id: it.id,
+        source: it.source,
+        inventoryProductId: it.inventoryProductId,
+        webItemImageUrl: it.webItemImageUrl,
+        closetItem: it.closetItem,
+        inspirationPhoto: it.inspirationPhoto,
+        x: it.x,
+        y: it.y,
+        zIndex: it.zIndex,
+        flipH: it.flipH,
+        flipV: it.flipV,
+        cropTop: it.cropTop,
+        cropRight: it.cropRight,
+        cropBottom: it.cropBottom,
+        cropLeft: it.cropLeft,
+      })),
+    },
+  ]);
+  const canvas = canvasByBoardId.get(board.id);
 
   // Floating cart bar: only when this viewer is signed in and has items
   // queued in their cart — Loveable parity (SharedBoard.tsx:82-99).
@@ -182,7 +222,21 @@ export default async function SharedBoardPage({ params }: Props) {
             )}
           </header>
 
-          {/* Photos grid */}
+          {/* Board canvas — same composition the stylist designed,
+              rendered identically across every surface (chat card, feed,
+              profile, this share page). */}
+          <section className="mb-10">
+            <div className="mx-auto max-w-xl">
+              <BoardThumbnail
+                type="STYLEBOARD"
+                canvasMode={canvas?.canvasMode ?? null}
+                items={canvas?.items}
+              />
+            </div>
+          </section>
+
+          {/* Photos grid — only used for styleboards that carry inspiration
+              photos alongside the canvas (rare; legacy boards). */}
           {photos.length > 0 && (
             <section className="mb-10">
               <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
@@ -221,12 +275,14 @@ export default async function SharedBoardPage({ params }: Props) {
                       className="overflow-hidden rounded-xl border border-border bg-card"
                     >
                       {img ? (
-                        <Image
+                        /* Plain <img> — retailer CDNs aren't in Next/Image's
+                            remotePatterns allowlist; same pattern as the
+                            stylist profile page. */
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
                           src={img}
                           alt={label}
-                          width={400}
-                          height={400}
-                          sizes="(min-width: 768px) 25vw, 50vw"
+                          loading="lazy"
                           className="aspect-square w-full object-cover"
                         />
                       ) : (

@@ -12,11 +12,30 @@ export type FeedProduct = {
   url: string | null;
 };
 
+export type FeedBoardItem = {
+  id: string;
+  imageUrl: string | null;
+  x: number | null;
+  y: number | null;
+  zIndex: number | null;
+  flipH: boolean;
+  flipV: boolean;
+  crop: { top: number; right: number; bottom: number; left: number } | null;
+};
+
 export type FeedBoard = {
   id: string;
+  type: "MOODBOARD" | "STYLEBOARD";
+  canvasMode: string | null;
   title: string | null;
   profileStyle: string | null;
   coverImageUrl: string | null;
+  /** Photo URLs in orderIndex order — drives the BoardThumbnail render for
+   *  moodboards (and falls back to a single-image render in legacy clients). */
+  photoUrls: string[];
+  /** Resolved styleboard items with canvas positions, used by BoardThumbnail
+   *  to mirror the LookCreator composition on the feed card. */
+  items: FeedBoardItem[];
   createdAt: Date;
   isFavorited: boolean;
   stylist: {
@@ -61,35 +80,59 @@ export async function listFeedBoards(params: {
 
   const boards = await prisma.board.findMany({
     where: {
-      type: "STYLEBOARD",
-      isFeaturedOnProfile: true,
-      sessionId: null,
       stylistProfile: {
         matchEligible: true,
         genderPreference: { has: gender },
         user: { deletedAt: null },
       },
+      OR: [
+        // Profile styleboards (sessionless boards explicitly featured on the
+        // stylist's public profile) — the original feed surface.
+        {
+          type: "STYLEBOARD",
+          isFeaturedOnProfile: true,
+          sessionId: null,
+        },
+        // Shared-on-feed boards from sessions — either type, opt-in by stylist
+        // at send time. Requires sentAt to be set so drafts never leak.
+        {
+          shareOnFeed: true,
+          sentAt: { not: null },
+        },
+      ],
     },
     include: {
       photos: {
         orderBy: { orderIndex: "asc" },
-        take: 1,
-        select: { url: true },
+        take: 24,
+        select: { id: true, url: true },
       },
       items: {
-        where: {
-          source: "WEB_ADDED",
-          webItemImageUrl: { not: null },
-        },
         orderBy: { orderIndex: "asc" },
-        take: 12,
+        take: 24,
         select: {
           id: true,
+          source: true,
+          orderIndex: true,
+          x: true,
+          y: true,
+          zIndex: true,
+          flipH: true,
+          flipV: true,
+          cropTop: true,
+          cropRight: true,
+          cropBottom: true,
+          cropLeft: true,
+          // Web items power the FeedCard product grid AND supply image URLs
+          // for the BoardThumbnail canvas render when source = WEB_ADDED.
           webItemBrand: true,
           webItemTitle: true,
           webItemPriceInCents: true,
           webItemImageUrl: true,
           webItemUrl: true,
+          // Other sources contribute image URLs via their joined relations.
+          closetItem: { select: { url: true } },
+          inspirationPhoto: { select: { url: true } },
         },
       },
       stylistProfile: {
@@ -141,11 +184,45 @@ export async function listFeedBoards(params: {
           imageUrl: it.webItemImageUrl as string,
           url: it.webItemUrl,
         }));
+      const items: FeedBoardItem[] = b.items.map((it) => ({
+        id: it.id,
+        imageUrl:
+          it.source === "WEB_ADDED"
+            ? it.webItemImageUrl
+            : it.source === "CLOSET"
+              ? it.closetItem?.url ?? null
+              : it.source === "INSPIRATION_PHOTO"
+                ? it.inspirationPhoto?.url ?? null
+                : null,
+        x: it.x,
+        y: it.y,
+        zIndex: it.zIndex,
+        flipH: it.flipH,
+        flipV: it.flipV,
+        crop:
+          it.cropTop != null ||
+          it.cropRight != null ||
+          it.cropBottom != null ||
+          it.cropLeft != null
+            ? {
+                top: it.cropTop ?? 0,
+                right: it.cropRight ?? 0,
+                bottom: it.cropBottom ?? 0,
+                left: it.cropLeft ?? 0,
+              }
+            : null,
+      }));
       return {
         id: b.id,
+        type: b.type,
+        canvasMode: b.canvasMode,
         title: b.title,
         profileStyle: b.profileStyle,
         coverImageUrl: b.photos[0]?.url ?? null,
+        photoUrls: b.photos
+          .map((p) => p.url)
+          .filter((u): u is string => Boolean(u)),
+        items,
         createdAt: b.createdAt,
         isFavorited: favoritedIds.has(b.id),
         stylist: {

@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -34,6 +35,7 @@ interface Props {
     tags: string[];
     featureOnProfile: boolean;
     profileStyle: string;
+    shareOnFeed: boolean;
   }) => Promise<void>;
 }
 
@@ -54,6 +56,7 @@ export function SaveLookDialog({ open, onOpenChange, clientName, onSend }: Props
   const [error, setError] = useState<string | null>(null);
   const [featureOnProfile, setFeatureOnProfile] = useState(false);
   const [profileStyle, setProfileStyle] = useState("");
+  const [shareOnFeed, setShareOnFeed] = useState(false);
 
   const nameValid = title.trim().length > 0;
   const descValid = description.trim().length > 0;
@@ -81,6 +84,7 @@ export function SaveLookDialog({ open, onOpenChange, clientName, onSend }: Props
         tags: tagChips,
         featureOnProfile,
         profileStyle: profileStyle.trim(),
+        shareOnFeed,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Send failed");
@@ -257,6 +261,23 @@ export function SaveLookDialog({ open, onOpenChange, clientName, onSend }: Props
             onStyleChange={setProfileStyle}
             disabled={sending}
           />
+
+          <label className="flex cursor-pointer items-start gap-3 rounded-sm border border-border p-3">
+            <Checkbox
+              checked={shareOnFeed}
+              onCheckedChange={(v) => setShareOnFeed(v === true)}
+              disabled={sending}
+              className="mt-0.5"
+            />
+            <div className="space-y-0.5">
+              <p className="font-body text-sm font-medium">Share on the feed</p>
+              <p className="font-body text-xs text-muted-foreground">
+                Surface this look on the public Wishi feed so other clients
+                can discover your work. Independent from featuring on your
+                profile.
+              </p>
+            </div>
+          </label>
 
           {error && <p className="font-body text-xs text-red-600">{error}</p>}
         </div>

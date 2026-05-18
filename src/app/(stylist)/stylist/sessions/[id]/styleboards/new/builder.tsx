@@ -429,6 +429,7 @@ export function StyleboardBuilder({
   // In profile mode the toggle is fixed-on; style is pre-filled from query.
   const [featureOnProfile, setFeatureOnProfile] = useState(profileMode);
   const [profileStyle, setProfileStyle] = useState(initialProfileStyle ?? "");
+  const [shareOnFeed, setShareOnFeed] = useState(false);
 
   // Retailer chip list is now the canonical merchant facet from the
   // inventory service rather than a derived-from-current-page set. The
@@ -1000,6 +1001,7 @@ export function StyleboardBuilder({
             items,
             featureOnProfile,
             profileStyle: profileStyle.trim(),
+            shareOnFeed,
             coverUrl,
           };
       const res = await fetch(endpoint, {
@@ -2414,13 +2416,34 @@ export function StyleboardBuilder({
                 stylist can decide whether the look also lands on /stylists/[id]
                 while shipping to a client. */}
             {!profileMode && (
-              <FeatureOnProfile
-                enabled={featureOnProfile}
-                onEnabledChange={setFeatureOnProfile}
-                style={profileStyle}
-                onStyleChange={setProfileStyle}
-                disabled={isSaving}
-              />
+              <>
+                <FeatureOnProfile
+                  enabled={featureOnProfile}
+                  onEnabledChange={setFeatureOnProfile}
+                  style={profileStyle}
+                  onStyleChange={setProfileStyle}
+                  disabled={isSaving}
+                />
+                <label className="flex cursor-pointer items-start gap-3 rounded-sm border border-border p-3">
+                  <input
+                    type="checkbox"
+                    checked={shareOnFeed}
+                    onChange={(e) => setShareOnFeed(e.target.checked)}
+                    disabled={isSaving}
+                    className="mt-1 h-4 w-4 rounded-sm border-border accent-foreground"
+                  />
+                  <div className="space-y-0.5">
+                    <p className="font-body text-sm font-medium">
+                      Share on the feed
+                    </p>
+                    <p className="font-body text-xs text-muted-foreground">
+                      Surface this look on the public Wishi feed so other
+                      clients can discover your work. Independent from
+                      featuring on your profile.
+                    </p>
+                  </div>
+                </label>
+              </>
             )}
           </div>
 

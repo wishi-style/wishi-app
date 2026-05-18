@@ -17,6 +17,7 @@ import {
   type RestyleProduct,
   type RestyleFeedback,
 } from "@/components/boards/restyle-wizard";
+import { BoardThumbnail } from "@/components/boards/board-thumbnail";
 import type { ChatMessage } from "../use-chat";
 import type { ViewerRole } from "../message-renderers";
 
@@ -58,6 +59,12 @@ interface PreviewProduct {
   priceInCents: number | null;
   soldOut: boolean;
   inventoryProductId: string | null;
+  x: number | null;
+  y: number | null;
+  zIndex: number | null;
+  flipH: boolean;
+  flipV: boolean;
+  crop: { top: number; right: number; bottom: number; left: number } | null;
 }
 
 interface PreviewPayload {
@@ -279,24 +286,27 @@ export function StyleboardCard({
 
         {/* Two-column layout: collage + product grid (stacks on mobile) */}
         <div className="flex flex-col gap-4 md:flex-row">
-          {/* Left: collage */}
-          <div className="aspect-square w-full shrink-0 overflow-hidden rounded-md md:w-1/2">
-            {preview && preview.thumbnails.length > 0 ? (
-              <div className="columns-2 gap-1.5 h-full">
-                {preview.thumbnails.map((src, i) => (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
-                    key={i}
-                    src={src}
-                    alt={`Look piece ${i + 1}`}
-                    className="mb-1.5 w-full rounded-sm object-cover"
-                    loading="lazy"
-                  />
-                ))}
-              </div>
+          {/* Left: collage. BoardThumbnail mirrors the LookCreator canvas
+              composition — same items, same x/y/zIndex/crop/flip — so the
+              chat card matches what the stylist saw while building. */}
+          <div className="w-full shrink-0 md:w-1/2">
+            {preview ? (
+              <BoardThumbnail
+                type="STYLEBOARD"
+                items={preview.products.map((p) => ({
+                  id: p.id,
+                  imageUrl: p.image,
+                  x: p.x,
+                  y: p.y,
+                  zIndex: p.zIndex,
+                  flipH: p.flipH,
+                  flipV: p.flipV,
+                  crop: p.crop,
+                }))}
+              />
             ) : (
-              <div className="grid h-full place-items-center bg-muted text-xs text-muted-foreground">
-                {preview ? "No items yet" : "Loading preview…"}
+              <div className="aspect-square w-full grid place-items-center rounded-md bg-muted text-xs text-muted-foreground">
+                Loading preview…
               </div>
             )}
           </div>

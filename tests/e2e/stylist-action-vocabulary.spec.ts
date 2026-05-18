@@ -266,8 +266,14 @@ test("View Summary → dashboard chat (COMPLETED session)", async ({ page }) => 
   }
 });
 
-test("Open Chat → dashboard chat (looks at quota, awaiting client)", async ({ page }) => {
-  const seed = await seedSession("open-chat", {
+test("Create Look stays available past quota — stylists can always send more", async ({
+  page,
+}) => {
+  // Plan quotas no longer gate the CTA; "Open Chat" only appears for the
+  // unreachable fallback paths now (terminal sessions, end-requested, etc.).
+  // At styleboardsSent === styleboardsAllowed the stylist should still see
+  // "Create Look".
+  const seed = await seedSession("create-look-past-quota", {
     moodboardsSent: 1,
     styleboardsSent: 5,
     styleboardsAllowed: 5,
@@ -278,13 +284,11 @@ test("Open Chat → dashboard chat (looks at quota, awaiting client)", async ({ 
     await page.goto("/stylist/dashboard");
     await page.waitForLoadState("networkidle");
 
-    const cta = page.getByRole("button", { name: "Open Chat" }).first();
+    const cta = page.getByRole("button", { name: "Create Look" }).first();
     await expect(cta).toBeVisible();
     await cta.click();
-    // The "navigate" kind for Open Chat targets the dashboard with the
-    // session selected — same origin route.
     await expect(page).toHaveURL(
-      new RegExp(`/stylist/dashboard\\?session=${seed.sessionId}`),
+      new RegExp(`/stylist/sessions/${seed.sessionId}/styleboards/new`),
     );
   } finally {
     await teardown(seed);
@@ -309,7 +313,7 @@ test("dashboard never renders the deprecated no-op vocabulary", async ({
     // The pre-fix Loveable vocabulary — none of these should appear in the
     // dashboard chrome any longer. (They may legitimately appear inside chat
     // messages, but not as button labels in this seeded scenario where
-    // looks-at-quota should yield "Open Chat".)
+    // looks-at-quota should yield "Create Look".)
     for (const dead of ["Start styling", "View session", "Awaiting approval"]) {
       expect(body, `should not surface "${dead}"`).not.toContain(dead);
     }

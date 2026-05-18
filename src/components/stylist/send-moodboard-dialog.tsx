@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -10,21 +11,18 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { MoodBoardGrid } from "@/components/stylist/moodboard-grid";
+import { BoardThumbnail } from "@/components/boards/board-thumbnail";
 import { SendIcon, SparklesIcon, Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
-import { FeatureOnProfile } from "@/components/stylist/feature-on-profile";
 
 interface SendMoodBoardDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   images: string[];
   clientName: string;
-  onSend: (
-    images: string[],
-    note: string,
-    feature: { featureOnProfile: boolean; profileStyle: string },
-  ) => void;
+  /** "share on feed" opt-in. Moodboards never appear on profile pages — that's
+   *  for styleboards only — so the dialog exposes the feed flag exclusively. */
+  onSend: (images: string[], note: string, options: { shareOnFeed: boolean }) => void;
 }
 
 const aiSuggestions = [
@@ -42,8 +40,7 @@ export function SendMoodBoardDialog({
 }: SendMoodBoardDialogProps) {
   const [note, setNote] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [featureOnProfile, setFeatureOnProfile] = useState(false);
-  const [profileStyle, setProfileStyle] = useState("");
+  const [shareOnFeed, setShareOnFeed] = useState(false);
 
   // Auto-generate AI suggestion when dialog opens
   useEffect(() => {
@@ -69,25 +66,16 @@ export function SendMoodBoardDialog({
       toast.error("Add a personal note before sending");
       return;
     }
-    if (featureOnProfile && !profileStyle.trim()) {
-      toast.error("Pick a style label to feature this on your profile");
-      return;
-    }
-    onSend(images, note.trim(), {
-      featureOnProfile,
-      profileStyle: profileStyle.trim(),
-    });
+    onSend(images, note.trim(), { shareOnFeed });
     setNote("");
-    setFeatureOnProfile(false);
-    setProfileStyle("");
+    setShareOnFeed(false);
     onOpenChange(false);
   };
 
   const handleClose = (value: boolean) => {
     if (!value) {
       setNote("");
-      setFeatureOnProfile(false);
-      setProfileStyle("");
+      setShareOnFeed(false);
     }
     onOpenChange(value);
   };
@@ -104,10 +92,11 @@ export function SendMoodBoardDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Board preview */}
+        {/* Board preview — same square BoardThumbnail the client will see in chat,
+            on the feed, and on the public share link. */}
         <div className="px-6">
-          <div className="rounded-sm border border-border overflow-hidden aspect-[3/2] max-h-[200px]">
-            <MoodBoardGrid images={images} className="h-full" />
+          <div className="mx-auto max-h-[280px] max-w-[280px]">
+            <BoardThumbnail type="MOODBOARD" photoUrls={images} flat />
           </div>
           <p className="font-body text-[11px] text-muted-foreground mt-1.5 mb-4">
             {images.length} image{images.length !== 1 ? "s" : ""} selected
@@ -143,14 +132,24 @@ export function SendMoodBoardDialog({
           </div>
         </div>
 
-        {/* Feature on profile */}
+        {/* Share on feed — moodboards never appear on profile pages (those are
+            styleboards-only); the feed is the only public surface a moodboard
+            can opt into. */}
         <div className="px-6 pb-4">
-          <FeatureOnProfile
-            enabled={featureOnProfile}
-            onEnabledChange={setFeatureOnProfile}
-            style={profileStyle}
-            onStyleChange={setProfileStyle}
-          />
+          <label className="flex cursor-pointer items-start gap-3 rounded-sm border border-border p-3">
+            <Checkbox
+              checked={shareOnFeed}
+              onCheckedChange={(v) => setShareOnFeed(v === true)}
+              className="mt-0.5"
+            />
+            <div className="space-y-0.5">
+              <p className="font-body text-sm font-medium">Share on the feed</p>
+              <p className="font-body text-xs text-muted-foreground">
+                Surface this mood board on the public Wishi feed so other
+                clients can discover your taste.
+              </p>
+            </div>
+          </label>
         </div>
 
         {/* Actions */}
@@ -165,11 +164,7 @@ export function SendMoodBoardDialog({
           </Button>
           <Button
             onClick={handleSend}
-            disabled={
-              !note.trim() ||
-              isGenerating ||
-              (featureOnProfile && !profileStyle.trim())
-            }
+            disabled={!note.trim() || isGenerating}
             size="sm"
             className="h-8 rounded-sm bg-foreground text-background hover:bg-foreground/90 font-body text-xs gap-1.5"
           >

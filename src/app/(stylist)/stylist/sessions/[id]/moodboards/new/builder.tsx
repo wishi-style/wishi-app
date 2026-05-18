@@ -53,7 +53,7 @@ interface MoodBoardCreatorProps {
   onSend?: (
     images: string[],
     note: string,
-    feature: { featureOnProfile: boolean; profileStyle: string },
+    options: { shareOnFeed: boolean },
   ) => void;
   onPhotoAdded?: (input: { url: string; s3Key: string; inspirationPhotoId: string }) => Promise<boolean>;
   onPhotoRemoved?: (url: string) => Promise<void>;
@@ -184,13 +184,13 @@ export function MoodboardBuilder({
   const handleSend = (
     images: string[],
     note: string,
-    feature: { featureOnProfile: boolean; profileStyle: string },
+    options: { shareOnFeed: boolean },
   ) => {
     toast.success("Mood board sent to " + clientName, {
       description: "Redirecting to dashboard…",
     });
     setTimeout(() => {
-      onSend?.(images, note, feature);
+      onSend?.(images, note, options);
     }, 900);
   };
 
