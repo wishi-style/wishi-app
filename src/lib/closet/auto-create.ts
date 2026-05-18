@@ -1,11 +1,50 @@
 import { prisma } from "@/lib/prisma";
-import type { ClosetItem } from "@/generated/prisma/client";
+import type { ClosetItem, OrderItem } from "@/generated/prisma/client";
 
 /**
- * Materialize closet items from an Order's items. Idempotent: skips items
- * already linked via `ClosetItem.sourceOrderItemId`. Copies snapshotted
- * brand/title/image/size/color from each OrderItem so the closet entry is
+ * Materialize a closet item from a single OrderItem snapshot. Idempotent:
+ * if a ClosetItem already links to this `OrderItem.id` via
+ * `sourceOrderItemId`, returns it unchanged. Copies snapshotted
+ * brand/title/image/size/color from the OrderItem so the closet entry is
  * self-contained even if the inventory service goes away later.
+ *
+ * Used by the per-OrderItem `PURCHASED` transition (universal-fulfillment
+ * flow) AND by the legacy whole-order `ARRIVED` transition path.
+ */
+export async function createClosetItemForOrderItem(
+  orderItem: Pick<
+    OrderItem,
+    "id" | "title" | "brand" | "imageUrl" | "color" | "size"
+  > & { userId: string },
+): Promise<ClosetItem> {
+  const existing = await prisma.closetItem.findFirst({
+    where: {
+      userId: orderItem.userId,
+      sourceOrderItemId: orderItem.id,
+    },
+  });
+  if (existing) return existing;
+
+  return prisma.closetItem.create({
+    data: {
+      userId: orderItem.userId,
+      s3Key: "", // snapshot image lives at item.imageUrl; S3 re-upload deferred
+      url: orderItem.imageUrl ?? "",
+      name: orderItem.title,
+      designer: orderItem.brand ?? null,
+      category: null, // best-effort; stylist may tag later
+      colors: orderItem.color ? [orderItem.color] : [],
+      size: orderItem.size ?? null,
+      sourceOrderItemId: orderItem.id,
+    },
+  });
+}
+
+/**
+ * Materialize closet items from every item on an Order. Idempotent per
+ * OrderItem via `createClosetItemForOrderItem`. Kept around for the legacy
+ * `Order.status = ARRIVED` transition path; the per-OrderItem flow calls
+ * `createClosetItemForOrderItem` directly on each PURCHASED transition.
  */
 export async function createClosetItemsFromOrder(
   orderId: string,
@@ -16,34 +55,11 @@ export async function createClosetItemsFromOrder(
   });
   if (!order) throw new Error(`Order ${orderId} not found`);
 
-  const existing = await prisma.closetItem.findMany({
-    where: {
-      userId: order.userId,
-      sourceOrderItemId: { in: order.items.map((i) => i.id) },
-    },
-    select: { sourceOrderItemId: true },
-  });
-  const alreadyLinked = new Set(
-    existing.map((e) => e.sourceOrderItemId).filter(Boolean) as string[],
-  );
-
-  const pending = order.items.filter((i) => !alreadyLinked.has(i.id));
-  if (pending.length === 0) return [];
-
   const created: ClosetItem[] = [];
-  for (const item of pending) {
-    const closetItem = await prisma.closetItem.create({
-      data: {
-        userId: order.userId,
-        s3Key: "", // snapshot image lives at item.imageUrl; S3 re-upload deferred
-        url: item.imageUrl ?? "",
-        name: item.title,
-        designer: item.brand ?? null,
-        category: null, // best-effort; stylist may tag later
-        colors: item.color ? [item.color] : [],
-        size: item.size ?? null,
-        sourceOrderItemId: item.id,
-      },
+  for (const item of order.items) {
+    const closetItem = await createClosetItemForOrderItem({
+      ...item,
+      userId: order.userId,
     });
     created.push(closetItem);
   }

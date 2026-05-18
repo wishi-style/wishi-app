@@ -16,6 +16,7 @@ import {
   REFUND_SOFT_CAP_CENTS,
 } from "@/lib/orders/admin-orders.service";
 import { OrderActions } from "./order-actions";
+import { OrderItemActions } from "./order-item-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -64,29 +65,17 @@ export default async function AdminOrderDetail({
             <CardHeader>
               <CardTitle>Items ({order.items.length})</CardTitle>
               <CardDescription>
-                Snapshotted at fulfillment — inventory service is not consulted here
+                Per-item fulfillment. Snapshots come from the cart at
+                checkout time — inventory service is not consulted here.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2 text-sm">
+            <CardContent className="space-y-3 text-sm">
               {order.items.map((item) => (
-                <div
+                <OrderItemActions
                   key={item.id}
-                  className="flex items-center justify-between rounded-md border border-border bg-muted/30 p-2"
-                >
-                  <div>
-                    <div className="font-medium">{item.title}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {item.brand ?? "—"} · qty {item.quantity}
-                      {item.size ? ` · size ${item.size}` : ""}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div>{fmtMoney(item.priceInCents * item.quantity)}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {fmtMoney(item.priceInCents)} ea
-                    </div>
-                  </div>
-                </div>
+                  orderId={order.id}
+                  item={item}
+                />
               ))}
             </CardContent>
           </Card>

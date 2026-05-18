@@ -1,13 +1,22 @@
 import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
-import { createClosetItemsFromOrder } from "@/lib/closet/auto-create";
+import {
+  createClosetItemForOrderItem,
+  createClosetItemsFromOrder,
+} from "@/lib/closet/auto-create";
 import { dispatchNotification } from "@/lib/notifications/dispatcher";
 import {
   getEasyPostClient,
   type EasyPostClient,
 } from "@/lib/integrations/easypost";
-import type { Order, OrderItem, OrderSource, OrderStatus } from "@/generated/prisma/client";
+import type {
+  Order,
+  OrderItem,
+  OrderItemStatus,
+  OrderSource,
+  OrderStatus,
+} from "@/generated/prisma/client";
 
 export const REFUND_SOFT_CAP_CENTS = 20_000; // $200 — surfaces a manager-approval warning
 
@@ -245,6 +254,307 @@ export async function setOrderNotes(
     where: { id: orderId },
     data: { customerTeamNotes: notes },
   });
+}
+
+// ─── Per-OrderItem fulfillment (universal Unicart) ───────────────────────
+
+export const UNFULFILLABLE_REASONS = [
+  "out_of_stock",
+  "wont_ship",
+  "price_jumped",
+  "retailer_issue",
+  "other",
+] as const;
+export type UnfulfillableReason = (typeof UNFULFILLABLE_REASONS)[number];
+
+const ITEM_STATUS_TRANSITIONS: Record<OrderItemStatus, OrderItemStatus[]> = {
+  // Fulfiller decides: did the retailer order succeed or fail?
+  PENDING: ["PURCHASED", "UNFULFILLABLE"],
+  // Client-initiated returns mirror retailer refunds back through Wishi.
+  PURCHASED: ["RETURN_REQUESTED"],
+  // UNFULFILLABLE refunds at transition time — no further moves.
+  UNFULFILLABLE: [],
+  // Admin verifies the user-submitted retailer return reference, then
+  // moves to RETURNED which fires the mirror refund.
+  RETURN_REQUESTED: ["RETURNED"],
+  RETURNED: [],
+};
+
+export function nextAllowedItemStatuses(
+  current: OrderItemStatus,
+): OrderItemStatus[] {
+  return ITEM_STATUS_TRANSITIONS[current] ?? [];
+}
+
+export interface TransitionOrderItemInput {
+  retailerOrderRef?: string | null;
+  unfulfillableReason?: UnfulfillableReason | null;
+  unfulfillableNotes?: string | null;
+  returnReceiptRef?: string | null;
+}
+
+/**
+ * Compute the refund amount for a single OrderItem line: line price × qty
+ * plus the line's proportional share of the order-level tax. Shipping is
+ * NOT refunded per-line — the rest of the order is still shipping, so the
+ * flat shipping fee covers logistics overhead. (If *every* line is
+ * UNFULFILLABLE, the rollup separately refunds the full shipping.)
+ *
+ * Returns 0 (no refund) for items already refunded — the caller treats 0
+ * as "skip the Stripe call but still flip status".
+ */
+export function lineRefundCents(
+  item: Pick<OrderItem, "priceInCents" | "quantity" | "refundedInCents">,
+  order: Pick<Order, "totalInCents" | "taxInCents" | "shippingInCents">,
+  options: { includeShipping?: boolean } = {},
+): number {
+  if (item.refundedInCents > 0) return 0;
+
+  const lineSubtotal = item.priceInCents * item.quantity;
+  const orderSubtotal =
+    order.totalInCents - order.taxInCents - order.shippingInCents;
+
+  // Tax allocation: line's share of (subtotal+tax) is proportional to line
+  // subtotal / order subtotal. Avoid divide-by-zero when an order has no
+  // subtotal (shouldn't happen in production, but defensive).
+  const taxShare =
+    orderSubtotal > 0
+      ? Math.round((lineSubtotal / orderSubtotal) * order.taxInCents)
+      : 0;
+  const shippingShare = options.includeShipping ? order.shippingInCents : 0;
+
+  return lineSubtotal + taxShare + shippingShare;
+}
+
+export type CreateRefundFnForItem = CreateRefundFn;
+
+export interface TransitionOrderItemOptions {
+  deps?: { createRefund?: CreateRefundFnForItem };
+}
+
+export interface TransitionOrderItemResult {
+  orderItem: OrderItem;
+  order: Order;
+  refundedInCents: number;
+  stripeRefundId: string | null;
+  orderRolledUp: boolean;
+}
+
+/**
+ * Drive a single OrderItem through its fulfillment state machine and fan
+ * out the right side effects per transition:
+ *   PENDING → PURCHASED       : create the user's ClosetItem snapshot
+ *   PENDING → UNFULFILLABLE   : fire a partial Stripe refund for the line
+ *                                (if every other line is also resolved as
+ *                                UNFULFILLABLE, the rollup refunds
+ *                                shipping too)
+ *   PURCHASED → RETURN_REQUESTED : user-initiated return (capture
+ *                                receipt ref; no Stripe call yet)
+ *   RETURN_REQUESTED → RETURNED : admin verified the retailer refund;
+ *                                fire the Stripe mirror refund
+ *
+ * After any transition that resolves the item (PURCHASED / UNFULFILLABLE /
+ * RETURNED), we re-read the parent Order and roll Order.status up to
+ * COMPLETED once every item is PURCHASED or UNFULFILLABLE.
+ */
+export async function transitionOrderItemStatus(
+  orderItemId: string,
+  next: OrderItemStatus,
+  input: TransitionOrderItemInput = {},
+  options: TransitionOrderItemOptions = {},
+): Promise<TransitionOrderItemResult> {
+  const orderItem = await prisma.orderItem.findUnique({
+    where: { id: orderItemId },
+    include: { order: true },
+  });
+  if (!orderItem) throw new Error("OrderItem not found");
+
+  const allowed = nextAllowedItemStatuses(orderItem.status);
+  if (!allowed.includes(next)) {
+    throw new Error(
+      `Cannot transition OrderItem from ${orderItem.status} to ${next}. Allowed: ${
+        allowed.join(", ") || "none"
+      }`,
+    );
+  }
+
+  if (
+    next === "UNFULFILLABLE" &&
+    input.unfulfillableReason &&
+    !UNFULFILLABLE_REASONS.includes(input.unfulfillableReason)
+  ) {
+    throw new Error(
+      `Invalid unfulfillableReason. Allowed: ${UNFULFILLABLE_REASONS.join(", ")}`,
+    );
+  }
+
+  const createRefundImpl: CreateRefundFn =
+    options.deps?.createRefund ??
+    (async (params, opts) => {
+      const r = await stripe.refunds.create(params, opts);
+      return { id: r.id };
+    });
+
+  const now = new Date();
+  const data: Parameters<typeof prisma.orderItem.update>[0]["data"] = {
+    status: next,
+  };
+
+  let refundCents = 0;
+  let stripeRefundId: string | null = null;
+  let refundIdempotency: string | null = null;
+
+  if (next === "PURCHASED") {
+    if (input.retailerOrderRef) {
+      data.retailerOrderRef = input.retailerOrderRef;
+    }
+  } else if (next === "UNFULFILLABLE") {
+    data.unfulfillableReason = input.unfulfillableReason ?? null;
+    data.unfulfillableNotes = input.unfulfillableNotes ?? null;
+    refundCents = lineRefundCents(orderItem, orderItem.order);
+    refundIdempotency = `unfulfillable_refund:${orderItem.id}`;
+  } else if (next === "RETURN_REQUESTED") {
+    data.returnRequestedAt = now;
+    if (input.returnReceiptRef) data.returnReceiptRef = input.returnReceiptRef;
+  } else if (next === "RETURNED") {
+    refundCents = lineRefundCents(orderItem, orderItem.order);
+    refundIdempotency = `return_refund:${orderItem.id}`;
+  }
+
+  if (refundCents > 0 && orderItem.order.source !== "DIRECT_SALE") {
+    throw new Error(
+      "Per-item refunds are only valid for DIRECT_SALE orders (others settle through the retailer)",
+    );
+  }
+
+  if (refundCents > 0 && !orderItem.order.stripePaymentIntentId) {
+    throw new Error("Order has no Stripe PaymentIntent — cannot refund line");
+  }
+
+  if (refundCents > 0 && orderItem.order.stripePaymentIntentId) {
+    const refund = await createRefundImpl(
+      {
+        payment_intent: orderItem.order.stripePaymentIntentId,
+        amount: refundCents,
+        reason: "requested_by_customer",
+        metadata: {
+          orderId: orderItem.order.id,
+          orderItemId: orderItem.id,
+          transition: next,
+        },
+      },
+      { idempotencyKey: refundIdempotency ?? undefined },
+    );
+    stripeRefundId = refund.id;
+    data.refundedInCents = refundCents;
+    data.refundedAt = now;
+  }
+
+  // Apply the OrderItem update + order-level refund accumulation atomically.
+  const { item, order } = await prisma.$transaction(async (tx) => {
+    const updatedItem = await tx.orderItem.update({
+      where: { id: orderItemId },
+      data,
+    });
+
+    if (refundCents > 0) {
+      // Accumulate on the parent Order's roll-up so the existing admin
+      // "refundable" math stays accurate. updateMany with a guard against
+      // the prior value avoids a lost write under concurrent transitions
+      // (rare — admin tool is single-actor — but cheap to defend).
+      const prevRefunded = orderItem.order.refundedInCents ?? 0;
+      await tx.order.updateMany({
+        where: {
+          id: orderItem.order.id,
+          refundedInCents: prevRefunded === 0 ? null : prevRefunded,
+        },
+        data: {
+          refundedInCents: prevRefunded + refundCents,
+          refundedAt: now,
+        },
+      });
+    }
+
+    const updatedOrder = await tx.order.findUnique({
+      where: { id: orderItem.order.id },
+      include: { items: true },
+    });
+    if (!updatedOrder) {
+      throw new Error("Order disappeared mid-transition");
+    }
+    return { item: updatedItem, order: updatedOrder };
+  });
+
+  // ClosetItem auto-create (PURCHASED only). Side-effect outside the
+  // transaction so a closet write that fails doesn't roll back the
+  // fulfillment status. Idempotent inside createClosetItemForOrderItem.
+  if (next === "PURCHASED") {
+    await createClosetItemForOrderItem({
+      ...item,
+      userId: order.userId,
+    }).catch((err) => {
+      console.warn(
+        `[orders] closet auto-create failed for OrderItem ${item.id}:`,
+        err instanceof Error ? err.message : err,
+      );
+    });
+  }
+
+  // Order-level rollup: every item is resolved → Order.status = COMPLETED.
+  // Only apply when the parent Order is in ORDERED (don't auto-flip orders
+  // currently in legacy SHIPPED/ARRIVED transitions).
+  let orderRolledUp = false;
+  if (order.status === "ORDERED") {
+    const allResolved = order.items.every(
+      (it) =>
+        it.status === "PURCHASED" ||
+        it.status === "UNFULFILLABLE" ||
+        it.status === "RETURNED",
+    );
+    const allUnfulfillable = order.items.every(
+      (it) => it.status === "UNFULFILLABLE",
+    );
+    if (allResolved) {
+      const rollupData: Parameters<typeof prisma.order.update>[0]["data"] = {
+        status: "COMPLETED",
+      };
+      // Edge case: if every item failed, also refund shipping so the user
+      // isn't out $10 for an order that delivered nothing.
+      if (allUnfulfillable && order.shippingInCents > 0) {
+        if (order.stripePaymentIntentId) {
+          const shippingRefund = await createRefundImpl(
+            {
+              payment_intent: order.stripePaymentIntentId,
+              amount: order.shippingInCents,
+              reason: "requested_by_customer",
+              metadata: {
+                orderId: order.id,
+                transition: "shipping_refund_all_unfulfillable",
+              },
+            },
+            { idempotencyKey: `shipping_refund:${order.id}` },
+          );
+          rollupData.refundedInCents =
+            (order.refundedInCents ?? 0) + order.shippingInCents;
+          rollupData.refundedAt = now;
+          stripeRefundId = stripeRefundId ?? shippingRefund.id;
+        }
+      }
+      await prisma.order.update({
+        where: { id: order.id },
+        data: rollupData,
+      });
+      orderRolledUp = true;
+    }
+  }
+
+  return {
+    orderItem: item,
+    order,
+    refundedInCents: refundCents,
+    stripeRefundId,
+    orderRolledUp,
+  };
 }
 
 export interface RefundResult {
