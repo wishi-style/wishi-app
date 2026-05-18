@@ -13,6 +13,19 @@ export interface ProductItem {
   brand: string;
   name?: string;
   retailer?: string;
+  /**
+   * Affiliate / retailer product URL — when provided alongside `retailer`,
+   * surfaces a "Shop at {Retailer}" secondary action on the product detail
+   * dialog. Clients can choose Wishi-assisted checkout (Add to Bag) or the
+   * retailer's own checkout. Tracked via `/api/affiliate/click` so we still
+   * earn commission on the retailer path.
+   */
+  affiliateUrl?: string | null;
+  /**
+   * Tastegraph inventory product id — required to fire affiliate-click
+   * tracking when the user taps "Shop at {Retailer}".
+   */
+  inventoryProductId?: string | null;
   price: string;
   soldOut?: boolean;
 }

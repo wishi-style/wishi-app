@@ -3,10 +3,18 @@
 import { useState } from "react";
 import Image from "next/image";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { HeartIcon, ArrowLeftIcon, AlertTriangleIcon, CheckCircle2Icon, PlusIcon } from "lucide-react";
+import {
+  HeartIcon,
+  ArrowLeftIcon,
+  AlertTriangleIcon,
+  CheckCircle2Icon,
+  PlusIcon,
+  ExternalLinkIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { RetailerClickButton } from "@/app/(client)/cart/retailer-click";
 import type { ProductItem } from "@/components/boards/styleboard";
 
 const sizes = ["XXS", "XS", "S", "M", "L", "XL"];
@@ -222,20 +230,28 @@ export function ProductDetailDialog({ open, onOpenChange, product, onAddToCart, 
                   )}
 
                   {!product.soldOut ? (
-                    <div className="flex gap-3">
+                    <div className="flex flex-col gap-3">
                       <button
                         onClick={() => {
                           if (!selectedSize) { toast.error("Please select a size"); return; }
                           onAddToCart?.(product.id);
                           onOpenChange(false);
                         }}
-                        className="flex-1 rounded-lg bg-foreground text-background py-3.5 text-sm font-body font-medium hover:bg-foreground/90 transition-colors"
+                        className="w-full rounded-lg bg-foreground text-background py-3.5 text-sm font-body font-medium hover:bg-foreground/90 transition-colors"
                       >
-                        Add to Bag
+                        Add to Bag · Wishi shops for you
                       </button>
-                      <button className="flex-1 rounded-lg border border-foreground text-foreground py-3.5 text-sm font-body font-medium hover:bg-secondary transition-colors">
-                        Buy Now
-                      </button>
+                      {product.affiliateUrl && product.retailer ? (
+                        <RetailerClickButton
+                          inventoryProductId={product.inventoryProductId ?? null}
+                          retailer={product.retailer}
+                          url={product.affiliateUrl}
+                          className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-foreground py-3.5 text-sm font-body font-medium text-foreground hover:bg-secondary transition-colors"
+                        >
+                          <ExternalLinkIcon className="h-4 w-4" />
+                          Shop at {product.retailer}
+                        </RetailerClickButton>
+                      ) : null}
                     </div>
                   ) : (
                     <button disabled className="w-full rounded-lg bg-muted text-muted-foreground py-3.5 text-sm font-body font-medium cursor-not-allowed">
@@ -316,20 +332,28 @@ export function ProductDetailDialog({ open, onOpenChange, product, onAddToCart, 
                   )}
 
                   {!product.soldOut ? (
-                    <div className="flex gap-3 mb-6">
+                    <div className="flex flex-col gap-3 mb-6">
                       <button
                         onClick={() => {
                           if (!selectedSize) { toast.error("Please select a size"); return; }
                           onAddToCart?.(product.id);
                           onOpenChange(false);
                         }}
-                        className="flex-1 rounded-lg bg-foreground text-background py-3.5 text-sm font-body font-medium hover:bg-foreground/90 transition-colors"
+                        className="w-full rounded-lg bg-foreground text-background py-3.5 text-sm font-body font-medium hover:bg-foreground/90 transition-colors"
                       >
-                        Add to Bag
+                        Add to Bag · Wishi shops for you
                       </button>
-                      <button className="flex-1 rounded-lg border border-foreground text-foreground py-3.5 text-sm font-body font-medium hover:bg-secondary transition-colors">
-                        Buy Now
-                      </button>
+                      {product.affiliateUrl && product.retailer ? (
+                        <RetailerClickButton
+                          inventoryProductId={product.inventoryProductId ?? null}
+                          retailer={product.retailer}
+                          url={product.affiliateUrl}
+                          className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-foreground py-3.5 text-sm font-body font-medium text-foreground hover:bg-secondary transition-colors"
+                        >
+                          <ExternalLinkIcon className="h-4 w-4" />
+                          Shop at {product.retailer}
+                        </RetailerClickButton>
+                      ) : null}
                     </div>
                   ) : (
                     <button disabled className="w-full rounded-lg bg-muted text-muted-foreground py-3.5 text-sm font-body font-medium cursor-not-allowed mb-6">

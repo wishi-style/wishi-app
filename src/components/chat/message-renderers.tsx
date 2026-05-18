@@ -3,10 +3,11 @@
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CheckIcon } from "lucide-react";
+import { CheckIcon, ExternalLinkIcon } from "lucide-react";
 import type { ChatMessage } from "./use-chat";
 import { MoodboardCard } from "./cards/moodboard-card";
 import { StyleboardCard } from "./cards/styleboard-card";
+import { RetailerClickButton } from "@/app/(client)/cart/retailer-click";
 
 export type ViewerRole = "CLIENT" | "STYLIST";
 
@@ -133,6 +134,12 @@ interface ProductSummary {
   currency: string;
   in_stock: boolean;
   primary_image_url: string | null;
+  listings?: Array<{
+    in_stock: boolean;
+    merchant_name?: string | null;
+    affiliate_url?: string | null;
+    product_url?: string | null;
+  }>;
 }
 
 function SingleItemCard({
@@ -262,21 +269,43 @@ function SingleItemCard({
                 : "Loading…"}
           </p>
           {viewerRole === "CLIENT" && product?.in_stock && (
-            added ? (
-              <div className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-lg bg-foreground/10 py-2 text-xs font-medium text-foreground">
-                <CheckIcon className="h-3 w-3" />
-                Added
-              </div>
-            ) : (
-              <button
-                type="button"
-                disabled={pending}
-                onClick={addToCart}
-                className="mt-2.5 w-full rounded-lg bg-foreground py-2 text-xs font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50"
-              >
-                {pending ? "Adding…" : "Add to Cart"}
-              </button>
-            )
+            <div className="mt-2.5 flex flex-col gap-1.5">
+              {added ? (
+                <div className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-foreground/10 py-2 text-xs font-medium text-foreground">
+                  <CheckIcon className="h-3 w-3" />
+                  Added
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={addToCart}
+                  className="w-full rounded-lg bg-foreground py-2 text-xs font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50"
+                >
+                  {pending ? "Adding…" : "Add to Cart"}
+                </button>
+              )}
+              {(() => {
+                const listing =
+                  product.listings?.find((l) => l.in_stock) ??
+                  product.listings?.[0];
+                const retailerUrl =
+                  listing?.affiliate_url || listing?.product_url;
+                const retailerName = listing?.merchant_name;
+                if (!retailerUrl || !retailerName || !productId) return null;
+                return (
+                  <RetailerClickButton
+                    inventoryProductId={productId}
+                    retailer={retailerName}
+                    url={retailerUrl}
+                    className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-border py-2 text-xs font-medium text-foreground transition-colors hover:border-foreground"
+                  >
+                    <ExternalLinkIcon className="h-3 w-3" />
+                    Shop at {retailerName}
+                  </RetailerClickButton>
+                );
+              })()}
+            </div>
           )}
           {cartError && (
             <p className="mt-2 text-xs text-destructive">{cartError}</p>
