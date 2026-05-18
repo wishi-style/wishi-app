@@ -43,6 +43,19 @@ function shouldShowDateSeparator(
   return currentDate !== previousDate;
 }
 
+// Message kinds that have no visible bubble and must NEVER carry a timestamp.
+// SYSTEM_AUTOMATED + END_SESSION_REQUEST render centered cards with their own
+// time context; BOARD_UPDATE is a realtime-only signal that renders null.
+const TIMESTAMPLESS_KINDS = new Set([
+  "SYSTEM_AUTOMATED",
+  "END_SESSION_REQUEST",
+  "BOARD_UPDATE",
+]);
+
+function isTimestamplessKind(kind: string): boolean {
+  return TIMESTAMPLESS_KINDS.has(kind);
+}
+
 export function MessageList({
   messages,
   currentIdentity,
@@ -70,9 +83,21 @@ export function MessageList({
       {messages.map((msg, i) => {
         const isOwn = msg.author === currentIdentity;
         const kind = (msg.attributes.kind as string) ?? "TEXT";
-        const isSystem =
-          kind === "SYSTEM_AUTOMATED" || kind === "END_SESSION_REQUEST";
+        const isSystem = kind === "SYSTEM_AUTOMATED" || kind === "END_SESSION_REQUEST";
+        const hasTimestamp = !isTimestamplessKind(kind);
         const showDate = shouldShowDateSeparator(msg, messages[i - 1]);
+
+        // Only print the timestamp on the LAST message in a consecutive
+        // same-author + same-minute run, so identical times don't stack.
+        const next = messages[i + 1];
+        const nextKind = next ? ((next.attributes.kind as string) ?? "TEXT") : null;
+        const nextSameAuthor =
+          next != null &&
+          next.author === msg.author &&
+          nextKind != null &&
+          !isTimestamplessKind(nextKind) &&
+          formatTime(next.dateCreated) === formatTime(msg.dateCreated);
+        const showTimestamp = hasTimestamp && !nextSameAuthor;
 
         return (
           <div key={msg.sid}>
@@ -100,7 +125,7 @@ export function MessageList({
                   viewerRole={viewerRole}
                   chatMessages={messages}
                 />
-                {!isSystem && (
+                {showTimestamp && (
                   <span
                     className={`text-[10px] text-muted-foreground/70 ${isOwn ? "text-right" : "text-left"}`}
                   >

@@ -215,6 +215,7 @@ export function CartClient({ wishi, retailer }: Props) {
                             alt={row.name}
                             fill
                             sizes="112px"
+                            unoptimized
                             className="object-cover"
                           />
                         ) : (

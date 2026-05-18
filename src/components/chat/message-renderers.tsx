@@ -35,9 +35,9 @@ export function MessageBubble({
 
   switch (kind) {
     case "TEXT":
-      return <TextMessage message={message} isOwn={isOwn} />;
+      return <TextMessage message={message} isOwn={isOwn} viewerRole={viewerRole} />;
     case "PHOTO":
-      return <PhotoMessage message={message} isOwn={isOwn} />;
+      return <PhotoMessage message={message} isOwn={isOwn} viewerRole={viewerRole} />;
     case "MOODBOARD":
       return (
         <MoodboardCard
@@ -75,33 +75,53 @@ export function MessageBubble({
       // Realtime-only signal; cards subscribe and refetch. Never rendered.
       return null;
     default:
-      return <TextMessage message={message} isOwn={isOwn} />;
+      return <TextMessage message={message} isOwn={isOwn} viewerRole={viewerRole} />;
   }
 }
 
 const ownBubble =
   "bg-[hsl(var(--user-bubble))] text-[hsl(var(--user-bubble-foreground))]";
+// Client view shows their own sent bubbles in the warm terracotta brand color
+// so they read as "you" against the white chat background.
+const clientOwnBubble = "bg-[#C68B5C] text-white";
 const otherBubble = "bg-card text-foreground border border-border shadow-sm";
 
-function TextMessage({ message, isOwn }: { message: ChatMessage; isOwn: boolean }) {
+function bubbleClassFor(isOwn: boolean, viewerRole: ViewerRole): string {
+  if (!isOwn) return otherBubble;
+  return viewerRole === "CLIENT" ? clientOwnBubble : ownBubble;
+}
+
+function TextMessage({
+  message,
+  isOwn,
+  viewerRole,
+}: {
+  message: ChatMessage;
+  isOwn: boolean;
+  viewerRole: ViewerRole;
+}) {
   return (
     <div
-      className={`max-w-2xl rounded-[22px] px-4 py-3 md:px-6 md:py-4 ${
-        isOwn ? ownBubble : otherBubble
-      }`}
+      className={`max-w-2xl rounded-[22px] px-4 py-3 md:px-6 md:py-4 ${bubbleClassFor(isOwn, viewerRole)}`}
     >
       <p className="whitespace-pre-line text-base leading-7">{message.body}</p>
     </div>
   );
 }
 
-function PhotoMessage({ message, isOwn }: { message: ChatMessage; isOwn: boolean }) {
+function PhotoMessage({
+  message,
+  isOwn,
+  viewerRole,
+}: {
+  message: ChatMessage;
+  isOwn: boolean;
+  viewerRole: ViewerRole;
+}) {
   const mediaUrl = (message.attributes.mediaUrl as string) ?? null;
   return (
     <div
-      className={`max-w-2xl overflow-hidden rounded-[22px] ${
-        isOwn ? ownBubble : otherBubble
-      }`}
+      className={`max-w-2xl overflow-hidden rounded-[22px] ${bubbleClassFor(isOwn, viewerRole)}`}
     >
       {mediaUrl ? (
         <a href={mediaUrl} target="_blank" rel="noopener noreferrer">

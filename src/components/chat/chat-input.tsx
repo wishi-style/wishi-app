@@ -40,7 +40,7 @@ export function ChatInput({
 }: ChatInputProps) {
   const [text, setText] = useState("");
   const [attachOpen, setAttachOpen] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const isMobile = useIsMobile();
 
   const handleSend = useCallback(() => {
@@ -66,8 +66,8 @@ export function ChatInput({
 
   return (
     <div className="border-t border-border px-4 md:px-8 py-3 md:py-5">
-      <div className="flex items-center gap-2">
-        <div className="flex-1 flex items-center gap-3 rounded-full border border-border bg-card px-4 py-2.5 shadow-sm focus-within:ring-1 focus-within:ring-ring transition-shadow">
+      <div className="flex items-end gap-2">
+        <div className="flex-1 flex items-end gap-3 rounded-3xl border border-border bg-card px-4 py-2.5 shadow-sm focus-within:ring-1 focus-within:ring-ring transition-shadow">
           <Popover open={attachOpen} onOpenChange={setAttachOpen}>
             <PopoverTrigger
               disabled={disabled}
@@ -122,15 +122,15 @@ export function ChatInput({
             </PopoverContent>
           </Popover>
 
-          <input
+          <textarea
             ref={inputRef}
-            type="text"
+            rows={3}
             placeholder={placeholder}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={disabled}
-            className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none disabled:opacity-40"
+            className="flex-1 resize-none bg-transparent text-sm leading-5 text-foreground placeholder:text-muted-foreground outline-none disabled:opacity-40"
           />
 
           {dictation?.isSupported && (
