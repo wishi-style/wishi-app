@@ -305,7 +305,7 @@ export async function applyDirectSaleFromCheckout(
   const shipping = checkoutSession.collected_information?.shipping_details ?? null;
   const addr = shipping?.address ?? null;
 
-  await prisma.$transaction(async (tx) => {
+  const transitionResult = await prisma.$transaction(async (tx) => {
     const result = await tx.order.updateMany({
       where: { id: order.id, status: "PENDING" },
       data: {
@@ -326,7 +326,7 @@ export async function applyDirectSaleFromCheckout(
     });
     if (result.count === 0) {
       // Lost a race with another delivery — they already advanced it.
-      return;
+      return { winner: false } as const;
     }
     await tx.cartItem.deleteMany({
       where: {
@@ -335,7 +335,13 @@ export async function applyDirectSaleFromCheckout(
         inventoryProductId: { in: order.items.map((i) => i.inventoryProductId) },
       },
     });
+    return { winner: true } as const;
   });
+
+  // The notification dispatch belongs to the writer only. Webhook redelivery
+  // races (rare, but Stripe will redeliver on 5xx) shouldn't double-send the
+  // user's order confirmation.
+  if (!transitionResult.winner) return;
 
   // Confirmation email + in-app notification. Best-effort — the order is
   // already ORDERED, so a Klaviyo outage doesn't strand money.

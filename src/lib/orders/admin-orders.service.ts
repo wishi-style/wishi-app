@@ -421,6 +421,23 @@ export async function transitionOrderItemStatus(
     refundIdempotency = `return_refund:${orderItem.id}`;
   }
 
+  // Bound the per-line refund by whatever's left on the Order's PaymentIntent.
+  // Prevents Stripe rejecting the refund if an order-level refund (or a
+  // sibling line refund) already consumed some of the original charge.
+  // Without this guard, an over-refund attempt throws inside Stripe; here we
+  // cap to the remaining and proceed, so the user still gets the line back
+  // even if rounding/proportional-tax pushed the sum slightly over.
+  if (refundCents > 0) {
+    const alreadyRefunded = orderItem.order.refundedInCents ?? 0;
+    const remaining = orderItem.order.totalInCents - alreadyRefunded;
+    if (remaining <= 0) {
+      throw new Error(
+        `Order ${orderItem.order.id} is already fully refunded; cannot refund line ${orderItem.id} again`,
+      );
+    }
+    if (refundCents > remaining) refundCents = remaining;
+  }
+
   if (refundCents > 0 && orderItem.order.source !== "DIRECT_SALE") {
     throw new Error(
       "Per-item refunds are only valid for DIRECT_SALE orders (others settle through the retailer)",
@@ -571,13 +588,18 @@ export async function transitionOrderItemStatus(
         status: "COMPLETED",
       };
       // Edge case: if every item failed, also refund shipping so the user
-      // isn't out $10 for an order that delivered nothing.
+      // isn't out $10 for an order that delivered nothing. Bound by the
+      // remaining refundable on the PaymentIntent — under heavy concurrent
+      // refund activity the math may have closed out already.
       if (allUnfulfillable && order.shippingInCents > 0) {
-        if (order.stripePaymentIntentId) {
+        const alreadyRefunded = order.refundedInCents ?? 0;
+        const remaining = order.totalInCents - alreadyRefunded;
+        const shippingRefundAmount = Math.min(order.shippingInCents, remaining);
+        if (shippingRefundAmount > 0 && order.stripePaymentIntentId) {
           const shippingRefund = await createRefundImpl(
             {
               payment_intent: order.stripePaymentIntentId,
-              amount: order.shippingInCents,
+              amount: shippingRefundAmount,
               reason: "requested_by_customer",
               metadata: {
                 orderId: order.id,
@@ -586,8 +608,7 @@ export async function transitionOrderItemStatus(
             },
             { idempotencyKey: `shipping_refund:${order.id}` },
           );
-          rollupData.refundedInCents =
-            (order.refundedInCents ?? 0) + order.shippingInCents;
+          rollupData.refundedInCents = alreadyRefunded + shippingRefundAmount;
           rollupData.refundedAt = now;
           stripeRefundId = stripeRefundId ?? shippingRefund.id;
         }

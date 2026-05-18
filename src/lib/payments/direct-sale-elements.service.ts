@@ -438,7 +438,7 @@ export async function applyDirectSalePaymentIntentSucceeded(
   }
   if (order.status !== "PENDING") return;
 
-  await prisma.$transaction(async (tx) => {
+  const transitionResult = await prisma.$transaction(async (tx) => {
     const result = await tx.order.updateMany({
       where: { id: order.id, status: "PENDING" },
       data: {
@@ -451,7 +451,7 @@ export async function applyDirectSalePaymentIntentSucceeded(
         totalInCents: pi.amount,
       },
     });
-    if (result.count === 0) return; // lost the race
+    if (result.count === 0) return { winner: false } as const;
     await tx.cartItem.deleteMany({
       where: {
         userId,
@@ -459,7 +459,13 @@ export async function applyDirectSalePaymentIntentSucceeded(
         inventoryProductId: { in: order.items.map((i) => i.inventoryProductId) },
       },
     });
+    return { winner: true } as const;
   });
+
+  // Stripe Tax commit + order-confirmation notification belong to the writer
+  // only. Webhook redelivery races (Stripe retries on 5xx) shouldn't
+  // double-commit the tax transaction or double-send the user's email.
+  if (!transitionResult.winner) return;
 
   if (taxCalculationId) {
     try {
