@@ -173,15 +173,17 @@ export function deriveDashboardAction(ctx: DashboardActionContext): DashboardAct
     };
   }
 
-  if (ctx.styleboardsSent < ctx.styleboardsAllowed) {
-    return {
-      label: "Create Look",
-      href: `/stylist/sessions/${ctx.sessionId}/styleboards/new`,
-      kind: "navigate",
-    };
-  }
-
-  return { label: "Open Chat", href: dashboardChat, kind: "navigate" };
+  // Stylists can always send more looks — plan quotas no longer gate the
+  // CTA, so "Create Look" stays the default action whenever the session is
+  // active, the moodboard has been delivered, and there's no pending
+  // restyle to review. The Session counter (`styleboardsSent`) keeps
+  // incrementing in the service so payouts and the Lux milestone trigger
+  // continue working; it just doesn't block sends past quota anymore.
+  return {
+    label: "Create Look",
+    href: `/stylist/sessions/${ctx.sessionId}/styleboards/new`,
+    kind: "navigate",
+  };
 }
 
 function statusBlurbFor(

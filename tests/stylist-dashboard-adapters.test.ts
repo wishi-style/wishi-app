@@ -127,12 +127,15 @@ test("View Summary wins over the in-progress derivations once status is terminal
   assert.equal(action.label, "View Summary");
 });
 
-test("Open Chat fires when looks are at quota and session is awaiting client", () => {
+test("Create Look stays available past quota — stylists can always send more", () => {
+  // Plan quotas no longer gate the dashboard CTA. The session counter still
+  // increments per send, but a stylist who has shipped every look in the plan
+  // should keep seeing "Create Look" so they can decide to over-deliver.
   const action = deriveDashboardAction(
     ctx({ moodboardsSent: 1, styleboardsSent: 5, styleboardsAllowed: 5 }),
   );
-  assert.equal(action.label, "Open Chat");
-  assert.equal(action.href, "/stylist/dashboard?session=sess_test");
+  assert.equal(action.label, "Create Look");
+  assert.equal(action.href, "/stylist/sessions/sess_test/styleboards/new");
   assert.equal(action.kind, "navigate");
 });
 

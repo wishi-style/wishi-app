@@ -76,14 +76,13 @@ export function MoodboardBuilderShell({
       onBack={back}
       onPhotoAdded={onPhotoAdded}
       onPhotoRemoved={onPhotoRemoved}
-      onSend={async (_images, note, feature) => {
+      onSend={async (_images, note, options) => {
         const res = await fetch(`/api/moodboards/${boardId}/send`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             note,
-            featureOnProfile: feature.featureOnProfile,
-            profileStyle: feature.profileStyle,
+            shareOnFeed: options.shareOnFeed,
           }),
         });
         if (!res.ok) {

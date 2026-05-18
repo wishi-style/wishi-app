@@ -1398,6 +1398,11 @@ model Board {
   isFeaturedOnProfile Boolean      @default(false) @map("is_featured_on_profile")
   profileStyle        String?      @map("profile_style")
   profileGender       Gender?      @map("profile_gender")
+  // Stylist opt-in: surface this board on the public /feed alongside profile
+  // boards. Independent from isFeaturedOnProfile — a session-scoped board can
+  // be feed-shared without being a profile board, and moodboards (which are
+  // ineligible for profile pages) reach the feed exclusively through this flag.
+  shareOnFeed         Boolean      @default(false) @map("share_on_feed")
   // Cover image for /stylists/[id] rendering. Moodboard = first photo URL;
   // styleboard = first BoardItem's product image. Set on send/publish.
   coverUrl            String?      @map("cover_url")
@@ -1436,6 +1441,8 @@ model Board {
   @@index([parentBoardId])
   // Phase 11: public /feed query ranges across all stylists' featured styleboards ordered by createdAt desc
   @@index([type, isFeaturedOnProfile, createdAt(sort: Desc)])
+  // Feed query also pages over shareOnFeed boards (either type) by createdAt desc.
+  @@index([shareOnFeed, sentAt, createdAt(sort: Desc)])
   @@map("boards")
 }
 

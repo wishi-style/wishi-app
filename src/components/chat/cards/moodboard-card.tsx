@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { CheckIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MoodBoardWizard } from "@/components/boards/moodboard-wizard";
+import { BoardThumbnail } from "@/components/boards/board-thumbnail";
 import type { ChatMessage } from "../use-chat";
 import type { ViewerRole } from "../message-renderers";
 
@@ -18,6 +19,7 @@ interface MoodBoardSummary {
   id: string;
   description?: string | null;
   stylistNote?: string | null;
+  canvasMode?: string | null;
   rating?: string | null;
   feedbackText?: string | null;
   feedbackDetail?: unknown;
@@ -240,17 +242,12 @@ export function MoodboardCard({
           feedbackText={board.feedbackText ?? null}
         />
       ) : (
-        <div className="columns-3 gap-1.5 mb-5">
-          {photos.map((src, i) => (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              key={i}
-              src={src}
-              alt={`Mood board inspiration ${i + 1}`}
-              className="mb-1.5 w-full rounded-sm object-cover"
-              loading="lazy"
-            />
-          ))}
+        <div className="mb-5">
+          <BoardThumbnail
+            type="MOODBOARD"
+            canvasMode={board?.canvasMode ?? null}
+            photoUrls={photos}
+          />
         </div>
       )}
 

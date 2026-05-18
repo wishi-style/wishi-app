@@ -9,6 +9,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getProduct } from "@/lib/inventory/inventory-client";
+import type { BoardThumbnailItem } from "@/components/boards/board-thumbnail";
 
 interface ThumbnailItem {
   source: string;
@@ -94,6 +95,116 @@ export interface BoardWithThumbnailRows {
     closetItem?: { url: string | null } | null;
     inspirationPhoto?: { url: string | null } | null;
   }[];
+}
+
+export interface ResolvedBoardCanvas {
+  type: "MOODBOARD" | "STYLEBOARD";
+  canvasMode: string | null;
+  /** Moodboard photo URLs in orderIndex order. Empty for styleboards. */
+  photoUrls: string[];
+  /** Styleboard items with resolved image URLs + canvas coordinates. Empty for moodboards. */
+  items: BoardThumbnailItem[];
+}
+
+export interface BoardWithCanvasRows {
+  id: string;
+  type: "MOODBOARD" | "STYLEBOARD";
+  canvasMode: string | null;
+  coverUrl: string | null;
+  photos: { url: string }[];
+  items: {
+    id: string;
+    source: string;
+    inventoryProductId: string | null;
+    webItemImageUrl: string | null;
+    closetItem?: { url: string | null } | null;
+    inspirationPhoto?: { url: string | null } | null;
+    x: number | null;
+    y: number | null;
+    zIndex: number | null;
+    flipH: boolean;
+    flipV: boolean;
+    cropTop: number | null;
+    cropRight: number | null;
+    cropBottom: number | null;
+    cropLeft: number | null;
+  }[];
+}
+
+/**
+ * Batch resolver that returns enough data for BoardThumbnail to render every
+ * surface (profile page, share link, feed) with the same square composition
+ * the stylist designed. INVENTORY items resolve via tastegraph in parallel;
+ * getProduct's 5-minute cache dedupes repeat boards in the same render.
+ */
+export async function resolveCanvasForBoards(
+  boards: BoardWithCanvasRows[],
+): Promise<Map<string, ResolvedBoardCanvas>> {
+  const map = new Map<string, ResolvedBoardCanvas>();
+  await Promise.all(
+    boards.map(async (b) => {
+      if (b.type === "MOODBOARD") {
+        map.set(b.id, {
+          type: "MOODBOARD",
+          canvasMode: b.canvasMode,
+          photoUrls: b.photos.map((p) => p.url).filter((u): u is string => Boolean(u)),
+          items: [],
+        });
+        return;
+      }
+      const resolvedItems: BoardThumbnailItem[] = await Promise.all(
+        b.items.map(async (it): Promise<BoardThumbnailItem> => {
+          const imageUrl = await (async (): Promise<string | null> => {
+            switch (it.source) {
+              case "INVENTORY":
+                if (!it.inventoryProductId) return null;
+                return (
+                  (await getProduct(it.inventoryProductId))?.primary_image_url ??
+                  null
+                );
+              case "CLOSET":
+                return it.closetItem?.url ?? null;
+              case "INSPIRATION_PHOTO":
+                return it.inspirationPhoto?.url ?? null;
+              case "WEB_ADDED":
+                return it.webItemImageUrl ?? null;
+              default:
+                return null;
+            }
+          })();
+          const crop =
+            it.cropTop != null ||
+            it.cropRight != null ||
+            it.cropBottom != null ||
+            it.cropLeft != null
+              ? {
+                  top: it.cropTop ?? 0,
+                  right: it.cropRight ?? 0,
+                  bottom: it.cropBottom ?? 0,
+                  left: it.cropLeft ?? 0,
+                }
+              : null;
+          return {
+            id: it.id,
+            imageUrl,
+            x: it.x,
+            y: it.y,
+            zIndex: it.zIndex,
+            flipH: it.flipH,
+            flipV: it.flipV,
+            crop,
+          };
+        }),
+      );
+      map.set(b.id, {
+        type: "STYLEBOARD",
+        canvasMode: b.canvasMode,
+        photoUrls: [],
+        items: resolvedItems,
+      });
+    }),
+  );
+  return map;
 }
 
 /**

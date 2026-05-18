@@ -209,6 +209,10 @@ export interface SendStyleboardInput {
   // is required when featureOnProfile is true (free-text or canonical 10).
   featureOnProfile?: boolean;
   profileStyle?: string | null;
+  // Stylist opt-in to surface this board on the public discovery feed.
+  // Independent from featureOnProfile — a board can be feed-only, profile-only,
+  // both, or neither.
+  shareOnFeed?: boolean;
   // First-item image snapshot for /stylists/[id] rendering. Caller derives
   // from the LookCreator canvas to avoid a tastegraph round-trip on send.
   coverUrl?: string | null;
@@ -249,18 +253,10 @@ export async function sendStyleboard(
       409,
     );
   }
-  // Revisions don't count against the styleboards allowance — they consume
-  // a bonus slot opened by `rateStyleboard(REVISE)`. Plain styleboards do.
-  if (!board.isRevision) {
-    const totalAllowed = board.session.styleboardsAllowed + board.session.bonusBoardsGranted;
-    if (board.session.styleboardsSent >= totalAllowed) {
-      throw new BoardSendError(
-        "STYLEBOARD_LIMIT",
-        `This plan allows ${totalAllowed} styleboard(s); ${board.session.styleboardsSent} already sent`,
-        409,
-      );
-    }
-  }
+  // Plan quota was previously enforced here ("STYLEBOARD_LIMIT") — stylists
+  // are now free to send unlimited looks. The plan-quota count
+  // (`styleboardsSent`) still increments below so payouts / analytics / the
+  // Lux-milestone trigger keep working, but it never blocks a send.
   // If the caller supplied a canvas snapshot, validate the polymorphic shape
   // up-front so we don't half-write items inside the transaction. When no
   // snapshot is supplied we fall back to whatever items are already on the
@@ -302,6 +298,7 @@ export async function sendStyleboard(
       400,
     );
   }
+  const shareOnFeed = !!input.shareOnFeed;
   const coverUrl = input.coverUrl?.trim() || null;
 
   // Atomic compare-and-set on sentAt: null. If a concurrent send already
@@ -351,6 +348,7 @@ export async function sendStyleboard(
         ...(shouldFeature
           ? { isFeaturedOnProfile: true, profileStyle: trimmedStyle }
           : {}),
+        ...(shareOnFeed ? { shareOnFeed: true } : {}),
       },
     });
     if (count === 0) return null;

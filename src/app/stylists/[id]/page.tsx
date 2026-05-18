@@ -12,7 +12,11 @@ import { SiteFooter } from "@/components/primitives/site-footer";
 import { ContinueWithStylistButton } from "./continue-with-stylist-button";
 import { PlanPicker } from "./plan-picker";
 import { getPlanPricesForUi } from "@/lib/plans";
-import { resolveThumbnailsForBoards } from "@/lib/boards/board-thumbnails";
+import {
+  resolveCanvasForBoards,
+  resolveThumbnailsForBoards,
+} from "@/lib/boards/board-thumbnails";
+import { BoardThumbnail } from "@/components/boards/board-thumbnail";
 import {
   StarIcon,
   ClockIcon,
@@ -115,22 +119,33 @@ export default async function StylistProfilePage({ params }: Props) {
         select: {
           id: true,
           type: true,
+          canvasMode: true,
           profileStyle: true,
           coverUrl: true,
           photos: {
             orderBy: { orderIndex: "asc" },
-            take: 4,
+            take: 24,
             select: { url: true },
           },
           items: {
             orderBy: { orderIndex: "asc" },
-            take: 8,
+            take: 24,
             select: {
+              id: true,
               source: true,
               inventoryProductId: true,
               webItemImageUrl: true,
               closetItem: { select: { url: true } },
               inspirationPhoto: { select: { url: true } },
+              x: true,
+              y: true,
+              zIndex: true,
+              flipH: true,
+              flipV: true,
+              cropTop: true,
+              cropRight: true,
+              cropBottom: true,
+              cropLeft: true,
             },
           },
         },
@@ -148,17 +163,16 @@ export default async function StylistProfilePage({ params }: Props) {
     `${stylist.user.firstName?.[0] ?? ""}${stylist.user.lastName?.[0] ?? ""}`.toUpperCase() ||
     name.charAt(0);
 
-  // Resolve up to 4 thumbnails per board for the "Styled by" collage.
-  // INVENTORY items go through tastegraph; closet/web/inspiration use the
-  // URL on the BoardItem row directly. Falls back to coverUrl if nothing
-  // resolves (e.g. tastegraph down). Plain `<img>` tags below because
-  // retailer CDNs aren't in Next/Image's remotePatterns allowlist.
-  const thumbsByBoardId = await resolveThumbnailsForBoards(stylist.profileBoards, 4);
+  // Resolve canvas data per board so the hero + "Styled by" grid show the
+  // exact composition the stylist designed (same as session chat, feed, and
+  // share link). Falls back to the legacy thumbnail list (and finally
+  // coverUrl) when a board has no items with canvas positions.
+  const [canvasByBoardId, thumbsByBoardId] = await Promise.all([
+    resolveCanvasForBoards(stylist.profileBoards),
+    resolveThumbnailsForBoards(stylist.profileBoards, 4),
+  ]);
   function firstThumb(boardId: string): string | null {
     return thumbsByBoardId.get(boardId)?.[0] ?? null;
-  }
-  function thumbsFor(boardId: string): string[] {
-    return thumbsByBoardId.get(boardId) ?? [];
   }
   const heroImage = stylist.profileBoards[0] ? firstThumb(stylist.profileBoards[0].id) : null;
   const styledLooks = stylist.profileBoards.slice(heroImage ? 1 : 0).slice(0, 4);
@@ -483,49 +497,20 @@ export default async function StylistProfilePage({ params }: Props) {
                   const caption = look.profileStyle
                     ? look.profileStyle.toString().toLowerCase()
                     : "";
-                  const thumbs = thumbsFor(look.id);
+                  const canvas = canvasByBoardId.get(look.id);
                   // Styleboards open the full canvas via the public
                   // SharedBoard route. Moodboards stay non-interactive
                   // (TODO: in-page lightbox follow-up).
                   const isStyleboard = look.type === "STYLEBOARD";
                   const inner = (
-                    <div className="aspect-square overflow-hidden group cursor-pointer bg-muted">
-                      {thumbs.length > 1 ? (
-                        <div
-                          className={
-                            thumbs.length >= 4
-                              ? "grid h-full w-full grid-cols-2 grid-rows-2 gap-px"
-                              : "grid h-full w-full grid-cols-2 gap-px"
-                          }
-                        >
-                          {thumbs.slice(0, 4).map((src, i) => (
-                            /* eslint-disable-next-line @next/next/no-img-element */
-                            <img
-                              key={`${look.id}-${i}`}
-                              src={src}
-                              alt={`${caption || "styled look"} ${i + 1}`}
-                              className={
-                                thumbs.length === 3 && i === 0
-                                  ? "col-span-2 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                                  : "h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                              }
-                              loading="lazy"
-                            />
-                          ))}
-                        </div>
-                      ) : thumbs[0] ? (
-                        /* eslint-disable-next-line @next/next/no-img-element */
-                        <img
-                          src={thumbs[0]}
-                          alt={caption || "styled look"}
-                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
-                          {caption}
-                        </div>
-                      )}
+                    <div className="group cursor-pointer overflow-hidden transition-transform duration-500 group-hover:scale-105">
+                      <BoardThumbnail
+                        type={look.type}
+                        canvasMode={canvas?.canvasMode ?? null}
+                        photoUrls={canvas?.photoUrls}
+                        items={canvas?.items}
+                        flat
+                      />
                     </div>
                   );
                   return (

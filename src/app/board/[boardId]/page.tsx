@@ -7,6 +7,10 @@ import { getServerAuth } from "@/lib/auth/server-auth";
 import { prisma } from "@/lib/prisma";
 import { SiteHeader } from "@/components/primitives/site-header";
 import { SiteFooter } from "@/components/primitives/site-footer";
+import {
+  BoardThumbnail,
+  type BoardThumbnailItem,
+} from "@/components/boards/board-thumbnail";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +47,13 @@ async function loadSharedBoard(boardId: string) {
     where: { id: boardId },
     include: {
       photos: { orderBy: { orderIndex: "asc" } },
-      items: { orderBy: { orderIndex: "asc" } },
+      items: {
+        orderBy: { orderIndex: "asc" },
+        include: {
+          closetItem: { select: { url: true } },
+          inspirationPhoto: { select: { url: true } },
+        },
+      },
       session: {
         select: {
           stylist: {
@@ -131,6 +141,34 @@ export default async function SharedBoardPage({ params }: Props) {
   const title = board.title ?? "Styleboard";
   const photos = board.photos;
   const items = board.items;
+  const thumbnailItems: BoardThumbnailItem[] = items.map((item) => ({
+    id: item.id,
+    imageUrl:
+      item.source === "WEB_ADDED"
+        ? item.webItemImageUrl
+        : item.source === "CLOSET"
+          ? item.closetItem?.url ?? null
+          : item.source === "INSPIRATION_PHOTO"
+            ? item.inspirationPhoto?.url ?? null
+            : null,
+    x: item.x,
+    y: item.y,
+    zIndex: item.zIndex,
+    flipH: item.flipH,
+    flipV: item.flipV,
+    crop:
+      item.cropTop != null ||
+      item.cropRight != null ||
+      item.cropBottom != null ||
+      item.cropLeft != null
+        ? {
+            top: item.cropTop ?? 0,
+            right: item.cropRight ?? 0,
+            bottom: item.cropBottom ?? 0,
+            left: item.cropLeft ?? 0,
+          }
+        : null,
+  }));
 
   // Floating cart bar: only when this viewer is signed in and has items
   // queued in their cart — Loveable parity (SharedBoard.tsx:82-99).
@@ -182,7 +220,20 @@ export default async function SharedBoardPage({ params }: Props) {
             )}
           </header>
 
-          {/* Photos grid */}
+          {/* Board canvas — same composition the stylist designed,
+              rendered identically across every surface (chat card, feed,
+              profile, this share page). */}
+          <section className="mb-10">
+            <div className="mx-auto max-w-xl">
+              <BoardThumbnail
+                type="STYLEBOARD"
+                items={thumbnailItems}
+              />
+            </div>
+          </section>
+
+          {/* Photos grid — only used for styleboards that carry inspiration
+              photos alongside the canvas (rare; legacy boards). */}
           {photos.length > 0 && (
             <section className="mb-10">
               <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
@@ -221,12 +272,14 @@ export default async function SharedBoardPage({ params }: Props) {
                       className="overflow-hidden rounded-xl border border-border bg-card"
                     >
                       {img ? (
-                        <Image
+                        /* Plain <img> — retailer CDNs aren't in Next/Image's
+                            remotePatterns allowlist; same pattern as the
+                            stylist profile page. */
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
                           src={img}
                           alt={label}
-                          width={400}
-                          height={400}
-                          sizes="(min-width: 768px) 25vw, 50vw"
+                          loading="lazy"
                           className="aspect-square w-full object-cover"
                         />
                       ) : (

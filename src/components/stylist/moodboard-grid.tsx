@@ -50,7 +50,10 @@ export function MoodBoardGrid({ images, onRemove, editable = false, className }:
   return (
     <div
       className={cn(
-        "grid grid-cols-3 auto-rows-[minmax(120px,1fr)] gap-1",
+        // grid-rows-3 makes the editorial layout fill the parent height regardless
+        // of photo count, so BoardThumbnail's aspect-square wrapper renders the
+        // same composition on every surface (chat card, feed, profile, share link).
+        "grid grid-cols-3 grid-rows-3 h-full gap-1",
         className
       )}
     >

@@ -29,6 +29,15 @@ interface PreviewProduct {
   soldOut: boolean;
   /** Used by the chat card's "Add to Cart" CTA. Null for non-inventory items. */
   inventoryProductId: string | null;
+  /** LookCreator canvas position — percent 0-100 from the left/top of the
+   *  square canvas, or null for legacy pre-canvas boards. BoardThumbnail uses
+   *  these to render the chat card identically to what the stylist composed. */
+  x: number | null;
+  y: number | null;
+  zIndex: number | null;
+  flipH: boolean;
+  flipV: boolean;
+  crop: { top: number; right: number; bottom: number; left: number } | null;
 }
 
 // Format an integer cent amount as a localized currency string. Falls back
@@ -85,6 +94,27 @@ export async function GET(
   // tastegraph service is the right long-term fix; tracked separately.
   const resolved = await Promise.all(
     board.items.map(async (item): Promise<PreviewProduct | null> => {
+      const cropTop = item.cropTop;
+      const cropRight = item.cropRight;
+      const cropBottom = item.cropBottom;
+      const cropLeft = item.cropLeft;
+      const crop =
+        cropTop != null || cropRight != null || cropBottom != null || cropLeft != null
+          ? {
+              top: cropTop ?? 0,
+              right: cropRight ?? 0,
+              bottom: cropBottom ?? 0,
+              left: cropLeft ?? 0,
+            }
+          : null;
+      const canvas = {
+        x: item.x,
+        y: item.y,
+        zIndex: item.zIndex,
+        flipH: item.flipH,
+        flipV: item.flipV,
+        crop,
+      };
       switch (item.source) {
         case "INVENTORY": {
           if (!item.inventoryProductId) return null;
@@ -105,6 +135,7 @@ export async function GET(
             priceInCents: minCents,
             soldOut: !p.in_stock,
             inventoryProductId: item.inventoryProductId,
+            ...canvas,
           };
         }
         case "CLOSET":
@@ -117,6 +148,7 @@ export async function GET(
             priceInCents: null,
             soldOut: false,
             inventoryProductId: null,
+            ...canvas,
           };
         case "INSPIRATION_PHOTO":
           return {
@@ -128,6 +160,7 @@ export async function GET(
             priceInCents: null,
             soldOut: false,
             inventoryProductId: null,
+            ...canvas,
           };
         case "WEB_ADDED":
           return {
@@ -142,6 +175,7 @@ export async function GET(
             priceInCents: item.webItemPriceInCents ?? null,
             soldOut: false,
             inventoryProductId: null,
+            ...canvas,
           };
         default:
           return null;
