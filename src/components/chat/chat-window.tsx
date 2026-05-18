@@ -146,8 +146,10 @@ export function ChatWindow({
   const closedSessionHref =
     viewerRole === "CLIENT" ? "/sessions" : "/stylist/dashboard";
 
+  const containerBg = viewerRole === "CLIENT" ? "bg-white" : "bg-background";
+
   return (
-    <div className="flex h-full flex-col bg-background">
+    <div className={`flex h-full flex-col ${containerBg}`}>
       {!hideHeader && (
         <ChatHeader
           otherUserName={otherUserName}

@@ -165,8 +165,14 @@ export function RestyleWizard({
         {step === "select" && (
           <div className="flex flex-col h-[70vh] max-h-full">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+            <div className="flex items-center px-6 py-4 border-b border-border shrink-0">
               <h3 className="font-display text-lg">Restyle Items</h3>
+            </div>
+
+            <div className="flex items-center justify-between px-6 pt-4 pb-2 shrink-0">
+              <p className="text-sm font-body text-muted-foreground">
+                Select the items you want to replace
+              </p>
               <button
                 onClick={selectAll}
                 className="text-sm font-body font-medium text-foreground hover:text-foreground/70 transition-colors"
@@ -174,10 +180,6 @@ export function RestyleWizard({
                 {selectedIds.size === products.length ? "Deselect All" : "Select All"}
               </button>
             </div>
-
-            <p className="px-6 pt-4 pb-2 text-sm font-body text-muted-foreground shrink-0">
-              Select the items you want to replace
-            </p>
 
             {/* Product grid */}
             <ScrollArea className="flex-1 min-h-0 px-6">

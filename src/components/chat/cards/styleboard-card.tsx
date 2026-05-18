@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   CheckIcon,
@@ -18,6 +17,7 @@ import {
   type RestyleFeedback,
 } from "@/components/boards/restyle-wizard";
 import { BoardThumbnail } from "@/components/boards/board-thumbnail";
+import { ProductDetailDialog } from "@/components/products/product-detail-dialog";
 import type { ChatMessage } from "../use-chat";
 import type { ViewerRole } from "../message-renderers";
 
@@ -94,6 +94,7 @@ export function StyleboardCard({
   const [restyleOpen, setRestyleOpen] = useState(false);
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
   const [cartError, setCartError] = useState<string | null>(null);
+  const [pdpProduct, setPdpProduct] = useState<PreviewProduct | null>(null);
   const [, startTransition] = useTransition();
   const router = useRouter();
 
@@ -352,12 +353,13 @@ export function StyleboardCard({
                   return (
                     <div key={product.id} className={tileClass}>
                       {product.inventoryProductId ? (
-                        <Link
-                          href={`/products/${product.inventoryProductId}?sessionId=${sessionId}`}
-                          className="flex flex-1 flex-col"
+                        <button
+                          type="button"
+                          onClick={() => setPdpProduct(product)}
+                          className="flex flex-1 flex-col text-left"
                         >
                           {tileBody}
-                        </Link>
+                        </button>
                       ) : (
                         tileBody
                       )}
@@ -443,6 +445,30 @@ export function StyleboardCard({
           onSubmit={handleRestyleSubmit}
         />
       )}
+
+      <ProductDetailDialog
+        open={pdpProduct !== null}
+        onOpenChange={(o) => {
+          if (!o) setPdpProduct(null);
+        }}
+        product={
+          pdpProduct
+            ? {
+                id: pdpProduct.id,
+                image: pdpProduct.image ?? "",
+                brand: pdpProduct.brand,
+                name: pdpProduct.name,
+                price: pdpProduct.price,
+                soldOut: pdpProduct.soldOut,
+              }
+            : null
+        }
+        onAddToCart={() => {
+          if (pdpProduct) {
+            addToCart(pdpProduct.inventoryProductId, pdpProduct.id);
+          }
+        }}
+      />
     </>
   );
 }
