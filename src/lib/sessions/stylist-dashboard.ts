@@ -59,6 +59,7 @@ export interface DashboardSession {
   // surfaces the pending-end state in the sessions list.
   endedAt: string | null;
   endRequestedAt: string | null;
+  isMembership: boolean;
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -251,6 +252,7 @@ export async function getStylistDashboardData(
       id: true,
       status: true,
       planType: true,
+      isMembership: true,
       clientId: true,
       moodboardsSent: true,
       styleboardsSent: true,
@@ -400,6 +402,7 @@ export async function getStylistDashboardData(
       totalSessions,
       endedAt: s.completedAt?.toISOString() ?? null,
       endRequestedAt: s.endRequestedAt?.toISOString() ?? null,
+      isMembership: s.isMembership,
     };
   });
 }

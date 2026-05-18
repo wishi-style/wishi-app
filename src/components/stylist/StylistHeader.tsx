@@ -15,7 +15,6 @@ import {
 
 const navLinks = [
   { label: "Dashboard", href: "/stylist" },
-  { label: "Settings", href: "/stylist/settings" },
 ];
 
 export function StylistHeader() {
@@ -79,13 +78,7 @@ export function StylistHeader() {
               <DropdownMenuItem asChild>
                 <Link href="/stylist/profile">My Profile</Link>
               </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/stylist/dressing-room">My Dressing Room</Link>
-              </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href="/stylist/settings">Settings</Link>
-              </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link href="/logout">Logout</Link>
               </DropdownMenuItem>

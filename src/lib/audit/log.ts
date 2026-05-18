@@ -38,7 +38,8 @@ export type AuditAction =
   | "order.return_initiated"
   | "promo_code.create"
   | "promo_code.update"
-  | "promo_code.deactivate";
+  | "promo_code.deactivate"
+  | "user.deactivate";
 
 type WriteAuditArgs = {
   actorUserId: string | null;
