@@ -4,7 +4,6 @@ import { stripe } from "@/lib/stripe";
 import { Prisma } from "@/generated/prisma/client";
 import { getOrCreateStripeCustomer } from "./stripe-customer";
 import { getProduct } from "@/lib/inventory/inventory-client";
-import { getMerchandised } from "@/lib/products/merchandised-product.service";
 import { getCartItemsByIds } from "@/lib/cart/cart.service";
 import type { SessionStatus } from "@/generated/prisma/client";
 
@@ -52,9 +51,12 @@ const LUX_SHIPPING_ELIGIBLE_STATUSES: ReadonlySet<SessionStatus> = new Set<Sessi
 
 /**
  * Resolve cart items into line items via the inventory service. Throws if any
- * item is no longer direct-sale (admin may have unflagged it), missing from
- * inventory, or out of stock — direct-sale checkout is finance-sensitive, so
- * we fail loud rather than silently fall back to a stale/wrong listing.
+ * item is missing from inventory or out of stock — direct-sale checkout is
+ * finance-sensitive, so we fail loud rather than silently fall back to a
+ * stale/wrong listing. There is no allow-list gate: every inventory item the
+ * stylist surfaces is Wishi-shoppable. If the fulfiller can't source it at
+ * the retailer, that's a per-OrderItem UNFULFILLABLE transition with a
+ * partial refund — not an upfront block.
  */
 export async function resolveLineItems(
   userId: string,
@@ -73,14 +75,6 @@ export async function resolveLineItems(
     throw new Error("Cart items must belong to the same session");
   }
   const sessionId = cartItems[0].sessionId;
-
-  const inventoryIds = [...new Set(cartItems.map((c) => c.inventoryProductId))];
-  const merch = await getMerchandised(inventoryIds);
-  for (const id of inventoryIds) {
-    if (!merch.get(id)?.isDirectSale) {
-      throw new Error(`Product ${id} is no longer available for direct sale`);
-    }
-  }
 
   const items: ResolvedLineItem[] = [];
   for (const cartItem of cartItems) {
@@ -236,6 +230,7 @@ export async function createDirectSaleCheckout(input: CreateDirectSaleCheckoutIn
             imageUrl: it.imageUrl,
             priceInCents: it.unitAmountInCents,
             quantity: it.quantity,
+            retailerName: it.merchant,
           })),
         },
       },

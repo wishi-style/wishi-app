@@ -11,10 +11,7 @@ import {
   loadClientStylingContext,
   toClientContextSummary,
 } from "@/lib/inventory/client-context";
-import {
-  adaptProductDoc,
-  bucketCategory,
-} from "@/lib/inventory/adapt-product-doc";
+import { adaptProductDoc, bucketCategory } from "@/lib/inventory/adapt-product-doc";
 import { StyleboardBuilder } from "./builder";
 
 export const dynamic = "force-dynamic";
@@ -84,19 +81,16 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
     board = { ...created, items: [] };
   }
 
-  // Direct-sale id set powers the LookCreator's Shop / Store sub-tabs.
-  // Store narrows the inventory grid to MerchandisedProduct rows flagged
-  // `isDirectSale = true`; Shop shows the full tastegraph catalog.
-  const directSaleRows = await prisma.merchandisedProduct.findMany({
-    where: { isDirectSale: true },
-    select: { inventoryProductId: true },
-  });
-  const directSaleProductIds = directSaleRows.map((r) => r.inventoryProductId);
+  // Universal Unicart: every inventory item is Wishi-shoppable; the legacy
+  // direct-sale allow-list (MerchandisedProduct.isDirectSale) is gone, so
+  // the LookCreator's Shop tab is the canonical inventory surface. The
+  // separate "Store" sub-tab no longer has anything to gate on.
+  const directSaleProductIds: string[] = [];
 
   // Parallel fan-out: closet/inspiration/cart from DB, shop inventory +
-  // facets + store + cart hydration from tastegraph. The shop call goes
-  // through `loadShopInventory` so smart defaults + dislike filtering +
-  // adaptation are identical between SSR and the paginated client fetches.
+  // facets + cart hydration from tastegraph. The shop call goes through
+  // `loadShopInventory` so smart defaults + dislike filtering + adaptation
+  // are identical between SSR and the paginated client fetches.
   const [
     closetItems,
     inspiration,
@@ -104,7 +98,6 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
     clientCtx,
     initialShop,
     facets,
-    storeProductDocs,
   ] = await Promise.all([
     listClosetItems({ userId: session.clientId }),
     listInspirationPhotos({ take: 60 }),
@@ -116,9 +109,6 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
     loadClientStylingContext({ sessionId }),
     loadShopInventory({ sessionId, page: 1, pageSize: 120 }),
     getFilters(),
-    Promise.all(
-      directSaleProductIds.slice(0, 60).map((id) => getProduct(id)),
-    ),
   ]);
 
   // Cart items need their tastegraph product doc hydrated separately because
@@ -129,9 +119,7 @@ export default async function NewStyleboardPage({ params, searchParams }: Props)
     cartRows.map((c) => getProduct(c.inventoryProductId)),
   );
 
-  const storeInventoryItems = storeProductDocs.flatMap((doc) =>
-    doc ? [adaptProductDoc(doc)] : [],
-  );
+  const storeInventoryItems: never[] = [];
   const cartInventoryItems = cartRows.flatMap((c, i) => {
     const doc = cartProductDocs[i];
     if (!doc) return [];

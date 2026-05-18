@@ -94,7 +94,11 @@ export type AdminOrderDetail = NonNullable<Awaited<ReturnType<typeof getAdminOrd
 
 const STATUS_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   PENDING: ["ORDERED"],
-  ORDERED: ["SHIPPED"],
+  ORDERED: ["SHIPPED", "COMPLETED"],
+  // New universal-fulfillment terminal — set by the per-OrderItem rollup once
+  // every line resolves to PURCHASED or UNFULFILLABLE. No further transitions
+  // from this state; refunds and returns happen at the OrderItem level.
+  COMPLETED: [],
   SHIPPED: ["ARRIVED"],
   ARRIVED: ["RETURN_IN_PROCESS"],
   RETURN_IN_PROCESS: ["RETURNED"],

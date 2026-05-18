@@ -285,6 +285,7 @@ export async function createDirectSalePaymentIntent(
           imageUrl: it.imageUrl,
           priceInCents: it.unitAmountInCents,
           quantity: it.quantity,
+          retailerName: it.merchant,
         })),
       },
     },
