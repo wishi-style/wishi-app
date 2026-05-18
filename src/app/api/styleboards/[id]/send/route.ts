@@ -6,6 +6,7 @@ import {
   type SendStyleboardInput,
 } from "@/lib/boards/styleboard.service";
 import { BoardSendError } from "@/lib/boards/moodboard.service";
+import { isDomainError } from "@/lib/errors/domain-error";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,9 @@ export async function POST(
         { error: e.message, code: e.code },
         { status: e.status },
       );
+    }
+    if (isDomainError(e)) {
+      return NextResponse.json({ error: e.message }, { status: e.status });
     }
     console.error(
       JSON.stringify({

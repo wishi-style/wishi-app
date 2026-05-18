@@ -119,3 +119,84 @@ test("/board/[id] renders every canvas item — no items dropped from the square
     await cleanupE2EUserByEmail(stylistEmail);
   }
 });
+
+test("/board/[id] honors per-item width and rotation from the free-form canvas", async ({
+  page,
+}) => {
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const clientEmail = `bsr-c-${stamp}@e2e.wishi.test`;
+  const stylistEmail = `bsr-s-${stamp}@e2e.wishi.test`;
+  const client = await ensureClientUser({
+    clerkId: `e2e_bsr_c_${stamp}`,
+    email: clientEmail,
+    firstName: "Aria",
+    lastName: "Free",
+  });
+  const stylist = await ensureStylistUser({
+    clerkId: `e2e_bsr_s_${stamp}`,
+    email: stylistEmail,
+    firstName: "Lena",
+    lastName: "Free",
+  });
+  await ensureStylistProfile({ userId: stylist.id });
+  const session = await createSessionForClient({
+    clientId: client.id,
+    stylistId: stylist.id,
+    planType: "MAJOR",
+    status: "ACTIVE",
+  });
+  const boardId = `bsr_w_${stamp}`;
+  await getPool().query(
+    `INSERT INTO boards (id, type, session_id, title, stylist_note, sent_at, created_at, updated_at)
+     VALUES ($1, 'STYLEBOARD', $2, 'Free-form Canvas', 'Resized + rotated items.', NOW(), NOW(), NOW())`,
+    [boardId, session.id],
+  );
+  // Three items with explicit width/rotation so the renderer must read them
+  // through (not fall back to the 30% / 0deg legacy defaults).
+  const items = [
+    { x: 30, y: 30, width: 40, rotation: 0 },
+    { x: 70, y: 50, width: 20, rotation: 15 },
+    { x: 50, y: 80, width: 35, rotation: -10 },
+  ];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    await getPool().query(
+      `INSERT INTO board_items (id, board_id, source, order_index, web_item_url, web_item_image_url, x, y, width, rotation, z_index, flip_h, flip_v, created_at, updated_at)
+       VALUES ($1, $2, 'WEB_ADDED', $3, $4, $5, $6, $7, $8, $9, $10, false, false, NOW(), NOW())`,
+      [
+        `bsr_w_${stamp}_${i}`,
+        boardId,
+        i,
+        `https://example.test/free-${i}`,
+        `https://example.test/free-${i}.jpg`,
+        it.x,
+        it.y,
+        it.width,
+        it.rotation,
+        i + 1,
+      ],
+    );
+  }
+
+  try {
+    const res = await page.goto(`/board/${boardId}`);
+    expect(res?.status()).toBe(200);
+    await page.waitForLoadState("networkidle");
+
+    // Every canvas tile carries inline `width: <N>%` derived from the
+    // BoardItem.width column and a `rotate(<deg>deg)` in its transform.
+    // We grep the DOM for the specific values rather than rely on layout
+    // measurement, which is sensitive to viewport size.
+    const html = await page.content();
+    expect(html).toContain("width: 40%");
+    expect(html).toContain("width: 20%");
+    expect(html).toContain("width: 35%");
+    expect(html).toContain("rotate(15deg)");
+    expect(html).toContain("rotate(-10deg)");
+  } finally {
+    await cleanupBoard(boardId);
+    await cleanupStylistProfile(stylist.id);
+    await cleanupE2EUserByEmail(clientEmail);
+    await cleanupE2EUserByEmail(stylistEmail);
+  }
+});

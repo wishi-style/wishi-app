@@ -23,14 +23,19 @@ export interface BoardThumbnailItem {
   x: number | null;
   /** Percent (0-100) from the top edge. Null → fall back to grid. */
   y: number | null;
-  /** Optional explicit size (percent 0-100). Styleboard items leave this null and
-   *  inherit the builder's fixed 30%-wide tile; freestyle moodboard photos carry it. */
+  /** Optional explicit size (percent 0-100). Free-form styleboard items carry this;
+   *  legacy rows leave it null and inherit the builder's fixed 30%-wide tile.
+   *  Freestyle moodboard photos always carry it. */
   width?: number | null;
   height?: number | null;
+  /** Free-form rotation in degrees. Null/undefined → 0. */
+  rotation?: number | null;
   zIndex?: number | null;
   flipH?: boolean | null;
   flipV?: boolean | null;
   crop?: { top: number; right: number; bottom: number; left: number } | null;
+  /** Server-persisted background-removed PNG URL. When set, preferred over imageUrl. */
+  processedImageUrl?: string | null;
 }
 
 export interface BoardThumbnailProps {
@@ -92,7 +97,7 @@ export function BoardThumbnail({
 
   // STYLEBOARD
   const positioned = (items ?? []).filter(
-    (it) => it.imageUrl && it.x != null && it.y != null,
+    (it) => (it.imageUrl || it.processedImageUrl) && it.x != null && it.y != null,
   );
   if (positioned.length > 0) {
     return (
@@ -152,17 +157,21 @@ function CanvasLayer({ items }: { items: BoardThumbnailItem[] }) {
         const sY = 100 / Math.max(1, 100 - crop.top - crop.bottom);
         const flipScaleX = it.flipH ? -1 : 1;
         const flipScaleY = it.flipV ? -1 : 1;
+        const widthPct = it.width ?? TILE_WIDTH_PCT;
+        const rotation = it.rotation ?? 0;
+        const src = it.processedImageUrl || it.imageUrl;
         return (
           <div
             key={it.id}
             style={{
               left: `${it.x}%`,
               top: `${it.y}%`,
-              width: `${TILE_WIDTH_PCT}%`,
+              width: `${widthPct}%`,
               aspectRatio: "1 / 1",
               zIndex: it.zIndex ?? idx + 1,
+              transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
             }}
-            className="absolute -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-sm border border-border bg-card shadow-sm"
+            className="absolute overflow-hidden rounded-sm border border-border bg-card shadow-sm"
           >
             <div
               className="absolute"
@@ -174,10 +183,10 @@ function CanvasLayer({ items }: { items: BoardThumbnailItem[] }) {
                 transform: `scale(${flipScaleX}, ${flipScaleY})`,
               }}
             >
-              {it.imageUrl ? (
+              {src ? (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img
-                  src={it.imageUrl}
+                  src={src}
                   alt=""
                   className="h-full w-full object-cover"
                   draggable={false}

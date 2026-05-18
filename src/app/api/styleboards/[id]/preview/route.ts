@@ -34,6 +34,8 @@ interface PreviewProduct {
    *  these to render the chat card identically to what the stylist composed. */
   x: number | null;
   y: number | null;
+  width: number | null;
+  rotation: number | null;
   zIndex: number | null;
   flipH: boolean;
   flipV: boolean;
@@ -110,16 +112,36 @@ export async function GET(
       const canvas = {
         x: item.x,
         y: item.y,
+        width: item.width,
+        rotation: item.rotation,
         zIndex: item.zIndex,
         flipH: item.flipH,
         flipV: item.flipV,
         crop,
       };
+      const processed = item.processedImageUrl ?? null;
       switch (item.source) {
         case "INVENTORY": {
           if (!item.inventoryProductId) return null;
           const p = await getProduct(item.inventoryProductId).catch(() => null);
-          if (!p) return null;
+          if (!p) {
+            // Inventory service degraded. If we have a saved cutout, keep
+            // the item visible on the canvas + product grid with placeholder
+            // metadata so the layout doesn't lose tiles. Without a cutout
+            // there's nothing to render, so drop the row.
+            if (!processed) return null;
+            return {
+              id: item.id,
+              brand: "Unavailable",
+              name: "",
+              image: processed,
+              price: "",
+              priceInCents: null,
+              soldOut: true,
+              inventoryProductId: item.inventoryProductId,
+              ...canvas,
+            };
+          }
           const minCents = Math.round(p.min_price * 100);
           const maxCents = Math.round(p.max_price * 100);
           const priceStr =
@@ -130,7 +152,7 @@ export async function GET(
             id: item.id,
             brand: p.brand_name ?? "Unknown",
             name: p.canonical_name ?? "",
-            image: p.primary_image_url ?? null,
+            image: processed ?? p.primary_image_url ?? null,
             price: priceStr,
             priceInCents: minCents,
             soldOut: !p.in_stock,
@@ -143,7 +165,7 @@ export async function GET(
             id: item.id,
             brand: item.closetItem?.designer ?? "Closet",
             name: item.closetItem?.name ?? "",
-            image: item.closetItem?.url ?? null,
+            image: processed ?? item.closetItem?.url ?? null,
             price: "",
             priceInCents: null,
             soldOut: false,
@@ -155,7 +177,7 @@ export async function GET(
             id: item.id,
             brand: "Inspiration",
             name: "",
-            image: item.inspirationPhoto?.url ?? null,
+            image: processed ?? item.inspirationPhoto?.url ?? null,
             price: "",
             priceInCents: null,
             soldOut: false,
@@ -167,7 +189,7 @@ export async function GET(
             id: item.id,
             brand: item.webItemBrand ?? "Web",
             name: item.webItemTitle ?? "",
-            image: item.webItemImageUrl ?? null,
+            image: processed ?? item.webItemImageUrl ?? null,
             price:
               typeof item.webItemPriceInCents === "number"
                 ? formatPrice(item.webItemPriceInCents, "USD")

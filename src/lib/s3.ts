@@ -107,6 +107,29 @@ export async function getStyleQuizBodyPhotoPresignedUrl(
 }
 
 /**
+ * Presigned PUT for a stylist's background-removed canvas item PNG. Lives
+ * under `boards/processed/{boardId}/...` so the proxy at /api/images can
+ * gate access cheaply by prefix, and so cleanup-by-board is a single
+ * `s3:DeleteObjects` against the prefix when a board is hard-deleted.
+ * Only PNG with alpha is accepted; the canvas exports image/png.
+ */
+export async function getBoardProcessedImagePresignedUrl(
+  boardId: string,
+  itemUid: string,
+): Promise<{ uploadUrl: string; key: string; publicUrl: string }> {
+  const safeBoard = boardId.replace(/[^a-zA-Z0-9_-]/g, "");
+  const safeUid = itemUid.replace(/[^a-zA-Z0-9_-]/g, "");
+  const key = `boards/processed/${safeBoard}/${safeUid}-${Date.now()}.png`;
+  const command = new PutObjectCommand({
+    Bucket: getBucket(),
+    Key: key,
+    ContentType: "image/png",
+  });
+  const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
+  return { uploadUrl, key, publicUrl: getPublicUrl(key) };
+}
+
+/**
  * Presigned PUT for a client-uploaded closet item photo.
  */
 export async function getClosetItemPresignedUrl(

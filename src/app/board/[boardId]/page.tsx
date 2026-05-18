@@ -160,6 +160,8 @@ export default async function SharedBoardPage({ params }: Props) {
         inspirationPhoto: it.inspirationPhoto,
         x: it.x,
         y: it.y,
+        width: it.width,
+        rotation: it.rotation,
         zIndex: it.zIndex,
         flipH: it.flipH,
         flipV: it.flipV,
@@ -167,6 +169,7 @@ export default async function SharedBoardPage({ params }: Props) {
         cropRight: it.cropRight,
         cropBottom: it.cropBottom,
         cropLeft: it.cropLeft,
+        processedImageUrl: it.processedImageUrl,
       })),
     },
   ]);
