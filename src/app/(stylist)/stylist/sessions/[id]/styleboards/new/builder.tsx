@@ -567,7 +567,6 @@ export function StyleboardBuilder({
   };
   const canvasRef = useRef<HTMLDivElement>(null);
   const dragData = useRef<{ image: string; itemId: string } | null>(null);
-  const movingUid = useRef<string | null>(null);
   // Inventory→canvas drag affordance: tracks whether an inventory tile is
   // currently being dragged over the canvas, and the live cursor position so
   // we can render a "+ Release to add" pill under the cursor.
@@ -717,6 +716,32 @@ export function StyleboardBuilder({
               : c,
           ),
         );
+        return;
+      }
+
+      // Keyboard resize for the selected item. `+`/`=` grows, `-`/`_` shrinks.
+      // Shift = 10% step. Mirrors the corner-handle scale range [6, 80] so a
+      // keyboard-only user reaches the same min/max as a pointer user.
+      if (!e.metaKey && !e.ctrlKey && !e.altKey) {
+        const grow = e.key === "+" || e.key === "=";
+        const shrink = e.key === "-" || e.key === "_";
+        if (grow || shrink) {
+          e.preventDefault();
+          const step = (e.shiftKey ? 10 : 2) * (grow ? 1 : -1);
+          setCanvas((prev) =>
+            prev.map((c) =>
+              c.uid === uid
+                ? {
+                    ...c,
+                    width: Math.min(
+                      MAX_ITEM_WIDTH,
+                      Math.max(MIN_ITEM_WIDTH, c.width + step),
+                    ),
+                  }
+                : c,
+            ),
+          );
+        }
       }
     };
     window.addEventListener("keydown", handler);
@@ -1069,22 +1094,14 @@ export function StyleboardBuilder({
     e.preventDefault();
     setDragOverCanvas(false);
     setDragOverPos(null);
+    if (!dragData.current) return;
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
-
-    if (movingUid.current) {
-      const uid = movingUid.current;
-      setCanvas((prev) => prev.map((c) => (c.uid === uid ? { ...c, x, y } : c)));
-      movingUid.current = null;
-      return;
-    }
-    if (dragData.current) {
-      const it = sourceItems.find((s) => s.id === dragData.current!.itemId);
-      if (it) addToCanvas(it, x, y);
-      dragData.current = null;
-    }
+    const it = sourceItems.find((s) => s.id === dragData.current!.itemId);
+    if (it) addToCanvas(it, x, y);
+    dragData.current = null;
   };
 
   // Pointer-driven item-on-canvas drag (replaces native HTML5 draggable on
@@ -1305,9 +1322,15 @@ export function StyleboardBuilder({
         return base;
       });
       // Cover image for /stylists/[id] when this look is featured on the
-      // stylist's profile. First canvas item's image is the natural cover —
-      // the LookCreator already shows it as the dominant element.
-      const coverUrl = canvas[0]?.image ?? null;
+      // stylist's profile. First canvas item is the natural cover. Prefer
+      // the S3-persisted cutout (processedImageUrl) when present so the
+      // DB row doesn't carry a multi-MB base64 data URL, and so the cover
+      // matches the cutout the stylist composed for any non-HTML thumbnail
+      // surface that reads coverUrl directly.
+      const first = canvasForSave[0];
+      const coverUrl = first
+        ? first.processedImageUrl ?? first.image ?? null
+        : null;
       // Profile mode posts to the sessionless publish endpoint (no client,
       // no chat send, no notifications). Session mode keeps the existing
       // send-to-client path; the feature toggle decides whether the same
@@ -2633,6 +2656,17 @@ export function StyleboardBuilder({
           {cropUid && (() => {
             const item = canvas.find((c) => c.uid === cropUid);
             if (!item) return null;
+            // Restore the saved crop on re-open. react-easy-crop accepts a
+            // percent rect with x/y/width/height as percentages of the
+            // image. Our schema stores per-side insets, so convert.
+            const initialPct = item.crop
+              ? {
+                  x: item.crop.left,
+                  y: item.crop.top,
+                  width: Math.max(1, 100 - item.crop.left - item.crop.right),
+                  height: Math.max(1, 100 - item.crop.top - item.crop.bottom),
+                }
+              : undefined;
             return (
               <div className="space-y-4">
                 <div className="relative aspect-square w-full overflow-hidden rounded-sm border border-border bg-muted">
@@ -2640,9 +2674,18 @@ export function StyleboardBuilder({
                     image={item.image}
                     crop={cropPan}
                     zoom={cropZoom}
-                    aspect={1}
                     onCropChange={setCropPan}
                     onZoomChange={setCropZoom}
+                    initialCroppedAreaPercentages={initialPct}
+                    transform={
+                      item.flipH || item.flipV
+                        ? `translate(${cropPan.x}px, ${cropPan.y}px) scale(${
+                            cropZoom * (item.flipH ? -1 : 1)
+                          }, ${cropZoom * (item.flipV ? -1 : 1)})`
+                        : undefined
+                    }
+                    objectFit="contain"
+                    showGrid
                     onMediaLoaded={(media) => {
                       cropNaturalRef.current = {
                         width: media.naturalWidth,
@@ -2671,7 +2714,8 @@ export function StyleboardBuilder({
                   />
                 </div>
                 <p className="font-body text-[11px] text-muted-foreground">
-                  Drag inside the frame to pan. Scroll or use the slider to zoom.
+                  Drag the frame corners to resize. Drag inside to pan.
+                  Use the slider to zoom.
                 </p>
               </div>
             );

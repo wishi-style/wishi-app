@@ -11,7 +11,7 @@ import {
   validateProcessedImageUrl,
 } from "@/lib/boards/styleboard.service";
 
-test("validateCanvasWidth accepts values in [1, 100]", () => {
+test("validateCanvasWidth passes through values already in [1, 100]", () => {
   assert.equal(validateCanvasWidth(1), 1);
   assert.equal(validateCanvasWidth(26), 26);
   assert.equal(validateCanvasWidth(100), 100);
@@ -22,10 +22,10 @@ test("validateCanvasWidth treats null/undefined as null", () => {
   assert.equal(validateCanvasWidth(undefined), null);
 });
 
-test("validateCanvasWidth rejects out-of-range values", () => {
-  assert.throws(() => validateCanvasWidth(0), /width must be between 1 and 100/);
-  assert.throws(() => validateCanvasWidth(-5), /width must be between 1 and 100/);
-  assert.throws(() => validateCanvasWidth(150), /width must be between 1 and 100/);
+test("validateCanvasWidth clamps out-of-range values", () => {
+  assert.equal(validateCanvasWidth(0), 1);
+  assert.equal(validateCanvasWidth(-5), 1);
+  assert.equal(validateCanvasWidth(150), 100);
 });
 
 test("validateCanvasWidth rejects non-finite values", () => {
@@ -40,7 +40,7 @@ test("normaliseCanvasRotation passes through values already in range", () => {
   assert.equal(normaliseCanvasRotation(180), -180); // 180 normalises to -180
 });
 
-test("normaliseCanvasRotation wraps angles outside (-180, 180]", () => {
+test("normaliseCanvasRotation wraps angles outside [-180, 180)", () => {
   assert.equal(normaliseCanvasRotation(270), -90);
   assert.equal(normaliseCanvasRotation(-270), 90);
   assert.equal(normaliseCanvasRotation(720), 0);
@@ -59,6 +59,19 @@ test("normaliseCanvasRotation rejects non-finite values", () => {
 test("validateProcessedImageUrl accepts canonical processed-image paths", () => {
   const ok = "/api/images/boards/processed/board-123/abc-1700000000000.png";
   assert.equal(validateProcessedImageUrl(ok), ok);
+  // With boardId set, the URL must contain that same board id segment.
+  assert.equal(validateProcessedImageUrl(ok, "board-123"), ok);
+});
+
+test("validateProcessedImageUrl rejects URLs from a different board", () => {
+  assert.throws(
+    () =>
+      validateProcessedImageUrl(
+        "/api/images/boards/processed/board-123/abc.png",
+        "board-other",
+      ),
+    /belong to the same board/,
+  );
 });
 
 test("validateProcessedImageUrl treats null/undefined as null", () => {

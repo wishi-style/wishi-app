@@ -1462,7 +1462,8 @@ model BoardItem {
   // Phase 12: LookCreator canvas — stylists position each item on a 2-D
   // composition surface. x/y are canvas coordinates (percent 0–100),
   // zIndex is the stacking order. width is the tile's render width
-  // (percent of canvas, 1-100). rotation is degrees (-180..180).
+  // (percent of canvas, 1-100). rotation is degrees in [-180, 180)
+  // (180 normalises to -180 server-side).
   // flipH/V mirror the image; crop fields are percent insets (0–100)
   // from each edge. processedImageUrl points at a server-side
   // background-removed PNG (whitelisted /api/images/boards/processed/...).

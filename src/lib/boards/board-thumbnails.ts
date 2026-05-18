@@ -15,6 +15,7 @@ interface ThumbnailItem {
   source: string;
   inventoryProductId: string | null;
   webItemImageUrl: string | null;
+  processedImageUrl?: string | null;
   closetItemUrl?: string | null;
   inspirationPhotoUrl?: string | null;
 }
@@ -40,6 +41,7 @@ export async function resolveBoardThumbnails(
           source: true,
           inventoryProductId: true,
           webItemImageUrl: true,
+          processedImageUrl: true,
           closetItem: { select: { url: true } },
           inspirationPhoto: { select: { url: true } },
         },
@@ -56,12 +58,17 @@ export async function resolveBoardThumbnails(
     source: i.source,
     inventoryProductId: i.inventoryProductId,
     webItemImageUrl: i.webItemImageUrl,
+    processedImageUrl: i.processedImageUrl,
     closetItemUrl: i.closetItem?.url ?? null,
     inspirationPhotoUrl: i.inspirationPhoto?.url ?? null,
   }));
 
   const resolved = await Promise.all(
     items.map(async (it) => {
+      // When the stylist persisted a background-removed cutout, prefer it
+      // over the source lookup so the hero/thumbnails stay correct even
+      // when the inventory service is down.
+      if (it.processedImageUrl) return it.processedImageUrl;
       switch (it.source) {
         case "INVENTORY":
           if (!it.inventoryProductId) return null;
@@ -92,6 +99,7 @@ export interface BoardWithThumbnailRows {
     source: string;
     inventoryProductId: string | null;
     webItemImageUrl: string | null;
+    processedImageUrl?: string | null;
     closetItem?: { url: string | null } | null;
     inspirationPhoto?: { url: string | null } | null;
   }[];
@@ -158,6 +166,10 @@ export async function resolveCanvasForBoards(
       const resolvedItems: BoardThumbnailItem[] = await Promise.all(
         b.items.map(async (it): Promise<BoardThumbnailItem> => {
           const imageUrl = await (async (): Promise<string | null> => {
+            // Saved cutout shortcuts the source lookup. Both for performance
+            // (no inventory round-trip) and for resilience — when tastegraph
+            // is unavailable, items with a saved cutout still render.
+            if (it.processedImageUrl) return it.processedImageUrl;
             switch (it.source) {
               case "INVENTORY":
                 if (!it.inventoryProductId) return null;
@@ -232,6 +244,9 @@ export async function resolveThumbnailsForBoards(
       }
       const resolved = await Promise.all(
         b.items.map(async (it) => {
+          // Saved cutout wins — keeps the hero/share fallback rendering
+          // accurate when tastegraph is degraded.
+          if (it.processedImageUrl) return it.processedImageUrl;
           switch (it.source) {
             case "INVENTORY":
               if (!it.inventoryProductId) return null;

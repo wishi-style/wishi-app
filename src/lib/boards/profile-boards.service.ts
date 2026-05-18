@@ -168,7 +168,10 @@ export async function publishProfileBoard(input: {
             cropRight: it.cropRight ?? null,
             cropBottom: it.cropBottom ?? null,
             cropLeft: it.cropLeft ?? null,
-            processedImageUrl: validateProcessedImageUrl(it.processedImageUrl),
+            processedImageUrl: validateProcessedImageUrl(
+              it.processedImageUrl,
+              input.boardId,
+            ),
           })),
         });
       }

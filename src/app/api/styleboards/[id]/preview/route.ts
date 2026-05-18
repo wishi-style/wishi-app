@@ -124,7 +124,24 @@ export async function GET(
         case "INVENTORY": {
           if (!item.inventoryProductId) return null;
           const p = await getProduct(item.inventoryProductId).catch(() => null);
-          if (!p) return null;
+          if (!p) {
+            // Inventory service degraded. If we have a saved cutout, keep
+            // the item visible on the canvas + product grid with placeholder
+            // metadata so the layout doesn't lose tiles. Without a cutout
+            // there's nothing to render, so drop the row.
+            if (!processed) return null;
+            return {
+              id: item.id,
+              brand: "Unavailable",
+              name: "",
+              image: processed,
+              price: "",
+              priceInCents: null,
+              soldOut: true,
+              inventoryProductId: item.inventoryProductId,
+              ...canvas,
+            };
+          }
           const minCents = Math.round(p.min_price * 100);
           const maxCents = Math.round(p.max_price * 100);
           const priceStr =

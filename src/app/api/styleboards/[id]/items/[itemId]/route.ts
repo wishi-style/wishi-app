@@ -6,6 +6,7 @@ import {
   removeStyleboardItem,
   type PatchStyleboardItemInput,
 } from "@/lib/boards/styleboard.service";
+import { isDomainError } from "@/lib/errors/domain-error";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,10 @@ export async function PATCH(
   try {
     const item = await patchStyleboardItem(id, itemId, body);
     return NextResponse.json(item);
-  } catch {
+  } catch (err) {
+    if (isDomainError(err)) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     return NextResponse.json({ error: "Item not found on board" }, { status: 404 });
   }
 }

@@ -8,6 +8,7 @@ import { notifyClient, notifyStylist } from "@/lib/notifications/dispatcher";
 import { endTrialEarly } from "@/lib/payments/subscription-trial";
 import { detectPendingEnd } from "@/lib/sessions/transitions";
 import { BoardSendError } from "./moodboard.service";
+import { DomainError } from "@/lib/errors/domain-error";
 import type {
   Board,
   BoardItem,
@@ -56,33 +57,55 @@ export interface AddItemInput {
 }
 
 // Server-side guards for the free-form canvas inputs.
-// `width` is a percent of the canvas (1..100). `rotation` is normalised to
-// (-180, 180]. `processedImageUrl` must point at the canonical server-served
-// background-removed asset path so a stylist can't smuggle an arbitrary URL
-// into every render surface.
+// `width` is a percent of the canvas clamped into [1, 100] — out-of-range
+// inputs are corrected rather than rejected. `rotation` is normalised to
+// [-180, 180) (180 wraps to -180). `processedImageUrl` must point at the
+// board's own server-served cutout path so a stylist can't smuggle in
+// arbitrary URLs OR another board's asset.
 const PROCESSED_IMAGE_URL_PREFIX = "/api/images/boards/processed/";
 
 export function validateCanvasWidth(value: number | null | undefined): number | null {
   if (value === undefined || value === null) return null;
-  if (!Number.isFinite(value)) throw new Error("width must be a finite number");
-  if (value < 1 || value > 100) throw new Error("width must be between 1 and 100");
-  return value;
+  if (!Number.isFinite(value)) {
+    throw new DomainError("width must be a finite number", 400);
+  }
+  return Math.min(100, Math.max(1, value));
 }
 
 export function normaliseCanvasRotation(value: number | null | undefined): number | null {
   if (value === undefined || value === null) return null;
-  if (!Number.isFinite(value)) throw new Error("rotation must be a finite number");
+  if (!Number.isFinite(value)) {
+    throw new DomainError("rotation must be a finite number", 400);
+  }
   return ((value % 360) + 540) % 360 - 180;
 }
 
 export function validateProcessedImageUrl(
   value: string | null | undefined,
+  boardId?: string,
 ): string | null {
   if (value === undefined || value === null) return null;
   if (typeof value !== "string" || !value.startsWith(PROCESSED_IMAGE_URL_PREFIX)) {
-    throw new Error(
+    throw new DomainError(
       `processedImageUrl must start with ${PROCESSED_IMAGE_URL_PREFIX}`,
+      400,
     );
+  }
+  // The processed-image keys are namespaced under the board they belong to
+  // (see getBoardProcessedImagePresignedUrl in src/lib/s3.ts:
+  // boards/processed/{boardId}/{itemUid}-{ts}.png). When persisting an item,
+  // require the URL's board segment match the board we're writing to so a
+  // stylist can't reference another board's cutout asset by hand-crafting
+  // the URL even after going through the ownership-gated upload route.
+  if (boardId !== undefined) {
+    const rest = value.slice(PROCESSED_IMAGE_URL_PREFIX.length);
+    const urlBoardId = rest.split("/")[0];
+    if (urlBoardId !== boardId) {
+      throw new DomainError(
+        "processedImageUrl must belong to the same board",
+        400,
+      );
+    }
   }
   return value;
 }
@@ -131,7 +154,10 @@ export async function addStyleboardItem(
       width: validateCanvasWidth(input.width),
       rotation: normaliseCanvasRotation(input.rotation),
       zIndex: input.zIndex ?? null,
-      processedImageUrl: validateProcessedImageUrl(input.processedImageUrl),
+      processedImageUrl: validateProcessedImageUrl(
+        input.processedImageUrl,
+        boardId,
+      ),
     },
   });
 }
@@ -182,7 +208,12 @@ export async function patchStyleboardItem(
         ? { rotation: normaliseCanvasRotation(patch.rotation) }
         : {}),
       ...(patch.processedImageUrl !== undefined
-        ? { processedImageUrl: validateProcessedImageUrl(patch.processedImageUrl) }
+        ? {
+            processedImageUrl: validateProcessedImageUrl(
+              patch.processedImageUrl,
+              boardId,
+            ),
+          }
         : {}),
     },
   });
@@ -389,7 +420,10 @@ export async function sendStyleboard(
             cropRight: it.cropRight ?? null,
             cropBottom: it.cropBottom ?? null,
             cropLeft: it.cropLeft ?? null,
-            processedImageUrl: validateProcessedImageUrl(it.processedImageUrl),
+            processedImageUrl: validateProcessedImageUrl(
+              it.processedImageUrl,
+              boardId,
+            ),
           })),
         });
       }

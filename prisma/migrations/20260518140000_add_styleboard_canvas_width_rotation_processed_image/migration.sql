@@ -1,5 +1,5 @@
 -- Free-form styleboard canvas: per-item width (percent of canvas, 1-100),
--- free rotation (degrees, -180..180), and a server-side background-removed
+-- free rotation (degrees in [-180, 180); 180 normalises to -180), and a server-side background-removed
 -- image URL. All nullable; existing rows render with the prior 30% fallback
 -- width, 0deg rotation, and original imagery.
 
