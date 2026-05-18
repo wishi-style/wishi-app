@@ -43,6 +43,8 @@ export const NOTIFICATION_EVENT_META: Record<
   "payout.failed":             { category: "PAYOUT",   source: "PLATFORM", smsEnabled: false },
   "stylist.available":         { category: "STYLIST_AVAILABILITY", source: "PLATFORM", smsEnabled: false },
   "stylist.waitlist_available":{ category: "STYLIST_AVAILABILITY", source: "PLATFORM", smsEnabled: false },
+  "order.confirmed":           { category: "ORDER",    source: "PLATFORM", smsEnabled: false },
+  "order.partially_fulfilled": { category: "ORDER",    source: "PLATFORM", smsEnabled: false },
   "order.shipped":             { category: "ORDER",    source: "PLATFORM", smsEnabled: true  },
   "order.arrived":             { category: "ORDER",    source: "PLATFORM", smsEnabled: true  },
   "order.return_initiated":    { category: "ORDER",    source: "PLATFORM", smsEnabled: false },

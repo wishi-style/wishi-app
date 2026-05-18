@@ -26,6 +26,8 @@ export type NotificationEvent =
   | "payout.failed"
   | "stylist.available"
   | "stylist.waitlist_available"
+  | "order.confirmed"
+  | "order.partially_fulfilled"
   | "order.shipped"
   | "order.arrived"
   | "order.return_initiated"

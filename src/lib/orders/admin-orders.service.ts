@@ -500,6 +500,58 @@ export async function transitionOrderItemStatus(
     });
   }
 
+  // Per-item user-facing notifications. Best-effort — the OrderItem and
+  // refund already landed transactionally; a Klaviyo outage shouldn't
+  // revert the fulfillment state.
+  if (next === "UNFULFILLABLE") {
+    const refundDollars = (refundCents / 100).toFixed(2);
+    await dispatchNotification({
+      event: "order.partially_fulfilled",
+      userId: order.userId,
+      title: `Couldn't source ${item.title}`,
+      body: `${item.retailerName ?? "The retailer"} couldn't fulfill ${item.title}. We've refunded $${refundDollars} — the rest of your order is still on its way.`,
+      url: `/orders/${order.id}`,
+      emailProperties: {
+        orderId: order.id,
+        orderItemId: item.id,
+        title: item.title,
+        retailerName: item.retailerName,
+        imageUrl: item.imageUrl,
+        refundedInCents: refundCents,
+        reason: item.unfulfillableReason,
+        notes: item.unfulfillableNotes,
+      },
+    }).catch((err) => {
+      console.warn(
+        `[orders] order.partially_fulfilled dispatch failed for ${item.id}:`,
+        err,
+      );
+    });
+  } else if (next === "RETURNED" && refundCents > 0) {
+    const refundDollars = (refundCents / 100).toFixed(2);
+    await dispatchNotification({
+      event: "order.refunded",
+      userId: order.userId,
+      title: "Refund issued",
+      body: `We refunded $${refundDollars} for ${item.title}. It should appear on your card in 5–10 business days.`,
+      url: `/orders/${order.id}`,
+      emailProperties: {
+        orderId: order.id,
+        orderItemId: item.id,
+        title: item.title,
+        retailerName: item.retailerName,
+        imageUrl: item.imageUrl,
+        refundedInCents: refundCents,
+        stripeRefundId,
+      },
+    }).catch((err) => {
+      console.warn(
+        `[orders] order.refunded dispatch failed for ${item.id}:`,
+        err,
+      );
+    });
+  }
+
   // Order-level rollup: every item is resolved → Order.status = COMPLETED.
   // Only apply when the parent Order is in ORDERED (don't auto-flip orders
   // currently in legacy SHIPPED/ARRIVED transitions).

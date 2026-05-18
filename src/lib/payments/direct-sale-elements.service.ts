@@ -18,6 +18,7 @@ import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { Prisma } from "@/generated/prisma/client";
+import { dispatchNotification } from "@/lib/notifications/dispatcher";
 import { getOrCreateStripeCustomer } from "./stripe-customer";
 import {
   resolveLineItems,
@@ -475,4 +476,38 @@ export async function applyDirectSalePaymentIntentSucceeded(
       );
     }
   }
+
+  // Confirmation email + in-app notification. Fan-out is best-effort — the
+  // order flipped to ORDERED before this runs, so a Klaviyo outage doesn't
+  // strand money or revert the cart.
+  const retailers = Array.from(
+    new Set(order.items.map((i) => i.retailerName).filter(Boolean)),
+  );
+  const retailersText =
+    retailers.length === 0
+      ? "each retailer"
+      : retailers.length === 1
+        ? retailers[0]
+        : retailers.length === 2
+          ? `${retailers[0]} and ${retailers[1]}`
+          : `${retailers.slice(0, -1).join(", ")}, and ${retailers[retailers.length - 1]}`;
+
+  await dispatchNotification({
+    event: "order.confirmed",
+    userId,
+    title: "Order confirmed",
+    body: `We're purchasing your items from ${retailersText} on your behalf. Expect shipping confirmation from each retailer.`,
+    url: `/orders/${order.id}`,
+    emailProperties: {
+      orderId: order.id,
+      totalInCents: pi.amount,
+      retailers,
+      retailersText,
+      itemCount: order.items.length,
+      firstItemTitle: order.items[0]?.title ?? null,
+      firstItemImageUrl: order.items[0]?.imageUrl ?? null,
+    },
+  }).catch((err) => {
+    console.warn(`[orders] order.confirmed dispatch failed for ${orderId}:`, err);
+  });
 }

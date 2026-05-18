@@ -2,6 +2,7 @@ import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { Prisma } from "@/generated/prisma/client";
+import { dispatchNotification } from "@/lib/notifications/dispatcher";
 import { getOrCreateStripeCustomer } from "./stripe-customer";
 import { getProduct } from "@/lib/inventory/inventory-client";
 import { getCartItemsByIds } from "@/lib/cart/cart.service";
@@ -334,5 +335,41 @@ export async function applyDirectSaleFromCheckout(
         inventoryProductId: { in: order.items.map((i) => i.inventoryProductId) },
       },
     });
+  });
+
+  // Confirmation email + in-app notification. Best-effort — the order is
+  // already ORDERED, so a Klaviyo outage doesn't strand money.
+  const retailers = Array.from(
+    new Set(order.items.map((i) => i.retailerName).filter(Boolean)),
+  );
+  const retailersText =
+    retailers.length === 0
+      ? "each retailer"
+      : retailers.length === 1
+        ? retailers[0]
+        : retailers.length === 2
+          ? `${retailers[0]} and ${retailers[1]}`
+          : `${retailers.slice(0, -1).join(", ")}, and ${retailers[retailers.length - 1]}`;
+
+  await dispatchNotification({
+    event: "order.confirmed",
+    userId,
+    title: "Order confirmed",
+    body: `We're purchasing your items from ${retailersText} on your behalf. Expect shipping confirmation from each retailer.`,
+    url: `/orders/${order.id}`,
+    emailProperties: {
+      orderId: order.id,
+      totalInCents,
+      retailers,
+      retailersText,
+      itemCount: order.items.length,
+      firstItemTitle: order.items[0]?.title ?? null,
+      firstItemImageUrl: order.items[0]?.imageUrl ?? null,
+    },
+  }).catch((err) => {
+    console.warn(
+      `[orders] order.confirmed dispatch failed for ${order.id}:`,
+      err,
+    );
   });
 }
